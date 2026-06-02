@@ -13,16 +13,22 @@ param(
     [string]$SiteUrl = "https://gerep.sharepoint.com/sites/AC360",
     [string]$InboxFolderUrl = "/sites/AC360/Shared Documents/Boite_De_Reception",
     [string]$TargetRootUrl = "/sites/AC360/Shared Documents/Clients - Documents",
-    [string]$LogFile = "classification_report.csv"
+    [string]$LogFile = "classification_report.csv",
+    [string]$ClientId = $env:ENTRA_CLIENT_ID,
+    [string]$ClientSecret = $env:ENTRA_CLIENT_SECRET
 )
 
-# 1. Connexion à SharePoint (Mode interactif pour le test, Entra ID en Prod)
+# 1. Connexion à SharePoint (Mode App-Only pour automatisation)
 Write-Host "Connexion au site SharePoint : $SiteUrl" -ForegroundColor Cyan
 try {
-    Connect-PnPOnline -Url $SiteUrl -Interactive
+    if ([string]::IsNullOrEmpty($ClientId) -or [string]::IsNullOrEmpty($ClientSecret)) {
+        Write-Host "[ERREUR] ClientId ou ClientSecret manquant. Le mode interactif est proscrit en production." -ForegroundColor Red
+        exit 1
+    }
+    Connect-PnPOnline -Url $SiteUrl -ClientId $ClientId -ClientSecret $ClientSecret
 } catch {
     Write-Host "[ERREUR] Échec de la connexion SharePoint. Veuillez vérifier vos accès." -ForegroundColor Red
-    exit
+    exit 1
 }
 
 # 2. Récupération des fichiers en vrac dans la boîte de réception
@@ -31,7 +37,7 @@ $files = Get-PnPFolderItem -FolderSiteRelativeUrl $InboxFolderUrl -ItemType File
 
 if ($files.Count -eq 0) {
     Write-Host "✅ Aucun document orphelin à classer. Le dossier est propre." -ForegroundColor Green
-    exit
+    exit 0
 }
 
 Write-Host "Trouvé $($files.Count) fichier(s) à classer." -ForegroundColor Yellow
@@ -42,14 +48,12 @@ foreach ($file in $files) {
     $fileName = $file.Name
     Write-Host "`nTraitement de : $fileName" -ForegroundColor Cyan
     
-    # 3. Extraction du nom du client via Regex
-    # Exemple de nom attendu : "Contrat_Sante_GerepSA_2026.pdf" -> Extraction "GerepSA"
-    # Expression basique : On cherche le mot entre le 2ème et 3ème tiret/underscore (convention de nommage)
-    # Ou plus simple : on extrait le mot après "Client_" ou "Contrat_"
-    
+    # 3. Extraction stricte du nom du client via Regex (Enterprise Grade)
+    # Règle : (Contrat|Client|Avenant)_(Type)_<NomClient>_YYYY.pdf
     $clientName = "INCONNU"
     
-    if ($fileName -match "(?i)(Contrat|Devis|Avenant|Client)[_-](?<ClientName>[a-zA-Z0-9]+)[_-]?") {
+    # Recherche stricte du NomClient avant l'année
+    if ($fileName -match "(?i)^(?:Contrat|Devis|Avenant|Client)_[a-zA-Z0-9]+_(?<ClientName>[a-zA-Z0-9]+)_[0-9]{4}\.pdf$") {
         $clientName = $Matches['ClientName']
     } else {
         # Si le nom ne respecte pas la convention, on l'isole dans un dossier "À Vérifier Manuellement"

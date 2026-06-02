@@ -2,6 +2,7 @@ from fastapi import FastAPI, Header, HTTPException, BackgroundTasks, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import Optional
+import subprocess
 import jwt # PyJWT
 import os
 import time
@@ -46,16 +47,27 @@ class AuditRequest(BaseModel):
 
 def run_audit_pipeline(doc_path: str, user_principal_name: str):
     """
-    Exécute le pipeline d'audit en arrière-plan.
+    Exécute le pipeline d'audit réel en arrière-plan via subprocess.
     """
     try:
         from db_manager import log_audit_action
         log_audit_action(doc_path, "START_AUDIT", "IN_PROGRESS", f"Triggered by {user_principal_name}")
-        time.sleep(3)
-        log_audit_action(doc_path, "END_AUDIT", "SUCCESS", "Pipeline terminé avec succès.")
-        print(f"[API_WORKER] Audit terminé pour {doc_path} par {user_principal_name}")
+        
+        # Appel réel au pipeline
+        process = subprocess.run(
+            ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", "scripts/run_audit_pipeline.ps1", "-DocumentPath", doc_path, "-Upn", user_principal_name],
+            capture_output=True,
+            text=True
+        )
+        
+        if process.returncode == 0:
+            log_audit_action(doc_path, "END_AUDIT", "SUCCESS", "Pipeline terminé avec succès.")
+            print(f"[API_WORKER] Audit terminé pour {doc_path}")
+        else:
+            log_audit_action(doc_path, "END_AUDIT", "FAILED", f"Erreur Pipeline: {process.stderr}")
+            print(f"[API_WORKER_ERROR] Code {process.returncode}: {process.stderr}")
     except Exception as e:
-        print(f"[API_WORKER_ERROR] {e}")
+        print(f"[API_WORKER_ERROR] Exception fatale: {e}")
 
 @app.post("/api/audit")
 async def trigger_audit(request: AuditRequest, background_tasks: BackgroundTasks, user_upn: str = Depends(verify_azure_ad_token)):

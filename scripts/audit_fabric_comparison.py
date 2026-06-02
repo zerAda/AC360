@@ -134,14 +134,28 @@ def perform_audit(ocr_data, artus_df):
 
     if best_match_row is not None:
         # 3. Comparaison des champs clés (ex: Plafond Hospitalisation)
-        # On simule l'extraction du plafond depuis l'OCR (Phase 3)
         doc_plafond = None
+        # Parsing dynamique de la structure JSON OCR (Document Intelligence)
         for table in ocr_data.get("tables", []):
-            for cell in table.get("cells", []):
-                # Logique très basique pour l'exemple (en production on parserait proprement le tableau)
-                if "hospitalisation" in str(cell.get("content", "")).lower():
-                    # on suppose que la cellule d'à côté contient la valeur
-                    doc_plafond = "400% BR" # Valeur simulée extraite
+            cells = table.get("cells", [])
+            for i, cell in enumerate(cells):
+                content = str(cell.get("content", "")).lower().strip()
+                if "hospitalisation" in content or "chambre" in content:
+                    # On suppose que la valeur est dans la colonne voisine (cellule suivante)
+                    if i + 1 < len(cells):
+                        next_cell_content = str(cells[i + 1].get("content", "")).strip()
+                        if next_cell_content:
+                            doc_plafond = next_cell_content
+                            break
+            if doc_plafond:
+                break
+        
+        # Fallback sur les key-value pairs si non trouvé dans un tableau
+        if not doc_plafond:
+            for kv in ocr_data.get("keyValuePairs", []):
+                key = str(kv.get("key", {}).get("content", "")).lower()
+                if "hospitalisation" in key:
+                    doc_plafond = str(kv.get("value", {}).get("content", "")).strip()
                     break
         
         if doc_plafond:
