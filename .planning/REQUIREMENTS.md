@@ -16,9 +16,12 @@
 | Fonction | Inclus | Commentaire |
 |----------|--------|-------------|
 | Recherche dossier client | OUI | RAG SharePoint actif |
-| Synthèse avant rendez-vous | OUI | Cœur de valeur métier |
-| Checklist de complétude | OUI | Identification des documents manquants |
+| Synthèse avant rendez-vous | OUI | Cœur de valeur métier (Panorama des régimes) |
+| Checklist de complétude | OUI | Identification automatique des documents manquants |
 | Brouillon mail commercial | OUI | Texte à copier-coller (pas d'envoi auto) |
-| Brouillon FIC | OUI | Pas de modification de la FIC officielle |
+| Brouillon FIC & Suivi | OUI | Génération selon Motif (Conseil/Modif). Suivi dans O:\FIC |
+| IA Juridique & Conformité | OUI | Base documentaire globale (Juridique & Technique) intégrée |
 | Modification automatique de documents | NON | Trop risqué pour la V1 (Read-Only) |
-| Décision juridique auto | NON | Aide documentaire uniquement |
+| Décision juridique auto | NON | Aide documentaire uniquement, sans engager l'entreprise |
+| Classification automatique (Dossiers) | NON | Backlog (Non prioritaire pour le MVP) |
+| Traitement Standards / Appels d'offres | NON | Backlog (Phase ultérieure) |

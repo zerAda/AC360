@@ -1,14 +1,18 @@
-# État du Projet AC360
+# État du Projet AC360 (GSD Milestone)
 
 ## Phase Courante
-**Phase 1 : Socle AC360 Sécurisé (Étape A)**
+**Phase 7 : Intégration Terminée - Prêt pour les tests utilisateurs (Milestone de Juin)**
 
 ## Statut des Tâches
-- [x] Initialisation du repository Git et des scripts PowerShell de synchronisation avec Copilot Studio (`pac`).
-- [x] Analyse initiale des sources (YAML du bot).
-- [x] Lecture de la documentation d'architecture cible (Charte Produit, Modèle Documentaire, Architecture Etape 2, etc.).
-- [x] Mise en place du framework de planification GSD.
-- [ ] Alignement strict du comportement du bot (YAML) sur les exigences de sécurité et métier.
+- [x] **Phase 1** : Sécurisation et configuration Copilot Studio (`sync_copilot.ps1`, `Documentsmanquants.mcs.yml`, `agent.mcs.yml`).
+- [x] **Phase 2** : Script PnP d'arborescence SharePoint automatisée.
+- [x] **Phase 3** : Pipeline d'extraction OCR via Azure Document Intelligence (strict).
+- [x] **Phase 4** : Moteur d'audit Fabric (Fuzzy Matching) pour la détection d'écarts (`audit_fabric_comparison.py`).
+- [x] **Phase 5** : Intelligence Métier Adel (Règles d'éligibilité FIC, tableau de suivi CSV, RAG sourcé rigoureusement).
+- [x] **Phase 6** : Synthèses et Modèles (Génération FIC en Word `.docx`, Contrôle de complétude SharePoint).
+- [x] Orchestrateur global finalisé (`run_audit_pipeline.ps1`).
 
-## Prochaines Étapes Immédiates
-Exécuter le plan de la Phase 1 (voir `.planning/phases/01-socle-securise/PLAN.md`) pour affiner les rubriques Copilot Studio afin de correspondre exactement au cadre "Read Only, SharePoint RAG, Anti-Hallucination".
+## Prochaines Étapes Immédiates (Backlog Non Prioritaire)
+- Tests avec Maximillien sur une dizaine/quinzaine de dossiers classés pour valider le lancement mi-juin.
+- Implémentation du classement automatisé (Rangement des documents orphelins dans les sous-dossiers).
+- Traitement des leads standards et analyse des cahiers des charges (projets en attente).

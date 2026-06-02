@@ -28,11 +28,17 @@ Cette feuille de route définit les grandes étapes de la construction de l'Assi
 - Définition des règles de contrôle et de rapprochement (ex: garanties SharePoint vs paramétrage Artus).
 - Restitution des écarts par l'AC360 de manière explicable.
 
-### Phase 5 : FIC Brouillon (Étape E)
-- Mapping des champs et génération de fiches d'information commerciales brouillons.
-- Renseignement automatique des sources et des incertitudes.
+### Phase 5 : Règles Métier et Intelligence Juridique (Étape E)
+- Implémentation des règles de gestion d'Adel pour la génération des FIC (Modification vs Reprise).
+- Mise en place du tableau de suivi des FIC (O:\FIC).
+- Exigence stricte de RAG : forcer le bot à sourcer ses réponses et préciser la limite de responsabilité.
+- Configuration du bot pour interroger la base documentaire globale "Juridique & Technique".
 
-### Phase 6 : Juridique et Appels d'Offres (Étape F)
-- Structuration de la base juridique.
-- Assistance avancée à l'analyse d'exigences d'Appels d'Offres.
-- Cadrage des limites de recommandations juridiques.
+### Phase 6 : Synthèses et Modèles Documentaires (Étape F)
+- Assistant métier interne interrogeant un dossier client (risques couverts, assureur, financement, cotisations).
+- Génération de synthèses globales (ex: panorama des régimes pour préparer les BP).
+
+### Phase 7 : Backlog & Projets Non Prioritaires
+- Classification et rangement automatisé des documents dans les bons sous-dossiers selon la matrice de classement.
+- Traitement des standards (leads).
+- Assistance à l'analyse des appels d'offres et des cahiers des charges.
