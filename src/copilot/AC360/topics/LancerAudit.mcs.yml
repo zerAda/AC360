@@ -1,0 +1,42 @@
+mcs.metadata:
+  componentName: Lancer Audit AC360
+  description: Rubrique permettant au commercial de déclencher le pipeline Python d'audit (via FastAPI) depuis le chat.
+kind: AdaptiveDialog
+beginDialog:
+  kind: OnRecognizedIntent
+  id: main
+  intent:
+    displayName: Lancer Audit AC360
+    triggerQueries:
+      - Lance un audit
+      - Audite ce document
+      - Vérifie le contrat
+      - Lance la vérification Fabric
+      - Déclenche l'audit sur le dossier
+  
+  actions:
+    - kind: Question
+      id: ask_doc_path
+      interruptionPolicy:
+        allowInterruption: true
+      variable: init:Topic.DocumentPath
+      prompt: Quel est le nom ou le chemin du document que vous souhaitez auditer ? (ex: C:\docs\contrat.pdf)
+      entity: StringPrebuiltEntity
+
+    - kind: SendActivity
+      id: msg_loading
+      activity: 🔄 Très bien, je lance le moteur d'audit AC360 pour le document {Topic.DocumentPath}. Je me connecte à Microsoft Fabric...
+
+    # Note d'Architecture (Enterprise Grade) :
+    # Ici, dans Copilot Studio, vous devrez ajouter une action "Appeler un flux HTTP" (Power Automate)
+    # Ce flux fera un POST vers notre nouvelle API : http://[SERVEUR_PYTHON]:8000/api/audit
+    # avec le Header X-User-UPN = System.User.PrincipalName
+    
+    # Simulation de l'appel API réussi
+    - kind: SendActivity
+      id: msg_success
+      activity: ✅ La demande d'audit a été envoyée avec succès à l'API Python. Vous recevrez une notification Teams dès que l'analyse OCR et le rapprochement Fabric seront terminés !
+
+    - kind: EndDialog
+      id: end_audit
+      clearTopicQueue: true

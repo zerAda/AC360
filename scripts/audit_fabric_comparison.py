@@ -77,6 +77,49 @@ def fetch_artus_data(client_name=None):
         }
         return pd.DataFrame(mock_data)
 
+def match_client_name(doc_name, fabric_df):
+    """
+    Rapproche le nom du client extrait du document avec les noms de la base Fabric.
+    Utilise thefuzz pour le fuzzy matching, avec un système de pénalités (Enterprise-grade)
+    pour éviter les faux positifs (ex: "GEREP SA" vs "GEREP SAS").
+    """
+    if fabric_df.empty:
+        return None, 0
+
+    best_match = None
+    best_score = 0
+    
+    # Mots de rejet (entités différentes)
+    rejet_words = ["banque", "holding", "international", "france", "groupe"]
+
+    for index, row in fabric_df.iterrows():
+        fabric_name = str(row['nom_client'])
+        
+        # Score de base
+        score = fuzz.token_sort_ratio(doc_name.lower(), fabric_name.lower())
+        
+        # Pénalité stricte (Enterprise Grade)
+        for word in rejet_words:
+            if (word in doc_name.lower()) != (word in fabric_name.lower()):
+                score -= 20 # Pénalité très lourde
+                
+        # Pénalité de longueur
+        len_diff = abs(len(doc_name) - len(fabric_name))
+        if len_diff > 10:
+            score -= 10
+            
+        if score > best_score:
+            best_score = score
+            best_match = row
+
+    # Le seuil d'exigence passe de 75% à 85% (Plus strict)
+    if best_score >= 85:
+        print(f"[MATCHING] Client identifié de manière sécurisée : '{doc_name}' => '{best_match['nom_client']}' (Score: {best_score}%)")
+        return best_match, best_score
+    else:
+        print(f"[ATTENTION] Aucun match suffisamment sûr trouvé pour '{doc_name}' (Meilleur score: {best_score}%)")
+        return None, best_score
+
 def perform_audit(ocr_data, artus_df):
     """
     Compare les données OCR du document avec les données de gestion Artus.
@@ -90,21 +133,10 @@ def perform_audit(ocr_data, artus_df):
     
     print(f"-> Nom client détecté sur le document : {doc_client_name}")
     
-    # 2. Règle d'audit : Fuzzy Matching sur le nom du client (Seuil 75%)
-    best_match_score = 0
-    best_match_row = None
-    
-    for index, row in artus_df.iterrows():
-        artus_name = str(row['nom_client'])
-        # fuzzy_score va de 0 à 100
-        score = fuzz.token_sort_ratio(doc_client_name.upper(), artus_name.upper())
-        if score > best_match_score:
-            best_match_score = score
-            best_match_row = row
+    # 2. Règle d'audit : Fuzzy Matching sur le nom du client
+    best_match_row, best_match_score = match_client_name(doc_client_name, artus_df)
 
-    if best_match_score >= 75:
-        print(f"-> CORRESPONDANCE CLIENT TROUVÉE : {best_match_row['nom_client']} (Score de certitude: {best_match_score}%)")
-        
+    if best_match_row is not None:
         # 3. Comparaison des champs clés (ex: Plafond Hospitalisation)
         # On simule l'extraction du plafond depuis l'OCR (Phase 3)
         doc_plafond = None

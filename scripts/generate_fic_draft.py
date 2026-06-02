@@ -1,9 +1,18 @@
 import os
+import sys
 import json
 import argparse
 from datetime import datetime
 
 import csv
+
+# Import du gestionnaire de base de données
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+try:
+    from db_manager import log_fic_generation
+except ImportError:
+    print("Erreur : le module db_manager est introuvable.")
+    exit(1)
 
 try:
     from docx import Document
@@ -32,18 +41,9 @@ def evaluate_fic_rules(motif):
 
 def update_fic_tracking(client_name, motif, is_eligible, status_text):
     """
-    Met à jour le tableau de bord de suivi des FIC (fichier CSV).
+    Met à jour le tableau de bord de suivi des FIC (Base de Données SQLite).
     """
-    csv_file = "suivi_fic_2026.csv"
-    file_exists = os.path.exists(csv_file)
-    
-    with open(csv_file, mode='a', newline='', encoding='utf-8-sig') as f:
-        writer = csv.writer(f, delimiter=';')
-        if not file_exists:
-            writer.writerow(["Date", "Client", "Motif de l'opération", "Éligibilité FIC", "Statut / Raison"])
-        writer.writerow([datetime.now().strftime('%Y-%m-%d %H:%M:%S'), client_name, motif, "OUI" if is_eligible else "NON", status_text])
-    
-    print(f"[SUIVI FIC] Ligne ajoutée au tableau de bord : {csv_file}")
+    log_fic_generation(client_name, motif, is_eligible, status_text)
 
 
 def generate_fic_document(client_name, date_effet, plafonds_garanties, output_path):
