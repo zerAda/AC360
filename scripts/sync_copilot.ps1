@@ -27,19 +27,22 @@ $BotId = "c82f127c-8f47-f111-bec6-000d3ab9a512"
 $CopilotParentDir = Join-Path -Path $PSScriptRoot -ChildPath "..\src\copilot"
 $CopilotProjectDir = Join-Path -Path $CopilotParentDir -ChildPath "AC360"
 
+$pacCmd = "pac"
 if (-not (Get-Command "pac" -ErrorAction SilentlyContinue)) {
-    Write-Host "Erreur: Le Power Platform CLI (pac) n'est pas reconnu dans ce terminal." -ForegroundColor Red
-    Write-Host "S'il vient d'être installé, fermez ce terminal et rouvrez-en un nouveau." -ForegroundColor Yellow
-    exit 1
+    # Attempt to find pac.exe in local app data
+    $pacPath = Get-ChildItem -Path "$env:LOCALAPPDATA\Microsoft\PowerAppsCLI" -Filter "pac.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+    if ($pacPath) {
+        $pacCmd = $pacPath
+        Write-Host "Utilisation de pac depuis: $pacCmd" -ForegroundColor Cyan
+    } else {
+        Write-Host "Erreur: Le Power Platform CLI (pac) n'est pas reconnu dans ce terminal et n'a pas été trouvé dans LocalAppData." -ForegroundColor Red
+        Write-Host "S'il vient d'être installé, fermez ce terminal et rouvrez-en un nouveau." -ForegroundColor Yellow
+        exit 1
+    }
 }
 
 # 1. Authentification
-Write-Host "Vérification de l'authentification..." -ForegroundColor Cyan
-pac auth select --environment $EnvironmentId
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Authentification requise..." -ForegroundColor Yellow
-    pac auth create --environment $EnvironmentId
-}
+Write-Host "Assurez-vous d'être authentifié via 'pac auth create' si ce n'est pas déjà fait." -ForegroundColor Yellow
 
 # 2. Synchronisation
 if ($Mode -eq 'Pull') {
@@ -49,11 +52,11 @@ if ($Mode -eq 'Pull') {
         Write-Host "Premier téléchargement, utilisation de 'clone'..." -ForegroundColor Cyan
         if (-not (Test-Path $CopilotParentDir)) { New-Item -ItemType Directory -Path $CopilotParentDir | Out-Null }
         Set-Location $CopilotParentDir
-        pac copilot clone --bot $BotId --output-dir . --environment $EnvironmentId
+        & $pacCmd copilot clone --bot $BotId --output-dir . --environment $EnvironmentId
     } else {
         Write-Host "Dossier existant, utilisation de 'pull'..." -ForegroundColor Cyan
         Set-Location $CopilotProjectDir
-        pac copilot pull
+        & $pacCmd copilot pull
     }
 
     if ($LASTEXITCODE -eq 0) {
@@ -78,7 +81,7 @@ elseif ($Mode -eq 'Push') {
     }
 
     Set-Location $CopilotProjectDir
-    pac copilot push
+    & $pacCmd copilot push
 
     if ($LASTEXITCODE -eq 0) {
         Write-Host "PUSH réussi ! Le bot sur Copilot Studio a été mis à jour." -ForegroundColor Green
