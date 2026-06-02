@@ -1,49 +1,38 @@
-# Roadmap: Application d'Audit PDF/Excel
+# Roadmap Projet AC360
 
-## Milestones
+Cette feuille de route définit les grandes étapes de la construction de l'Assistant Client 360, alignées sur l'architecture cible.
 
-- ✅ **v1.0 MVP** — Phases 1-5 (shipped 2026-04-29)
-- 📋 **v2.0** — Export, historique, batch (planned)
+## Phases d'Implémentation
 
-## Phases
+### Phase 1 : Socle AC360 Sécurisé (Étape A)
+- Intégration Teams et Copilot Studio.
+- Authentification Entra ID.
+- Cadrage des instructions (prompts) et des rubriques (topics) de base.
+- Mise en place du RAG sur SharePoint avec sources sécurisées.
+- *Statut : En cours*
 
-<details>
-<summary>✅ v1.0 MVP (Phases 1-5) — SHIPPED 2026-04-29</summary>
+### Phase 2 : Qualité Documentaire (Étape B)
+- Structuration des dossiers clients dans SharePoint.
+- Définition des métadonnées minimales et règles de nommage.
+- Implémentation logique de la "Checklist de complétude" et détection des documents manquants.
+- Gestion explicite des statuts documentaires (Brouillon, Validé, Archivé).
 
-- [x] Phase 1: UI/UX et Contrôle Audit (1/1 plans) — completed 2026-04-29
-- [x] Phase 2: Nettoyage de Données (1/1 plans) — completed 2026-04-29
-- [x] Phase 3: Optimisation Performance (1/1 plans) — completed 2026-04-29
-- [x] Phase 4: Calcul des Écarts (1/1 plans) — completed 2026-04-29
-- [x] Phase 5: Post-Audit (1/1 plans) — completed 2026-04-29
+### Phase 3 : OCR Azure (Étape C)
+- Intégration d'Azure AI Document Intelligence.
+- Extraction automatique du texte, des tableaux et champs clés depuis des PDFs scannés/structurés.
+- Pré-remplissage des métadonnées dans SharePoint.
+- Workflow de validation humaine pour les champs critiques.
 
-</details>
+### Phase 4 : Fabric / Artus (Étape D)
+- Consolidation des données de gestion (Artus) dans Microsoft Fabric via des tables normalisées.
+- Définition des règles de contrôle et de rapprochement (ex: garanties SharePoint vs paramétrage Artus).
+- Restitution des écarts par l'AC360 de manière explicable.
 
-### 🚧 v2.0 — Features Avancées (In Progress)
+### Phase 5 : FIC Brouillon (Étape E)
+- Mapping des champs et génération de fiches d'information commerciales brouillons.
+- Renseignement automatique des sources et des incertitudes.
 
-- [x] Phase 6: Extraction PDF Robuste (pdfplumber, montants fiables, multi-pages) — completed 2026-04-29
-- [x] Phase 7: Export des résultats (PDF, Excel, CSV) — completed 2026-04-29
-- [x] Phase 8: Historique des audits (SQLite) — completed 2026-04-29
-- [x] Phase 9: Mode batch (multi-fichiers) — completed 2026-04-29
-- [x] Phase 10: Détection automatique (colonnes Excel) — completed 2026-04-29
-- [ ] Phase 8: Historique des audits (SQLite)
-- [ ] Phase 9: Mode batch (traitement multi-fichiers)
-- [ ] Phase 10: Détection automatique des colonnes Excel
-
-## Progress
-
-| Phase | Milestone | Plans Complete | Status | Completed |
-| ----- | --------- | -------------- | ------ | --------- |
-| 1. UI/UX | v1.0 | 1/1 | Complete | 2026-04-29 |
-| 2. Nettoyage | v1.0 | 1/1 | Complete | 2026-04-29 |
-| 3. Performance | v1.0 | 1/1 | Complete | 2026-04-29 |
-| 4. Calcul Écarts | v1.0 | 1/1 | Complete | 2026-04-29 |
-| 5. Post-Audit | v1.0 | 1/1 | Complete | 2026-04-29 |
-| 6. Export | v2.0 | 0/1 | Not started | — |
-| 7. Historique | v2.0 | 0/1 | Not started | — |
-| 8. Batch | v2.0 | 0/1 | Not started | — |
-| 9. Auto-detect | v2.0 | 0/1 | Not started | — |
-
----
-
-*Roadmap archived: 2026-04-29*
-*Full v1.0 roadmap: [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md)*
+### Phase 6 : Juridique et Appels d'Offres (Étape F)
+- Structuration de la base juridique.
+- Assistance avancée à l'analyse d'exigences d'Appels d'Offres.
+- Cadrage des limites de recommandations juridiques.

@@ -5,7 +5,7 @@ beginDialog:
   kind: OnRecognizedIntent
   id: main
   intent:
-    displayName:
+    displayName: Documents manquants
     triggerQueries:
       - documents manquants
       - il me manque des documents
@@ -16,11 +16,55 @@ beginDialog:
       - dossier incomplet
       - pièces justificatives manquantes
       - je dois fournir d'autres documents ?
+      - le dossier est-il complet ?
+      - vérifie la complétude du dossier
 
   actions:
     - kind: SendActivity
-      id: SendActivity_qFB4qV
-      activity: Pour vérifier la complétude de votre dossier, veuillez fournir la liste des documents que vous avez déjà soumis. Je pourrai alors vous indiquer s'il manque des pièces ou si le dossier est complet.
+      id: msg_intro_documents_manquants
+      activity: Je vais vérifier la complétude du dossier client en comparant les documents présents dans SharePoint avec la checklist officielle.
 
-inputType: {}
-outputType: {}
+    - kind: SearchAndSummarizeContent
+      id: search_documents_manquants
+      variable: Topic.Answer
+      userInput: =System.Activity.Text
+      moderationLevel: Medium
+      additionalInstructions: |-
+        Tu es Assistant Client 360.
+        
+        Objectif :
+        Vérifier la complétude d'un dossier client en analysant les documents accessibles dans SharePoint.
+        
+        Checklist officielle attendue pour un dossier complet :
+        1. Fiche administrative client (Obligatoire)
+        2. Contrat signé (Obligatoire)
+        3. Tableau de garantie (Obligatoire)
+        4. Synthèse des modalités (Obligatoire)
+        5. FIC à jour (Obligatoire)
+        
+        Règles strictes :
+        - Compare les documents trouvés avec cette checklist.
+        - Ne jamais inventer la présence ou l'absence d'un document.
+        - Si un document a le statut BROUILLON, signale qu'il n'est pas validé.
+        - Liste clairement ce qui est "Présent", "Manquant", ou "Douteux/Obsolète".
+        - Conclus par une recommandation (ex: "Action recommandée : fournir le contrat signé").
+      sharePointSearchDataSource: {}
+
+    - kind: ConditionGroup
+      id: condition_documents_manquants
+      conditions:
+        - id: has_answer_documents_manquants
+          condition: =!IsBlank(Topic.Answer)
+          actions:
+            - kind: EndDialog
+              id: end_documents_manquants
+              clearTopicQueue: true
+
+      elseActions:
+        - kind: SendActivity
+          id: msg_no_documents_manquants
+          activity: Je n’ai pas trouvé d’information accessible sur ce client dans les documents disponibles, je ne peux donc pas vérifier la complétude.
+
+        - kind: EndDialog
+          id: end_no_documents_manquants
+          clearTopicQueue: true
