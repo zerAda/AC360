@@ -12,7 +12,7 @@ Automatiser l'extraction intelligente des métadonnées (nom du client, dates, m
    - Créer un outil Python utilisant `azure-ai-formrecognizer`.
    - Utiliser le modèle `prebuilt-document` (ou `prebuilt-layout`) adapté aux documents non structurés complexes (ex: contrats d'assurance).
    - Extraire les paires Clé-Valeur et les Tableaux.
-   - Si les variables d'environnement d'Azure ne sont pas configurées, le script doit fonctionner en mode "Mock" (bouchon) pour renvoyer des métadonnées de test, afin de ne pas bloquer le développement.
+   - Si les variables d'environnement d'Azure ne sont pas configurées, le script retournera une erreur bloquante afin de s'assurer qu'aucun test ne tourne à vide.
    
 3. **Dépendances**
    - Mettre à jour `requirements.txt` avec `azure-ai-formrecognizer` et `python-dotenv`.

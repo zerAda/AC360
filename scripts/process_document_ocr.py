@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import argparse
 from dotenv import load_dotenv
@@ -7,49 +8,15 @@ from dotenv import load_dotenv
 try:
     from azure.core.credentials import AzureKeyCredential
     from azure.ai.formrecognizer import DocumentAnalysisClient
-    AZURE_SDK_AVAILABLE = True
 except ImportError:
-    AZURE_SDK_AVAILABLE = False
+    print("Erreur : Le SDK Azure n'est pas installé. Exécutez 'pip install -r requirements.txt'.")
+    sys.exit(1)
 
 # Load environment variables from .env file
 load_dotenv()
 
 AZURE_OCR_ENDPOINT = os.getenv("AZURE_OCR_ENDPOINT")
 AZURE_OCR_KEY = os.getenv("AZURE_OCR_KEY")
-
-def mock_extract_document(file_path):
-    """
-    Simule l'extraction OCR si les identifiants Azure ne sont pas disponibles.
-    Renvoie un JSON structuré factice pour le développement.
-    """
-    print(f"[MOCK MODE] Traitement simulé du fichier : {file_path}")
-    
-    mock_data = {
-        "metadata": {
-            "source_file": os.path.basename(file_path),
-            "extraction_mode": "mock",
-            "confidence_overall": 0.95
-        },
-        "fields": {
-            "nom_client": {"value": "CLIENT FACTICE SA", "confidence": 0.99},
-            "date_document": {"value": "2026-05-10", "confidence": 0.90},
-            "type_document": {"value": "TABLEAU DE GARANTIE", "confidence": 0.85}
-        },
-        "tables": [
-            {
-                "row_count": 2,
-                "column_count": 2,
-                "cells": [
-                    {"row_index": 0, "column_index": 0, "content": "Garantie"},
-                    {"row_index": 0, "column_index": 1, "content": "Plafond"},
-                    {"row_index": 1, "column_index": 0, "content": "Hospitalisation"},
-                    {"row_index": 1, "column_index": 1, "content": "400% BR"}
-                ]
-            }
-        ]
-    }
-    return mock_data
-
 
 def extract_document_azure(file_path):
     """
@@ -123,12 +90,12 @@ def main():
         print(f"Erreur : Le fichier '{file_path}' n'existe pas.")
         exit(1)
 
-    # Choix du moteur d'extraction
-    if AZURE_OCR_ENDPOINT and AZURE_OCR_KEY and AZURE_SDK_AVAILABLE:
-        result_data = extract_document_azure(file_path)
-    else:
-        print("[WARNING] Clés Azure non trouvées ou SDK non installé. Bascule en mode MOCK.")
-        result_data = mock_extract_document(file_path)
+    if not AZURE_OCR_ENDPOINT or not AZURE_OCR_KEY:
+        print("Erreur : Les variables d'environnement AZURE_OCR_ENDPOINT et AZURE_OCR_KEY sont manquantes.")
+        print("Veuillez exécuter le script de déploiement Azure et ajouter ces valeurs dans votre fichier .env.")
+        exit(1)
+
+    result_data = extract_document_azure(file_path)
 
     # Sauvegarde du résultat
     with open(args.output, 'w', encoding='utf-8') as f:
