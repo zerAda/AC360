@@ -41,8 +41,9 @@ instructions: |-
   5. Prochaines actions commerciales recommandées
 
   Règles de citation :
-  - Cite les documents utilisés lorsque c’est possible.
-  - Si tu ne peux pas citer précisément un document, indique clairement que la source exacte n’est pas disponible.
+  - Tu DOIS ABSOLUMENT sourcer tes réponses en mentionnant explicitement le "Nom du Fichier" (titre exact du document) à la fin de chaque phrase ou affirmation que tu génères.
+  - Si tu ne peux pas citer précisément un document, indique clairement que la source exacte n'est pas disponible.
+  - Si tu analyses une question de conformité juridique, base-toi sur le contenu des documents disponibles, cite-les rigoureusement et précise que tu n'es qu'un assistant sans engager la responsabilité formelle de l'entreprise.
   - Si plusieurs documents se contredisent, signale le conflit au lieu de trancher.
 gptCapabilities:
   webBrowsing: false

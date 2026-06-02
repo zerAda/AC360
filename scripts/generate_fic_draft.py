@@ -3,6 +3,8 @@ import json
 import argparse
 from datetime import datetime
 
+import csv
+
 try:
     from docx import Document
     from docx.shared import Pt, Inches
@@ -10,6 +12,39 @@ try:
 except ImportError:
     print("Erreur : la librairie python-docx n'est pas installée. (pip install python-docx)")
     exit(1)
+
+def evaluate_fic_rules(motif):
+    """
+    Évalue les règles métier d'Adel pour déterminer si une FIC doit être générée.
+    """
+    motif_lower = motif.lower()
+    
+    # Critères de création de FIC
+    if any(keyword in motif_lower for keyword in ["conseil", "modif", "modification", "catégorie", "categorie"]):
+        return True, "Requis (Modification/Conseil)"
+    
+    # Critères d'exclusion de FIC
+    if any(keyword in motif_lower for keyword in ["reprise de gestion", "changement tarif", "gestionnaire"]):
+        return False, "Non requis (Reprise/Tarif)"
+        
+    # Par défaut, si doute, on génère
+    return True, "Requis (Par défaut)"
+
+def update_fic_tracking(client_name, motif, is_eligible, status_text):
+    """
+    Met à jour le tableau de bord de suivi des FIC (fichier CSV).
+    """
+    csv_file = "suivi_fic_2026.csv"
+    file_exists = os.path.exists(csv_file)
+    
+    with open(csv_file, mode='a', newline='', encoding='utf-8-sig') as f:
+        writer = csv.writer(f, delimiter=';')
+        if not file_exists:
+            writer.writerow(["Date", "Client", "Motif de l'opération", "Éligibilité FIC", "Statut / Raison"])
+        writer.writerow([datetime.now().strftime('%Y-%m-%d %H:%M:%S'), client_name, motif, "OUI" if is_eligible else "NON", status_text])
+    
+    print(f"[SUIVI FIC] Ligne ajoutée au tableau de bord : {csv_file}")
+
 
 def generate_fic_document(client_name, date_effet, plafonds_garanties, output_path):
     """
@@ -99,7 +134,20 @@ def main():
 
     # Extraction sécurisée des données
     client_name = data.get("meilleur_match_fabric") or data.get("client_document") or "CLIENT_INCONNU"
+    motif_operation = data.get("motif_operation", "inconnu")
     
+    print(f"Évaluation des règles FIC pour le client '{client_name}' (Motif: {motif_operation})")
+    
+    # Validation des règles métier d'Adel
+    is_eligible, status_text = evaluate_fic_rules(motif_operation)
+    
+    # Mise à jour du tableau de suivi (toujours exécuté, pour la traçabilité)
+    update_fic_tracking(client_name, motif_operation, is_eligible, status_text)
+    
+    if not is_eligible:
+        print(f"[SKIP FIC] Le motif '{motif_operation}' ne requiert pas de création de FIC.")
+        return
+
     # Construction d'un mini-dictionnaire des garanties pour le template
     garanties = {}
     for ecart in data.get("details_ecarts", []):

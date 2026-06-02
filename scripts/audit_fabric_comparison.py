@@ -142,6 +142,7 @@ def perform_audit(ocr_data, artus_df):
         "client_document": doc_client_name,
         "meilleur_match_fabric": best_match_row['nom_client'] if best_match_row is not None else None,
         "score_correspondance_nom": best_match_score,
+        "motif_operation": "modification de garantie", # Valeur simulée pour illustrer les règles d'Adel
         "details_ecarts": audit_results
     }
 
