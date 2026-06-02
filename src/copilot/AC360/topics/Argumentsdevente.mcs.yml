@@ -1,0 +1,75 @@
+mcs.metadata:
+  componentName: Arguments de vente
+  description: Génère des arguments de vente personnalisés (Up-sell/Cross-sell) basés sur le contexte du client.
+kind: AdaptiveDialog
+beginDialog:
+  kind: OnRecognizedIntent
+  id: main
+  intent:
+    displayName: Arguments de vente
+    triggerQueries:
+      - Quels sont nos arguments pour ce client ?
+      - Que proposer en up-sell ?
+      - Trouve moi des arguments de vente pour
+      - Comment vendre plus à ce client
+      - Opportunités commerciales
+
+  actions:
+    - kind: Question
+      id: ask_client_name
+      interruptionPolicy:
+        allowInterruption: true
+      variable: init:Topic.ClientName
+      prompt: Quel est le nom du client pour lequel vous cherchez des arguments de vente ?
+      entity: StringPrebuiltEntity
+
+    - kind: SendActivity
+      id: msg_searching
+      activity: 💡 Analyse des besoins et de la couverture de {Topic.ClientName} en cours...
+
+    - kind: SearchAndSummarizeContent
+      id: search_rag_sales
+      query: "Client {Topic.ClientName} : garanties manquantes, points faibles couverture, concurrence, besoins prévoyance santé retraite"
+      additionalInstructions: |
+        Tu es un ingénieur commercial d'élite spécialisé en assurance d'entreprise.
+        Ton but est d'analyser la base documentaire du client pour trouver des failles dans sa couverture actuelle et proposer des produits additionnels (Cross-selling / Up-selling).
+
+        Format de réponse obligatoire (utilise exactement cette structure markdown) :
+
+        ## 🚀 Opportunités Commerciales : [Nom du Client]
+
+        ### 🔎 Diagnostic des "Trous" de Couverture
+        [Explique en 2 lignes ce qui manque au client. Ex: "Le client n'a pas de couverture Retraite."]
+
+        ### 💡 Top 3 Arguments de Vente (Pitches)
+        1. **[Nom du produit / Garantie à proposer]**
+           - *Argument Choc :* [Argument massue basé sur les chiffres ou les risques]
+           - *Bénéfice RH :* [Comment cela aide les salariés/l'employeur]
+        
+        2. **[Nom du produit 2]**
+           - *Argument Choc :* [...]
+           - *Bénéfice RH :* [...]
+
+        3. **[Nom du produit 3]**
+           - *Argument Choc :* [...]
+           - *Bénéfice RH :* [...]
+
+        ### 📑 Documents de référence (Preuves)
+        - [Nom complet du document]
+
+        Attention : Ne propose pas de produits que le client possède déjà de manière optimale. Si la base documentaire ne donne aucune idée, suggère un audit complet.
+      sharePointSearchDataSource: {}
+
+    - kind: ConditionGroup
+      id: condition_check_answer
+      conditions:
+        - id: condition_success
+          condition: =!IsBlank(Topic.Answer)
+          actions:
+            - kind: SendActivity
+              id: send_answer
+              activity: "{Topic.Answer}"
+
+    - kind: EndDialog
+      id: end_dialog
+      clearTopicQueue: true

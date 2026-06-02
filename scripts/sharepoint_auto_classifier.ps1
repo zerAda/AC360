@@ -1,0 +1,102 @@
+<#
+.SYNOPSIS
+    Script "Femme de Ménage" SharePoint (AC360 Auto-Classifier).
+.DESCRIPTION
+    Ce script scanne un dossier "Boîte de réception" (Inbox) sur SharePoint, analyse le nom des fichiers
+    pour en déduire le nom du client, et déplace les fichiers vers le dossier du client correspondant.
+    Si le dossier client n'existe pas, il le crée automatiquement.
+    
+    Version: Fast-Mode (Basé sur le nom de fichier, sans OCR).
+#>
+
+param(
+    [string]$SiteUrl = "https://gerep.sharepoint.com/sites/AC360",
+    [string]$InboxFolderUrl = "/sites/AC360/Shared Documents/Boite_De_Reception",
+    [string]$TargetRootUrl = "/sites/AC360/Shared Documents/Clients - Documents",
+    [string]$LogFile = "classification_report.csv"
+)
+
+# 1. Connexion à SharePoint (Mode interactif pour le test, Entra ID en Prod)
+Write-Host "Connexion au site SharePoint : $SiteUrl" -ForegroundColor Cyan
+try {
+    Connect-PnPOnline -Url $SiteUrl -Interactive
+} catch {
+    Write-Host "[ERREUR] Échec de la connexion SharePoint. Veuillez vérifier vos accès." -ForegroundColor Red
+    exit
+}
+
+# 2. Récupération des fichiers en vrac dans la boîte de réception
+Write-Host "Analyse du dossier Inbox : $InboxFolderUrl" -ForegroundColor Yellow
+$files = Get-PnPFolderItem -FolderSiteRelativeUrl $InboxFolderUrl -ItemType File
+
+if ($files.Count -eq 0) {
+    Write-Host "✅ Aucun document orphelin à classer. Le dossier est propre." -ForegroundColor Green
+    exit
+}
+
+Write-Host "Trouvé $($files.Count) fichier(s) à classer." -ForegroundColor Yellow
+
+$logData = @()
+
+foreach ($file in $files) {
+    $fileName = $file.Name
+    Write-Host "`nTraitement de : $fileName" -ForegroundColor Cyan
+    
+    # 3. Extraction du nom du client via Regex
+    # Exemple de nom attendu : "Contrat_Sante_GerepSA_2026.pdf" -> Extraction "GerepSA"
+    # Expression basique : On cherche le mot entre le 2ème et 3ème tiret/underscore (convention de nommage)
+    # Ou plus simple : on extrait le mot après "Client_" ou "Contrat_"
+    
+    $clientName = "INCONNU"
+    
+    if ($fileName -match "(?i)(Contrat|Devis|Avenant|Client)[_-](?<ClientName>[a-zA-Z0-9]+)[_-]?") {
+        $clientName = $Matches['ClientName']
+    } else {
+        # Si le nom ne respecte pas la convention, on l'isole dans un dossier "À Vérifier Manuellement"
+        $clientName = "_A_VERIFIER"
+    }
+
+    $targetFolderRelativeUrl = "$TargetRootUrl/$clientName"
+    
+    # 4. Vérification et Création du dossier client s'il n'existe pas
+    try {
+        $folderExists = Get-PnPFolder -Url $targetFolderRelativeUrl -ErrorAction Stop
+    } catch {
+        Write-Host "Création du nouveau dossier client : $clientName" -ForegroundColor Magenta
+        Resolve-PnPFolder -SiteRelativePath $targetFolderRelativeUrl | Out-Null
+    }
+
+    # 5. Déplacement du fichier
+    try {
+        $sourceUrl = "$InboxFolderUrl/$fileName"
+        $destUrl = $targetFolderRelativeUrl
+        
+        Move-PnPFile -SourceUrl $sourceUrl -TargetUrl $destUrl -Force
+        Write-Host "➜ Déplacé avec succès vers : $destUrl" -ForegroundColor Green
+        
+        $logData += [PSCustomObject]@{
+            Date = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+            FileName = $fileName
+            DetectedClient = $clientName
+            Status = "SUCCESS"
+            TargetFolder = $targetFolderRelativeUrl
+        }
+    } catch {
+        Write-Host "[ERREUR] Échec du déplacement pour $fileName : $_" -ForegroundColor Red
+        $logData += [PSCustomObject]@{
+            Date = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+            FileName = $fileName
+            DetectedClient = $clientName
+            Status = "ERROR"
+            TargetFolder = $targetFolderRelativeUrl
+        }
+    }
+}
+
+# 6. Export des logs
+if ($logData.Count -gt 0) {
+    $logData | Export-Csv -Path $LogFile -NoTypeInformation -Encoding UTF8 -Append -Delimiter ";"
+    Write-Host "`nRapport de classement exporté vers : $LogFile" -ForegroundColor Cyan
+}
+
+Write-Host "--- Classement SharePoint Terminé ---" -ForegroundColor Green

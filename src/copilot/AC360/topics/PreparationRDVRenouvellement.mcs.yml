@@ -1,0 +1,78 @@
+mcs.metadata:
+  componentName: Préparation RDV Renouvellement
+  description: Génère une fiche de synthèse stratégique avant un rendez-vous client (SWOT, Tarifs).
+kind: AdaptiveDialog
+beginDialog:
+  kind: OnRecognizedIntent
+  id: main
+  intent:
+    displayName: Préparation RDV Renouvellement
+    triggerQueries:
+      - Prépare mon rdv de renouvellement avec le client
+      - Aide moi pour mon rdv client
+      - Fais moi une fiche de préparation pour le rdv
+      - Génère le dossier de renouvellement
+      - Synthèse avant rdv
+
+  actions:
+    - kind: Question
+      id: ask_client_name
+      interruptionPolicy:
+        allowInterruption: true
+      variable: init:Topic.ClientName
+      prompt: Pour quel client préparez-vous ce rendez-vous de renouvellement ?
+      entity: StringPrebuiltEntity
+
+    - kind: SendActivity
+      id: msg_searching
+      activity: 🔍 Très bien, je parcoure la base de connaissances SharePoint pour {Topic.ClientName} (Contrats, sinistralité, et comptes-rendus). Un instant...
+
+    - kind: SearchAndSummarizeContent
+      id: search_rag_rdv
+      query: "Dossier {Topic.ClientName} : historique, contrats actuels, sinistres, plaintes ou insatisfactions, tarifs en cours"
+      additionalInstructions: |
+        Tu es un expert en assurance et prévoyance d'entreprise préparant un rendez-vous stratégique de renouvellement.
+        Analyse les documents trouvés et structure ta réponse selon ce format exact :
+
+        ## 📅 Fiche de Préparation RDV : [Nom du Client]
+
+        ### 📊 Situation Actuelle (SWOT Rapide)
+        - **🟢 Forces (Acquis) :** [Quelles garanties ont-ils déjà ?]
+        - **🔴 Faiblesses / Risques :** [Y a-t-il eu des plaintes ? Une forte sinistralité ?]
+
+        ### 💰 Enjeux Financiers
+        | Contrat | Statut | Risque de Majoration ⚠️ |
+        |---|---|---|
+        | [ex: Frais de Santé] | [En cours/À renouveler] | [Oui/Non] |
+
+        ### 🎯 Stratégie Conseillée (À aborder en RDV)
+        1. [Sujet prioritaire 1]
+        2. [Sujet prioritaire 2]
+
+        **Sources utilisées :**
+        - [Nom complet du fichier 1]
+        - [Nom complet du fichier 2]
+
+        Si aucune information n'est trouvée, précise : "Les documents récents ne permettent pas de conclure sur ce point."
+      sharePointSearchDataSource: {}
+
+    - kind: ConditionGroup
+      id: condition_check_answer
+      conditions:
+        - id: condition_success
+          condition: =!IsBlank(Topic.Answer)
+          actions:
+            - kind: SendActivity
+              id: send_answer
+              activity: "{Topic.Answer}"
+      
+            - kind: SendActivity
+              id: msg_followup
+              activity: Souhaitez-vous également que je génère des arguments de vente pour du Cross-Selling sur ce dossier ?
+              suggestedPrompts:
+                - Quels sont nos arguments pour ce client ?
+                - Rédige un mail de confirmation de rdv
+
+    - kind: EndDialog
+      id: end_dialog
+      clearTopicQueue: true
