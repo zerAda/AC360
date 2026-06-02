@@ -1,0 +1,26 @@
+mcs.metadata:
+  componentName: Recherche juridique documentaire
+kind: AdaptiveDialog
+beginDialog:
+  kind: OnRecognizedIntent
+  id: main
+  intent:
+    displayName:
+    triggerQueries:
+      - recherche juridique documentaire
+      - aide pour recherche juridique
+      - trouver des documents juridiques
+      - comment faire une recherche documentaire en droit
+      - besoin d'aide pour une recherche juridique
+      - conseils pour la recherche de textes juridiques
+      - où trouver des sources juridiques fiables
+      - méthodologie de recherche documentaire en droit
+      - accès à la documentation juridique
+
+  actions:
+    - kind: SendActivity
+      id: SendActivity_oZ9SCY
+      activity: As an AI language model, I am not a licensed attorney and cannot provide legal advice. It's important to seek out the advice of a qualified legal professional who is licensed to practice law in your jurisdiction. They will be able to provide you with the specific legal advice that you need based on your individual circumstances.
+
+inputType: {}
+outputType: {}

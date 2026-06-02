@@ -1,0 +1,48 @@
+mcs.metadata:
+  componentName: En cas d’erreur
+  description: Cette rubrique système se déclenche lorsque l’assistant rencontre une erreur. Lorsque vous utilisez le volet de conversation instantanée de test, la description complète de l’erreur est affichée.
+kind: AdaptiveDialog
+startBehavior: UseLatestPublishedContentAndCancelOtherTopics
+beginDialog:
+  kind: OnError
+  id: main
+  actions:
+    - kind: SetVariable
+      id: setVariable_timestamp
+      variable: init:Topic.CurrentTime
+      value: =Text(Now(), DateTimeFormat.UTC)
+
+    - kind: ConditionGroup
+      id: condition_1
+      conditions:
+        - id: bL4wmY
+          condition: =System.Conversation.InTestMode = true
+          actions:
+            - kind: SendActivity
+              id: sendMessage_XJBYMo
+              activity: |-
+                Message d’erreur : {System.Error.Message}
+                Code d’erreur : {System.Error.Code}
+                ID de conversation : {System.Conversation.Id}
+                Heure (UTC) : {Topic.CurrentTime}
+
+      elseActions:
+        - kind: SendActivity
+          id: sendMessage_dZ0gaF
+          activity:
+            text:
+              - |-
+                Une erreur s’est produite.
+                Code d’erreur : {System.Error.Code}
+                ID de conversation : {System.Conversation.Id}
+                Heure (UTC) : {Topic.CurrentTime}.
+            speak:
+              - Une erreur s’est produite. Réessayez.
+
+    - kind: LogCustomTelemetryEvent
+      id: 9KwEAn
+      eventName: OnErrorLog
+      properties: "={ErrorMessage: System.Error.Message, ErrorCode: System.Error.Code, TimeUTC: Topic.CurrentTime, ConversationId: System.Conversation.Id}"
+
+    - kind: CancelAllDialogs
+      id: NW7NyY

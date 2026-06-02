@@ -1,0 +1,122 @@
+mcs.metadata:
+  componentName: Réaffecter
+  description: |-
+    Cette rubrique système est déclenchée quand l’utilisateur indique qu’il souhaite parler à un représentant.
+    Vous pouvez configurer la manière dont l’assistant gère les scénarios de transfert à un agent humain dans les paramètres de l’assistant.
+    Si votre assistant ne gère pas les réaffectations, cette rubrique doit être désactivée.
+kind: AdaptiveDialog
+startBehavior: CancelOtherTopics
+beginDialog:
+  kind: OnEscalate
+  id: main
+  intent:
+    displayName: Réaffecter
+    includeInOnSelectIntent: false
+    triggerQueries:
+      - Parler à un agent
+      - Discuter avec un agent
+      - Échanger avec un agent
+      - Parler à une personne
+      - Discuter avec une personne
+      - Échanger avec une personne
+      - Parler à quelqu’un
+      - Discuter avec quelqu’un
+      - Rappeler
+      - Appeler le service clientèle
+      - Appeler le service client
+      - Appelez-moi s’il vous plaît
+      - Merci de m’appeler
+      - Appeler le support
+      - Passer un appel au support
+      - Appeler le support technique
+      - Passer un appel au support technique
+      - Un agent peut-il m’appeler ?
+      - Est-ce qu’un agent peut-m’appeler ?
+      - Puis-je appeler ?
+      - Est-ce que je peux appeler ?
+      - Puis-je entrer en contact avec quelqu’un d’autre ?
+      - Pouvez-vous me mettre en relation avec une autre personne ?
+      - Puis-je obtenir le support d’un véritable agent ?
+      - Est-ce que je pourrais recevoir l’aide d’un véritable agent ?
+      - Puis-je être transféré et parler avec une personne ?
+      - Puis-je être mis en relation avec une personne ?
+      - Puis-je avoir un numéro d’appel ou peut-on m’appeler ?
+      - Un conseiller peut-il m’appeler ?
+      - Pouvez-vous demander à un conseiller de me rappeler ?
+      - Puis-je planifier un appel ?
+      - Puis-je prévoir un appel ?
+      - Pouvons-nous organiser un appel ?
+      - Puis-je parler à un conseiller ?
+      - Puis-je discuter avec un conseiller ?
+      - Puis-je échanger avec un conseiller ?
+      - Puis-je parler à un être humain ?
+      - Est-ce que je peux discuter avec un humain ?
+      - Puis-je parler à un assistant humain ?
+      - Puis-je échanger avec un assistant humain ?
+      - Puis-je discuter avec un assistant humain ?
+      - Quelqu’un peut-il m’appeler ?
+      - Peut-on me rappeler ?
+      - Discuter avec un humain
+      - Parler avec un humain
+      - Échanger avec un humain
+      - Discuter avec un conseiller
+      - Parler avec un conseiller
+      - Parler avec un représentant
+      - Parler avec un agent
+      - Parler avec une personne
+      - Parler avec quelqu’un
+      - Mettez-moi en relation avec un conseiller
+      - Mettez-moi en contact avec un conseiller
+      - Mettez-moi en relation avec une personne
+      - Connectez-moi à une personne
+      - Quelqu’un peut-il me contacter par téléphone ?
+      - Une personne peut-elle me rappeler ?
+      - Agent client
+      - Agent clientèle
+      - Conseiller du service clientèle
+      - Conseiller du service client
+      - Service clientèle
+      - Service client
+      - J’ai besoin qu’un manager me contacte
+      - J’ai besoin de discuter avec un manager
+      - J’ai besoin du service clientèle
+      - J’ai besoin du service client
+      - J’ai besoin de l’aide d’une personne
+      - J’ai besoin que l’on m’aide
+      - J’ai besoin d’une assistance
+      - J’ai besoin de parler avec un conseiller
+      - J’ai besoin de discuter avec un conseiller
+      - J’ai besoin de parler à un spécialiste, s’il vous plaît
+      - Je veux discuter avec un spécialiste
+      - Je veux discuter avec un expert
+      - Je veux parler au service clientèle
+      - Je veux parler au service client
+      - Je souhaite discuter avec le service client
+      - Je veux continuer avec un support en direct
+      - J’aimerais continuer avec un support en direct
+      - J’aimerais continuer avec une aide en direct
+      - J’aimerais continuer avec une assistance en direct
+      - Je veux parler à un consultant
+      - Je veux discuter avec un consultant
+      - J’aimerais discuter avec un consultant
+      - Je veux parler à un technicien en direct
+      - Je veux discuter avec un technicien en direct
+      - J’aimerais discuter avec un technicien en direct
+      - J’aimerais parler avec un associé
+      - Je veux parler avec un associer
+      - Je veux discuter avec un associer
+      - Je veux échanger avec un associé
+      - J’aimerais parler à un technicien
+      - Je veux parler à un technicien
+      - Je veux discuter avec un technicien
+      - Parler avec un membre du support technique
+      - Discuter avec un membre du support technique
+
+  actions:
+    - kind: SendActivity
+      id: sendMessage_s39DCt
+      conversationOutcome: Escalated
+      activity: |-
+        La réaffectation à un représentant n’est pas configurée pour ce copilote à l’heure actuelle. Toutefois, c’est ici que l’assistant peut vous indiquer comment contacter quelqu’un d’une autre façon.
+
+        Puis-je vous aider pour autre chose ?

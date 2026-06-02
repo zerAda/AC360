@@ -1,0 +1,33 @@
+mcs.metadata:
+  componentName: Clarification client
+kind: AdaptiveDialog
+beginDialog:
+  kind: OnRecognizedIntent
+  id: main
+  intent:
+    displayName: Clarification client
+    triggerQueries:
+      - Résume-moi le client
+      - Prépare le dossier client
+      - Trouve le contrat du client
+      - Fais-moi un brief client
+      - Quels sont les risques client ?
+      - Prépare-moi un mail client
+      - Donne-moi les infos du client
+
+  actions:
+    - kind: SendActivity
+      id: msg_clarification_client
+      activity: |-
+        Pour éviter de mélanger deux dossiers clients, pouvez-vous préciser le nom exact du client ?
+
+        Exemple :
+        - Client ALPHA
+        - Client BETA
+        - Client GAMMA
+
+        Si disponible, vous pouvez aussi indiquer l’identifiant client ou le nom exact du dossier SharePoint.
+
+    - kind: EndDialog
+      id: end_clarification_client
+      clearTopicQueue: true

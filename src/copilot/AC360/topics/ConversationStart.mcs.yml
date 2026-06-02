@@ -1,0 +1,15 @@
+mcs.metadata:
+  componentName: Début de la conversation
+  description: Cette rubrique système se déclenche quand l’assistant reçoit une activité indiquant le début d’une nouvelle conversation. Si vous ne souhaitez pas que l’assistant lance la conversation, désactivez cette rubrique.
+kind: AdaptiveDialog
+beginDialog:
+  kind: OnConversationStart
+  id: main
+  actions:
+    - kind: SendActivity
+      id: sendMessage_M0LuhV
+      activity:
+        text:
+          - Bonjour, je suis {System.Bot.Name}. Comment puis-je vous aider ?
+        speak:
+          - Bonjour et merci d’avoir appelé {System.Bot.Name}. Notez que certaines réponses sont générées par l’IA et peuvent nécessiter une vérification pour précision. Comment puis-je vous aider aujourd’hui ?

@@ -1,0 +1,72 @@
+mcs.metadata:
+  componentName: Recherche document client
+kind: AdaptiveDialog
+beginDialog:
+  kind: OnRecognizedIntent
+  id: main
+  intent:
+    displayName: Recherche document client
+    triggerQueries:
+      - Trouve le dernier contrat
+      - Retrouve la dernière proposition commerciale
+      - Quels documents existent pour ce client ?
+      - Quel est le document le plus récent ?
+      - Où est le compte rendu ?
+      - Liste les documents disponibles pour ce client
+      - Quel est le dernier contrat disponible pour le Client ALPHA ?
+      - Retrouve la dernière proposition commerciale du Client BETA
+
+  actions:
+    - kind: SendActivity
+      id: msg_intro_recherche_doc
+      activity: Je vais rechercher les documents client disponibles dans SharePoint, uniquement dans le périmètre auquel vous avez accès.
+
+    - kind: SearchAndSummarizeContent
+      id: search_recherche_doc
+      variable: Topic.Answer
+      userInput: =System.Activity.Text
+      moderationLevel: Medium
+      additionalInstructions: |-
+        Tu es Assistant Client 360 - DEV.
+
+        Objectif de cette rubrique :
+        Aider l’utilisateur à retrouver un document client dans SharePoint : contrat, proposition commerciale, compte rendu, document administratif ou archive.
+
+        Règles strictes :
+        - Répondre uniquement à partir des documents SharePoint accessibles à l’utilisateur.
+        - Ne jamais inventer l’existence d’un document.
+        - Ne jamais affirmer qu’un document existe si tu ne l’as pas trouvé.
+        - Ne jamais mélanger deux clients.
+        - Prioriser les documents les plus récents si plusieurs documents correspondent.
+        - Si la date d’un document est disponible dans son nom ou son contenu, l’indiquer.
+        - Si aucun document correspondant n’est trouvé, répondre : "Je n’ai pas trouvé de document accessible correspondant à cette demande."
+        - Citer les documents utilisés lorsque possible.
+        - L’agent est en lecture seule et ne peut pas ouvrir, modifier, déplacer ou supprimer les documents à la place de l’utilisateur.
+
+        Format de réponse obligatoire :
+        1. Document identifié
+        2. Type de document
+        3. Date ou version si disponible
+        4. Résumé rapide
+        5. Source utilisée
+        6. Remarque si plusieurs documents semblent proches
+      sharePointSearchDataSource: {}
+
+    - kind: ConditionGroup
+      id: condition_recherche_doc
+      conditions:
+        - id: has_answer_recherche_doc
+          condition: =!IsBlank(Topic.Answer)
+          actions:
+            - kind: EndDialog
+              id: end_recherche_doc
+              clearTopicQueue: true
+
+      elseActions:
+        - kind: SendActivity
+          id: msg_no_recherche_doc
+          activity: Je n’ai pas trouvé de document accessible correspondant à cette demande.
+
+        - kind: EndDialog
+          id: end_no_recherche_doc
+          clearTopicQueue: true

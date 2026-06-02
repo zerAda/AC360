@@ -1,0 +1,7 @@
+mcs.metadata:
+  componentName: Dossiers_Clients_POC
+  description: Cette source de connaissances offre les informations disponibles dans Dossiers_Clients_POC SharePoint.
+kind: KnowledgeSourceConfiguration
+source:
+  kind: SharePointSearchSource
+  site: https://gerep75008.sharepoint.com/sites/dev-assistant-client-360/Dossiers_Clients_POC

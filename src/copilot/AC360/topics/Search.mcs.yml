@@ -1,0 +1,23 @@
+mcs.metadata:
+  componentName: Optimisation conversationnelle
+  description: Créez des réponses génératives à partir de sources de connaissances.
+kind: AdaptiveDialog
+beginDialog:
+  kind: OnUnknownIntent
+  id: main
+  priority: -1
+  actions:
+    - kind: SearchAndSummarizeContent
+      id: search-content
+      variable: Topic.Answer
+      userInput: =System.Activity.Text
+
+    - kind: ConditionGroup
+      id: has-answer-conditions
+      conditions:
+        - id: has-answer
+          condition: =!IsBlank(Topic.Answer)
+          actions:
+            - kind: EndDialog
+              id: end-topic
+              clearTopicQueue: true

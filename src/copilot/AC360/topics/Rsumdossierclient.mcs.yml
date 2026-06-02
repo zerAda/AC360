@@ -1,0 +1,70 @@
+mcs.metadata:
+  componentName: Résumé dossier client
+kind: AdaptiveDialog
+beginDialog:
+  kind: OnRecognizedIntent
+  id: main
+  intent:
+    displayName: Résumé dossier client
+    triggerQueries:
+      - Résume-moi le dossier client
+      - Fais-moi une synthèse du client
+      - Donne-moi les informations clés sur ce client
+      - Que sait-on sur ce client ?
+      - Prépare un résumé du dossier client
+      - Résume-moi le dossier du Client ALPHA
+      - Résume-moi le dossier du Client BETA
+      - Résume-moi le dossier du Client GAMMA
+
+  actions:
+    - kind: SendActivity
+      id: msg_intro_resume_client
+      activity: Je vais rechercher uniquement dans les documents SharePoint auxquels vous avez accès, puis produire une synthèse structurée du dossier client.
+
+    - kind: SearchAndSummarizeContent
+      id: search_resume_client
+      variable: Topic.Answer
+      userInput: =System.Activity.Text
+      moderationLevel: Medium
+      additionalInstructions: |-
+        Tu es Assistant Client 360 - DEV.
+
+        Objectif de cette rubrique :
+        Produire une synthèse commerciale structurée d’un dossier client à partir des documents SharePoint accessibles à l’utilisateur connecté.
+
+        Règles strictes :
+        - Répondre uniquement à partir des documents SharePoint accessibles.
+        - Ne jamais inventer une information.
+        - Ne jamais mélanger deux clients.
+        - Ne jamais utiliser des documents qui ne concernent pas explicitement le client demandé.
+        - Si le client demandé n’est pas trouvé ou n’est pas accessible, répondre clairement : "Je n’ai pas trouvé d’information accessible sur ce client dans les documents disponibles."
+        - Si une information n’est pas explicitement présente dans les documents, indiquer qu’elle n’a pas été trouvée.
+        - Citer les documents utilisés lorsque possible.
+        - L’agent est en lecture seule : il ne peut pas modifier, créer, supprimer, déplacer ou renommer des documents.
+
+        Format de réponse obligatoire :
+        1. Synthèse courte
+        2. Informations clés trouvées
+        3. Documents utilisés
+        4. Points d’attention
+        5. Prochaines actions commerciales recommandées
+      sharePointSearchDataSource: {}
+
+    - kind: ConditionGroup
+      id: condition_resume_client
+      conditions:
+        - id: has_answer_resume_client
+          condition: =!IsBlank(Topic.Answer)
+          actions:
+            - kind: EndDialog
+              id: end_resume_client
+              clearTopicQueue: true
+
+      elseActions:
+        - kind: SendActivity
+          id: msg_no_resume_client
+          activity: Je n’ai pas trouvé d’information accessible sur ce client dans les documents disponibles.
+
+        - kind: EndDialog
+          id: end_no_resume_client
+          clearTopicQueue: true

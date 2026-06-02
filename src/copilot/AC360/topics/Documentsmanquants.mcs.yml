@@ -1,0 +1,26 @@
+mcs.metadata:
+  componentName: Documents manquants
+kind: AdaptiveDialog
+beginDialog:
+  kind: OnRecognizedIntent
+  id: main
+  intent:
+    displayName:
+    triggerQueries:
+      - documents manquants
+      - il me manque des documents
+      - je n'ai pas tous les documents
+      - quels sont les documents manquants
+      - liste des documents à fournir
+      - j'ai oublié un document
+      - dossier incomplet
+      - pièces justificatives manquantes
+      - je dois fournir d'autres documents ?
+
+  actions:
+    - kind: SendActivity
+      id: SendActivity_qFB4qV
+      activity: Pour vérifier la complétude de votre dossier, veuillez fournir la liste des documents que vous avez déjà soumis. Je pourrai alors vous indiquer s'il manque des pièces ou si le dossier est complet.
+
+inputType: {}
+outputType: {}

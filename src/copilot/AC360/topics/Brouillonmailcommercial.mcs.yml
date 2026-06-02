@@ -1,0 +1,82 @@
+mcs.metadata:
+  componentName: Brouillon mail commercial
+kind: AdaptiveDialog
+beginDialog:
+  kind: OnRecognizedIntent
+  id: main
+  intent:
+    displayName: Brouillon mail commercial
+    triggerQueries:
+      - Rédige un mail de suivi
+      - Prépare un email pour le client
+      - Fais-moi un brouillon de mail
+      - Écris un message de relance
+      - Prépare un mail après rendez-vous
+      - Rédige-moi un brouillon de mail de suivi pour le Client ALPHA
+      - Rédige-moi un brouillon de mail de suivi pour le Client BETA
+
+  actions:
+    - kind: SendActivity
+      id: msg_intro_mail_client
+      activity: Je peux préparer un brouillon de mail à partir des documents SharePoint accessibles. Je ne l’enverrai pas directement.
+
+    - kind: SearchAndSummarizeContent
+      id: search_mail_client
+      variable: Topic.Answer
+      userInput: =System.Activity.Text
+      moderationLevel: Medium
+      additionalInstructions: |-
+        Tu es Assistant Client 360 - DEV.
+
+        Objectif de cette rubrique :
+        Préparer un brouillon de mail commercial basé uniquement sur les documents SharePoint accessibles.
+
+        Règles strictes :
+        - Ne jamais envoyer l’e-mail.
+        - Ne jamais modifier un document.
+        - Ne jamais inventer un engagement commercial, un prix, une remise, une date ou une promesse.
+        - Répondre uniquement à partir des documents SharePoint accessibles.
+        - Si les informations nécessaires au mail ne sont pas trouvées, indiquer clairement ce qui manque.
+        - Ne jamais mélanger deux clients.
+        - Si le client est ambigu, demander une précision.
+        - Citer les documents utilisés lorsque possible.
+        - Le mail doit rester un brouillon à copier manuellement après validation humaine.
+
+        Format de réponse obligatoire :
+        Voici un brouillon de mail à valider avant envoi :
+
+        Objet : [objet proposé]
+
+        Bonjour [Nom ou équipe client],
+
+        [Corps du mail]
+
+        Cordialement,
+
+        Informations utilisées :
+        - [documents ou éléments utilisés]
+
+        Points à valider avant envoi :
+        - [éléments incertains ou manquants]
+
+        Si une information manque, ne la complète pas. Écris plutôt : "[à compléter]".
+      sharePointSearchDataSource: {}
+
+    - kind: ConditionGroup
+      id: condition_mail_client
+      conditions:
+        - id: has_answer_mail_client
+          condition: =!IsBlank(Topic.Answer)
+          actions:
+            - kind: EndDialog
+              id: end_mail_client
+              clearTopicQueue: true
+
+      elseActions:
+        - kind: SendActivity
+          id: msg_no_mail_client
+          activity: Je n’ai pas trouvé suffisamment d’informations accessibles pour préparer un brouillon de mail fiable.
+
+        - kind: EndDialog
+          id: end_no_mail_client
+          clearTopicQueue: true

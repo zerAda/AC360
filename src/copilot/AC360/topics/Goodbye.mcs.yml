@@ -1,0 +1,47 @@
+mcs.metadata:
+  componentName: Au revoir
+  description: Cette rubrique se déclenche quand l’utilisateur dit au revoir. Par défaut, elle ne termine pas la conversation. Si vous souhaitez terminer la conversation quand l’utilisateur dit au revoir, vous pouvez ajouter une action « Fin de la conversation » à cette rubrique, ou rediriger vers la rubrique système « Fin de la conversation ».
+kind: AdaptiveDialog
+startBehavior: CancelOtherTopics
+beginDialog:
+  kind: OnRecognizedIntent
+  id: main
+  intent:
+    displayName: Au revoir
+    includeInOnSelectIntent: false
+    triggerQueries:
+      - Salut
+      - Au revoir
+      - Bonne journée
+      - Au revoir pour le moment
+      - À plus tard
+      - À bientôt
+      - Au revoir maintenant
+      - Non, merci.
+      - Non, je vous remercie. Au revoir.
+      - Bye
+      - À tout à l’heure
+
+  actions:
+    - kind: Question
+      id: question_zf2HhP
+      variable: Topic.EndConversation
+      prompt: Voulez-vous terminer notre conversation ?
+      entity: BooleanPrebuiltEntity
+
+    - kind: ConditionGroup
+      id: condition_DGc1Wy
+      conditions:
+        - id: condition_DGc1Wy-item-0
+          condition: =Topic.EndConversation = true
+          actions:
+            - kind: BeginDialog
+              id: dn94DC
+              dialog: cra7f_AC360.topic.EndofConversation
+
+        - id: condition_DGc1Wy-item-1
+          condition: =Topic.EndConversation = false
+          actions:
+            - kind: SendActivity
+              id: sendMessage_LdLhmf
+              activity: Allez-y. J’écoute.

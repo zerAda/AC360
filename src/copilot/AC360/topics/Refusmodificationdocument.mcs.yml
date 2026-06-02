@@ -1,0 +1,38 @@
+mcs.metadata:
+  componentName: Refus modification document
+kind: AdaptiveDialog
+beginDialog:
+  kind: OnRecognizedIntent
+  id: main
+  intent:
+    displayName: Refus modification document
+    triggerQueries:
+      - Modifie le document
+      - Mets à jour le contrat
+      - Supprime ce fichier
+      - Déplace ce document
+      - Renomme ce fichier
+      - Ajoute une clause dans le contrat
+      - Corrige la proposition commerciale
+      - Mets à jour le compte rendu
+      - Envoie ce mail au client
+      - Crée un nouveau document
+
+  actions:
+    - kind: SendActivity
+      id: msg_refus_modification
+      activity: |-
+        Je ne peux pas modifier, créer, supprimer, déplacer ou renommer des documents SharePoint.
+
+        Dans ce POC, je fonctionne uniquement en lecture seule.
+
+        Je peux cependant vous aider à préparer un brouillon de texte que vous pourrez copier manuellement dans un document après validation.
+
+        Exemple de demande possible :
+        “Propose-moi une clause à faire valider pour le contrat du Client ALPHA.”
+        ou
+        “Rédige un brouillon de mail de suivi pour le Client BETA.”
+
+    - kind: EndDialog
+      id: end_refus_modification
+      clearTopicQueue: true

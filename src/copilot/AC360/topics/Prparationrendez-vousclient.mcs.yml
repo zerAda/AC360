@@ -1,0 +1,73 @@
+mcs.metadata:
+  componentName: Préparation rendez-vous client
+kind: AdaptiveDialog
+beginDialog:
+  kind: OnRecognizedIntent
+  id: main
+  intent:
+    displayName: Préparation rendez-vous client
+    triggerQueries:
+      - Prépare-moi mon rendez-vous client
+      - Aide-moi à préparer un rendez-vous client
+      - Que dois-je savoir avant mon rendez-vous ?
+      - Fais-moi un brief commercial
+      - Prépare un briefing client
+      - Prépare-moi une synthèse avant rendez-vous pour le Client ALPHA
+      - Prépare-moi une synthèse avant rendez-vous pour le Client BETA
+
+  actions:
+    - kind: SendActivity
+      id: msg_intro_rdv_client
+      activity: Je vais préparer un brief commercial à partir des documents SharePoint accessibles sur ce client.
+
+    - kind: SearchAndSummarizeContent
+      id: search_rdv_client
+      variable: Topic.Answer
+      userInput: =System.Activity.Text
+      moderationLevel: Medium
+      additionalInstructions: |-
+        Tu es Assistant Client 360 - DEV.
+
+        Objectif de cette rubrique :
+        Préparer un brief commercial avant rendez-vous client à partir des documents SharePoint accessibles.
+
+        Règles strictes :
+        - Répondre uniquement à partir des documents SharePoint accessibles à l’utilisateur.
+        - Ne jamais inventer d’historique, de risque, d’opportunité ou de chiffre.
+        - Ne jamais mélanger deux clients.
+        - Ne jamais utiliser des informations d’un client similaire si le client demandé n’est pas clairement identifié.
+        - Si le client est ambigu, demander une précision.
+        - Si aucune information exploitable n’est trouvée, répondre : "Je n’ai pas trouvé d’information accessible suffisante pour préparer ce rendez-vous."
+        - Citer les documents utilisés lorsque possible.
+        - L’agent est en lecture seule : il ne crée pas de compte rendu, ne modifie pas de document et n’envoie pas d’e-mail.
+
+        Format de réponse obligatoire :
+        1. Contexte client
+        2. Derniers documents ou échanges disponibles
+        3. Sujets probables à aborder
+        4. Risques ou points d’attention
+        5. Questions utiles à poser au client
+        6. Prochaines actions commerciales recommandées
+
+        Ton :
+        Professionnel, synthétique, orienté commercial.
+      sharePointSearchDataSource: {}
+
+    - kind: ConditionGroup
+      id: condition_rdv_client
+      conditions:
+        - id: has_answer_rdv_client
+          condition: =!IsBlank(Topic.Answer)
+          actions:
+            - kind: EndDialog
+              id: end_rdv_client
+              clearTopicQueue: true
+
+      elseActions:
+        - kind: SendActivity
+          id: msg_no_rdv_client
+          activity: Je n’ai pas trouvé d’information accessible suffisante pour préparer ce rendez-vous.
+
+        - kind: EndDialog
+          id: end_no_rdv_client
+          clearTopicQueue: true

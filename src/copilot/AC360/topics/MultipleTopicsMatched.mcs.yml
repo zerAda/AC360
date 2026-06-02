@@ -1,0 +1,46 @@
+mcs.metadata:
+  componentName: Plusieurs rubriques correspondent
+  description: Cette rubrique système se déclenche lorsque l’assistant associe plusieurs rubriques au message entrant et qu’il a besoin de précisions afin de savoir laquelle doit être utilisée.
+kind: AdaptiveDialog
+beginDialog:
+  kind: OnSelectIntent
+  id: main
+  triggerBehavior: Always
+  actions:
+    - kind: SetVariable
+      id: setVariable_M6434i
+      variable: init:Topic.IntentOptions
+      value: =System.Recognizer.IntentOptions
+
+    - kind: SetTextVariable
+      id: setTextVariable_0
+      variable: Topic.NoneOfTheseDisplayName
+      value: Aucune de ces options
+
+    - kind: EditTable
+      id: sendMessage_g5Ls09
+      changeType: Add
+      itemsVariable: Topic.IntentOptions
+      value: "={ DisplayName: Topic.NoneOfTheseDisplayName, TopicId: \"NoTopic\", TriggerId: \"NoTrigger\", Score: 1.0 }"
+
+    - kind: Question
+      id: question_zf2HhP
+      interruptionPolicy:
+        allowInterruption: false
+
+      alwaysPrompt: true
+      variable: System.Recognizer.SelectedIntent
+      prompt: "Pour clarifier, voulez-vous dire :"
+      entity:
+        kind: DynamicClosedListEntity
+        items: =Topic.IntentOptions
+
+    - kind: ConditionGroup
+      id: conditionGroup_60PuXb
+      conditions:
+        - id: conditionItem_rs7GgM
+          condition: =System.Recognizer.SelectedIntent.TopicId = "NoTopic"
+          actions:
+            - kind: ReplaceDialog
+              id: YZXRDb
+              dialog: cra7f_AC360.topic.Fallback

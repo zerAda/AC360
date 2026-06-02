@@ -1,0 +1,26 @@
+mcs.metadata:
+  componentName: Salutations
+  description: Cette rubrique est déclenchée quand l’utilisateur salue l’assistant.
+kind: AdaptiveDialog
+beginDialog:
+  kind: OnRecognizedIntent
+  id: main
+  intent:
+    displayName: Salutations
+    includeInOnSelectIntent: false
+    triggerQueries:
+      - Bonjour
+      - Salut
+      - Hé
+
+  actions:
+    - kind: SendActivity
+      id: sendMessage_abmysR
+      activity:
+        text:
+          - Bonjour, comment puis-je vous aider aujourd’hui ?
+        speak:
+          - Bonjour, <break strength="medium" /> comment puis-je vous aider ?
+
+    - kind: CancelAllDialogs
+      id: cancelAllDialogs_01At22

@@ -1,0 +1,53 @@
+mcs.metadata:
+  componentName: Résumé dossier client
+kind: AdaptiveDialog
+beginDialog:
+  kind: OnRecognizedIntent
+  id: main
+  intent:
+    displayName:
+    triggerQueries:
+      - résumé dossier client
+      - afficher résumé du dossier client
+      - voir le résumé du client
+      - montre-moi le dossier client
+      - récapitulatif du dossier client
+      - détails du profil client
+      - informations sur le dossier client
+      - synthèse du compte client
+      - présente-moi le résumé du dossier
+
+  actions:
+    - kind: Question
+      id: Question_CQnDvJ
+      variable: Topic.NomClient
+      prompt: Quel est le nom du client ?
+      entity: PersonNamePrebuiltEntity
+
+    - kind: Question
+      id: Question_7Q7zxq
+      variable: Topic.EmailClient
+      prompt: Quelle est l'adresse e-mail du client ?
+      entity: EmailPrebuiltEntity
+
+    - kind: Question
+      id: Question_5z4Jmh
+      variable: Topic.TelephoneClient
+      prompt: Quel est le numéro de téléphone du client ?
+      entity: PhoneNumberPrebuiltEntity
+
+    - kind: Question
+      id: Question_i14SB2
+      variable: Topic.VilleClient
+      prompt: Dans quelle ville réside le client ?
+      entity: CityPrebuiltEntity
+
+    - kind: SendActivity
+      id: SendActivity_4RRUbc
+      activity:
+        attachments:
+          - kind: AdaptiveCardTemplate
+            cardContent: "={ type: \"AdaptiveCard\", body: [ { type: \"TextBlock\", size: \"Medium\", weight: \"Bolder\", text: \"Synthèse du client\" }, { type: \"FactSet\", facts: [ { title: \"Nom\", value: Text(Topic.NomClient) }, { title: \"E-mail\", value: Text(Topic.EmailClient) }, { title: \"Téléphone\", value: Text(Topic.TelephoneClient) }, { title: \"Ville\", value: Text(Topic.VilleClient) } ] } ], '$schema': \"http://adaptivecards.io/schemas/adaptive-card.json\", version: \"1.5\"}"
+
+inputType: {}
+outputType: {}

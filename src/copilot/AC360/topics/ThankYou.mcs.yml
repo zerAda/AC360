@@ -1,0 +1,21 @@
+mcs.metadata:
+  componentName: Merci
+  description: Cette rubrique se déclenche lorsque l’utilisateur dit merci.
+kind: AdaptiveDialog
+beginDialog:
+  kind: OnRecognizedIntent
+  id: main
+  intent:
+    displayName: Merci
+    includeInOnSelectIntent: false
+    triggerQueries:
+      - merci
+      - je vous remercie
+      - je te remercie
+      - merci beaucoup
+      - merci infiniment
+
+  actions:
+    - kind: SendActivity
+      id: sendMessage_9iz6v7
+      activity: Avec plaisir.

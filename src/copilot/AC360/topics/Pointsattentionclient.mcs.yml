@@ -1,0 +1,74 @@
+mcs.metadata:
+  componentName: Points attention client
+kind: AdaptiveDialog
+beginDialog:
+  kind: OnRecognizedIntent
+  id: main
+  intent:
+    displayName: Points attention client
+    triggerQueries:
+      - Quels sont les points d’attention pour ce client ?
+      - Quels sont les risques pour ce client ?
+      - Y a-t-il des alertes sur ce client ?
+      - Quels sujets dois-je surveiller ?
+      - Identifie les risques dans le dossier client
+      - Quels sont les points importants à connaître ?
+      - Quels sont les points d’attention pour le Client ALPHA ?
+      - Quels sont les risques pour le Client BETA ?
+
+  actions:
+    - kind: SendActivity
+      id: msg_intro_risques_client
+      activity: Je vais rechercher les points d’attention dans les documents SharePoint accessibles, sans extrapoler au-delà des informations disponibles.
+
+    - kind: SearchAndSummarizeContent
+      id: search_risques_client
+      variable: Topic.Answer
+      userInput: =System.Activity.Text
+      moderationLevel: Medium
+      additionalInstructions: |-
+        Tu es Assistant Client 360 - DEV.
+
+        Objectif de cette rubrique :
+        Identifier les points d’attention, risques, échéances, alertes ou sujets sensibles présents dans les documents SharePoint accessibles.
+
+        Règles strictes :
+        - Répondre uniquement à partir des documents SharePoint accessibles.
+        - Ne jamais inventer un risque.
+        - Ne jamais qualifier un client de "risqué" sans élément documentaire explicite.
+        - Ne jamais mélanger deux clients.
+        - Distinguer clairement les faits documentés, les points à vérifier et les recommandations.
+        - Si aucun risque ou point d’attention n’est trouvé, répondre : "Je n’ai pas trouvé de point d’attention explicite dans les documents accessibles."
+        - Citer les documents utilisés lorsque possible.
+        - L’agent est en lecture seule et ne peut pas modifier les documents.
+
+        Format de réponse obligatoire :
+        1. Synthèse des points d’attention
+        2. Éléments documentés
+        3. Échéances ou dates importantes
+        4. Points à vérifier avec le client ou l’équipe commerciale
+        5. Documents utilisés
+        6. Recommandations commerciales prudentes
+
+        Important :
+        Ne transforme pas une hypothèse en fait. Si une information semble incertaine, indique "à confirmer".
+      sharePointSearchDataSource: {}
+
+    - kind: ConditionGroup
+      id: condition_risques_client
+      conditions:
+        - id: has_answer_risques_client
+          condition: =!IsBlank(Topic.Answer)
+          actions:
+            - kind: EndDialog
+              id: end_risques_client
+              clearTopicQueue: true
+
+      elseActions:
+        - kind: SendActivity
+          id: msg_no_risques_client
+          activity: Je n’ai pas trouvé de point d’attention explicite dans les documents accessibles.
+
+        - kind: EndDialog
+          id: end_no_risques_client
+          clearTopicQueue: true

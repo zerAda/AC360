@@ -1,0 +1,39 @@
+mcs.metadata:
+  componentName: Recommencer
+kind: AdaptiveDialog
+beginDialog:
+  kind: OnRecognizedIntent
+  id: main
+  intent:
+    displayName: Recommencer
+    includeInOnSelectIntent: false
+    triggerQueries:
+      - recommençons
+      - commençons à nouveau
+      - recommencer
+      - redémarrer
+      - commencer à nouveau
+      - démarrer à nouveau
+
+  actions:
+    - kind: Question
+      id: question_zguoVV
+      alwaysPrompt: false
+      variable: init:Topic.Confirm
+      prompt: Voulez-vous vraiment recommencer la conversation ?
+      entity: BooleanPrebuiltEntity
+
+    - kind: ConditionGroup
+      id: conditionGroup_lvx2zV
+      conditions:
+        - id: conditionItem_sVQtHa
+          condition: =Topic.Confirm = true
+          actions:
+            - kind: BeginDialog
+              id: 0YKYsy
+              dialog: cra7f_AC360.topic.ResetConversation
+
+      elseActions:
+        - kind: SendActivity
+          id: sendMessage_lk2CyQ
+          activity: D’accord. Continuons.
