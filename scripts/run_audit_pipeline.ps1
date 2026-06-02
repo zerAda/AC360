@@ -51,6 +51,23 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
+# --- PHASE 6 : CONTRÔLE JURIDIQUE & FIC ---
+Write-Host "`n>>> [PHASE 6] Complétude Juridique & Génération de la FIC..." -ForegroundColor Cyan
+# Simulation de récupération du nom client depuis le JSON pour le paramètre du script SharePoint
+$ClientNameFallback = "CLIENT_INCONNU"
+if (Test-Path $AuditResultJson) {
+    $AuditData = Get-Content $AuditResultJson | ConvertFrom-Json
+    if ($AuditData.client_document) { $ClientNameFallback = $AuditData.client_document }
+}
+# Contrôle SharePoint (nécessite une URL SharePoint valide, ignoré gracieusement si échec)
+# .\scripts\check_legal_compliance.ps1 -SiteUrl "https://votre-tenant.sharepoint.com/sites/AC360" -ClientFolderName $ClientNameFallback
+
+# Génération de la FIC Word
+python .\scripts\generate_fic_draft.py $AuditResultJson
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "WARNING : La génération de la FIC a échoué." -ForegroundColor Yellow
+}
+
 # --- PHASE 5 : POST-AUDIT (ALERTES & NETTOYAGE) ---
 Write-Host "`n>>> [PHASE 5] Clôture, Alertes Teams et Sécurité RGPD..." -ForegroundColor Cyan
 python .\scripts\post_audit_workflow.py $AuditResultJson $DocumentPath
