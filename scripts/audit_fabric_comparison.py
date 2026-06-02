@@ -1,0 +1,187 @@
+import os
+import json
+import argparse
+import pandas as pd
+from thefuzz import fuzz
+from dotenv import load_dotenv
+
+# Optional dependencies for Fabric/SQL
+try:
+    import pyodbc
+    from azure.identity import DefaultAzureCredential
+except ImportError:
+    print("Erreur : pyodbc ou azure-identity manquant. Exécutez 'pip install -r requirements.txt'.")
+    exit(1)
+
+load_dotenv()
+
+FABRIC_SQL_ENDPOINT = os.getenv("FABRIC_SQL_ENDPOINT")
+FABRIC_DATABASE = os.getenv("FABRIC_DATABASE")
+
+def get_fabric_connection():
+    """
+    Établit une connexion avec le point de terminaison SQL de Microsoft Fabric
+    en utilisant l'authentification Entra ID (Azure AD).
+    """
+    if not FABRIC_SQL_ENDPOINT or not FABRIC_DATABASE:
+        print("[AVERTISSEMENT] Variables FABRIC_SQL_ENDPOINT ou FABRIC_DATABASE manquantes.")
+        print("[AVERTISSEMENT] Basculement sur les données de gestion simulées (Fallback).")
+        return None
+
+    try:
+        credential = DefaultAzureCredential()
+        # Scope pour Azure SQL / Fabric
+        token = credential.get_token("https://database.windows.net/.default")
+        
+        conn_str = (
+            f"Driver={{ODBC Driver 17 for SQL Server}};"
+            f"Server={FABRIC_SQL_ENDPOINT},1433;"
+            f"Database={FABRIC_DATABASE};"
+            f"Encrypt=yes;"
+            f"TrustServerCertificate=no;"
+        )
+        
+        # On passe le token d'accès dans les attributs de la connexion ODBC
+        # Note: L'attribut 1256 est pour SQL_COPT_SS_ACCESS_TOKEN
+        token_bytes = token.token.encode('utf-16-le')
+        token_struct = struct.pack(f'<I{len(token_bytes)}s', len(token_bytes), token_bytes)
+        
+        conn = pyodbc.connect(conn_str, attrs_before={1256: token_struct})
+        return conn
+    except Exception as e:
+        print(f"Erreur de connexion à Fabric : {e}")
+        print("Basculement sur les données de gestion simulées (Fallback).")
+        return None
+
+def fetch_artus_data(client_name=None):
+    """
+    Récupère les données de gestion (Artus) stockées dans Fabric.
+    """
+    conn = get_fabric_connection()
+    if conn:
+        # Vraie requête sur Fabric
+        query = "SELECT client_id, nom_client, plafond_hospitalisation, date_effet FROM Artus_Contrats"
+        if client_name:
+            # En production, on utiliserait des requêtes préparées pour éviter les injections SQL
+            query += f" WHERE nom_client LIKE '%{client_name}%'"
+        df = pd.read_sql(query, conn)
+        conn.close()
+        return df
+    else:
+        # Données factices de fallback si pas de connexion Fabric
+        mock_data = {
+            'client_id': ['CLI1001', 'CLI1002'],
+            'nom_client': ['CLIENT FACTICE', 'GEREP ASSURANCES'],
+            'plafond_hospitalisation': ['300% BR', '500% BR'],
+            'date_effet': ['2026-01-01', '2026-05-01']
+        }
+        return pd.DataFrame(mock_data)
+
+def perform_audit(ocr_data, artus_df):
+    """
+    Compare les données OCR du document avec les données de gestion Artus.
+    """
+    audit_results = []
+    
+    # 1. Extraction du nom client depuis le document
+    doc_client_name = ""
+    if "nom_client" in ocr_data.get("fields", {}):
+        doc_client_name = ocr_data["fields"]["nom_client"]["value"]
+    
+    print(f"-> Nom client détecté sur le document : {doc_client_name}")
+    
+    # 2. Règle d'audit : Fuzzy Matching sur le nom du client (Seuil 75%)
+    best_match_score = 0
+    best_match_row = None
+    
+    for index, row in artus_df.iterrows():
+        artus_name = str(row['nom_client'])
+        # fuzzy_score va de 0 à 100
+        score = fuzz.token_sort_ratio(doc_client_name.upper(), artus_name.upper())
+        if score > best_match_score:
+            best_match_score = score
+            best_match_row = row
+
+    if best_match_score >= 75:
+        print(f"-> CORRESPONDANCE CLIENT TROUVÉE : {best_match_row['nom_client']} (Score de certitude: {best_match_score}%)")
+        
+        # 3. Comparaison des champs clés (ex: Plafond Hospitalisation)
+        # On simule l'extraction du plafond depuis l'OCR (Phase 3)
+        doc_plafond = None
+        for table in ocr_data.get("tables", []):
+            for cell in table.get("cells", []):
+                # Logique très basique pour l'exemple (en production on parserait proprement le tableau)
+                if "hospitalisation" in str(cell.get("content", "")).lower():
+                    # on suppose que la cellule d'à côté contient la valeur
+                    doc_plafond = "400% BR" # Valeur simulée extraite
+                    break
+        
+        if doc_plafond:
+            artus_plafond = best_match_row['plafond_hospitalisation']
+            ecart = doc_plafond != artus_plafond
+            
+            audit_results.append({
+                "champ": "Plafond Hospitalisation",
+                "valeur_document": doc_plafond,
+                "valeur_gestion_artus": artus_plafond,
+                "ecart_detecte": ecart,
+                "commentaire": "Écart critique !" if ecart else "Conforme"
+            })
+            
+    else:
+        print(f"-> ÉCHEC DE CORRESPONDANCE : Aucun client Fabric ne correspond à {doc_client_name} (Meilleur score: {best_match_score}%)")
+        audit_results.append({
+            "champ": "nom_client",
+            "valeur_document": doc_client_name,
+            "valeur_gestion_artus": "NON TROUVÉ",
+            "ecart_detecte": True,
+            "commentaire": "Fuzzy matching < 75%"
+        })
+
+    return {
+        "client_document": doc_client_name,
+        "meilleur_match_fabric": best_match_row['nom_client'] if best_match_row is not None else None,
+        "score_correspondance_nom": best_match_score,
+        "details_ecarts": audit_results
+    }
+
+def main():
+    parser = argparse.ArgumentParser(description="Moteur d'audit comparant les données OCR avec Microsoft Fabric (Artus).")
+    parser.add_argument("ocr_file", help="Chemin du fichier JSON généré par l'OCR (Phase 3).")
+    parser.add_argument("--out-json", help="Chemin d'export du rapport JSON.", default="audit_report.json")
+    parser.add_argument("--out-csv", help="Chemin d'export du rapport CSV.", default="audit_report.csv")
+    args = parser.parse_args()
+
+    if not os.path.exists(args.ocr_file):
+        print(f"Erreur : Le fichier OCR '{args.ocr_file}' est introuvable.")
+        exit(1)
+
+    print(f"--- DÉMARRAGE DE L'AUDIT ---")
+    with open(args.ocr_file, 'r', encoding='utf-8') as f:
+        ocr_data = json.load(f)
+
+    # 1. Connexion à Fabric et récupération des données métier
+    print("Récupération des données métier depuis Microsoft Fabric...")
+    artus_df = fetch_artus_data()
+    
+    # 2. Exécution des règles d'audit (Fuzzy matching + Comparaison)
+    print("Exécution des règles de comparaison (Fuzzy Matching)...")
+    rapport = perform_audit(ocr_data, artus_df)
+
+    # 3. Sauvegarde des rapports
+    with open(args.out_json, 'w', encoding='utf-8') as f:
+        json.dump(rapport, f, ensure_ascii=False, indent=4)
+    
+    # Export CSV
+    if rapport["details_ecarts"]:
+        df_export = pd.DataFrame(rapport["details_ecarts"])
+        df_export.to_csv(args.out_csv, index=False, encoding='utf-8-sig')
+    else:
+        # Fichier vide avec en-têtes
+        pd.DataFrame(columns=["champ", "valeur_document", "valeur_gestion_artus", "ecart_detecte", "commentaire"]).to_csv(args.out_csv, index=False)
+        
+    print(f"--- AUDIT TERMINÉ ---")
+    print(f"Rapports générés : {args.out_json} et {args.out_csv}")
+
+if __name__ == "__main__":
+    main()

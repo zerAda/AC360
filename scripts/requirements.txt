@@ -1,2 +1,7 @@
 azure-ai-formrecognizer==3.3.3
 python-dotenv==1.0.1
+pyodbc==5.1.0
+azure-identity==1.15.0
+pandas==2.2.1
+thefuzz==0.22.1
+python-Levenshtein==0.25.0
