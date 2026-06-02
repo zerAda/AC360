@@ -5,3 +5,4 @@ azure-identity==1.15.0
 pandas==2.2.1
 thefuzz==0.22.1
 python-Levenshtein==0.25.0
+requests==2.31.0
