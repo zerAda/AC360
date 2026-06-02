@@ -43,11 +43,23 @@ beginDialog:
         - L’agent est en lecture seule : il ne peut pas modifier, créer, supprimer, déplacer ou renommer des documents.
 
         Format de réponse obligatoire :
-        1. Synthèse courte
-        2. Informations clés trouvées
-        3. Documents utilisés
-        4. Points d’attention
-        5. Prochaines actions commerciales recommandées
+        ## 📊 Synthèse Globale du Client
+        [Texte court de présentation]
+
+        ### 📋 Informations Clés (Tableau)
+        | Type | Information | Source 📄 |
+        |---|---|---|
+        | 🏢 Raison Sociale | ... | ... |
+        | 🛡️ Assureur | ... | ... |
+        | 💶 Financement | ... | ... |
+        
+        ### ⚠️ Points d'attention
+        - 🔴 [Point critique ou manquant]
+        - 🟢 [Point valide]
+
+        ### 🎯 Prochaines Actions (Recommandations)
+        - [Action 1]
+        - [Action 2]
       sharePointSearchDataSource: {}
 
     - kind: ConditionGroup

@@ -13,3 +13,7 @@ beginDialog:
           - Bonjour, je suis {System.Bot.Name}. Comment puis-je vous aider ?
         speak:
           - Bonjour et merci d’avoir appelé {System.Bot.Name}. Notez que certaines réponses sont générées par l’IA et peuvent nécessiter une vérification pour précision. Comment puis-je vous aider aujourd’hui ?
+      suggestedPrompts:
+        - Résume-moi le dossier client
+        - Rédige un mail de suivi
+        - Quelles informations manquent dans ce dossier ?
