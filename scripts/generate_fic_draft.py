@@ -118,14 +118,8 @@ def generate_fic_document(client_name, date_effet, plafonds_garanties, output_pa
     doc.save(output_path)
     print(f"[FIC GENERATION] Brouillon de la FIC généré avec succès : {output_path}")
     
-    # SÉCURITÉ RGPD : Nettoyage post-génération
-    # En production, ce fichier doit être streamé vers SharePoint via Graph API.
-    # Pour éviter toute fuite de données locales, on le supprime du disque dur du serveur.
-    try:
-        os.remove(output_path)
-        print(f"[SÉCURITÉ] Fichier local {output_path} supprimé définitivement (Anti-Data Leak).")
-    except Exception as e:
-        print(f"[ERREUR SÉCURITÉ] Impossible de supprimer le fichier {output_path}: {e}")
+    # Impression stricte pour récupération par PowerShell
+    print(f"FIC_GENERATED_PATH={os.path.abspath(output_path)}")
 
 
 def main():

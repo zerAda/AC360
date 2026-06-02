@@ -17,16 +17,22 @@ Chemin du document PDF à auditer.
 
 param(
     [Parameter(Mandatory=$true)]
-    [string]$DocumentPath
+    [string]$DocumentPath,
+    
+    [Parameter(Mandatory=$false)]
+    [string]$Upn = "System"
 )
 
+# Résolution sécurisée du dossier du script (évite les problèmes de CWD)
+$ScriptDir = $PSScriptRoot
+
 # Fichiers temporaires générés par le pipeline
-$OcrResultFile = "temp_ocr_result.json"
-$AuditResultJson = "final_audit_report.json"
-$AuditResultCsv = "final_audit_report.csv"
+$OcrResultFile = Join-Path $ScriptDir "temp_ocr_result.json"
+$AuditResultJson = Join-Path $ScriptDir "final_audit_report.json"
+$AuditResultCsv = Join-Path $ScriptDir "final_audit_report.csv"
 
 Write-Host "=========================================" -ForegroundColor Magenta
-Write-Host " DÉMARRAGE DU PIPELINE AC360" -ForegroundColor Magenta
+Write-Host " DÉMARRAGE DU PIPELINE AC360 (Lancé par: $Upn)" -ForegroundColor Magenta
 Write-Host "=========================================" -ForegroundColor Magenta
 
 # Vérification du document
@@ -37,7 +43,7 @@ if (-not (Test-Path $DocumentPath)) {
 
 # --- PHASE 3 : OCR AZURE ---
 Write-Host "`n>>> [PHASE 3] Extraction OCR via Azure Document Intelligence..." -ForegroundColor Cyan
-python .\scripts\process_document_ocr.py $DocumentPath --output $OcrResultFile
+python (Join-Path $ScriptDir "process_document_ocr.py") $DocumentPath --output $OcrResultFile
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERREUR : L'extraction OCR a échoué. Arrêt du pipeline." -ForegroundColor Red
     exit 1
@@ -45,7 +51,7 @@ if ($LASTEXITCODE -ne 0) {
 
 # --- PHASE 4 : AUDIT FABRIC ---
 Write-Host "`n>>> [PHASE 4] Audit & Croisement avec Microsoft Fabric..." -ForegroundColor Cyan
-python .\scripts\audit_fabric_comparison.py $OcrResultFile --out-json $AuditResultJson --out-csv $AuditResultCsv
+python (Join-Path $ScriptDir "audit_fabric_comparison.py") $OcrResultFile --out-json $AuditResultJson --out-csv $AuditResultCsv
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERREUR : L'audit Fabric a échoué. Arrêt du pipeline." -ForegroundColor Red
     exit 1
@@ -53,32 +59,42 @@ if ($LASTEXITCODE -ne 0) {
 
 # --- PHASE 6 : CONTRÔLE JURIDIQUE & FIC ---
 Write-Host "`n>>> [PHASE 6] Complétude Juridique & Génération de la FIC..." -ForegroundColor Cyan
-# Simulation de récupération du nom client depuis le JSON pour le paramètre du script SharePoint
 $ClientNameFallback = "CLIENT_INCONNU"
 if (Test-Path $AuditResultJson) {
     $AuditData = Get-Content $AuditResultJson | ConvertFrom-Json
     if ($AuditData.client_document) { $ClientNameFallback = $AuditData.client_document }
 }
-# Contrôle SharePoint (nécessite une URL SharePoint valide, ignoré gracieusement si échec)
-# .\scripts\check_legal_compliance.ps1 -SiteUrl "https://votre-tenant.sharepoint.com/sites/AC360" -ClientFolderName $ClientNameFallback
 
-# Génération de la FIC Word
-python .\scripts\generate_fic_draft.py $AuditResultJson
+# Génération de la FIC Word et capture du chemin
+$FicOutput = python (Join-Path $ScriptDir "generate_fic_draft.py") $AuditResultJson --output-dir $ScriptDir
 if ($LASTEXITCODE -ne 0) {
     Write-Host "WARNING : La génération de la FIC a échoué." -ForegroundColor Yellow
+}
+$FicGeneratedPath = ""
+foreach ($line in $FicOutput) {
+    Write-Host $line
+    if ($line -match "^FIC_GENERATED_PATH=(.*)$") {
+        $FicGeneratedPath = $matches[1]
+    }
 }
 
 # --- PHASE 5 : POST-AUDIT (ALERTES & NETTOYAGE) ---
 Write-Host "`n>>> [PHASE 5] Clôture, Alertes Teams et Sécurité RGPD..." -ForegroundColor Cyan
-python .\scripts\post_audit_workflow.py $AuditResultJson $DocumentPath
+$PostAuditCmd = "python `"$($ScriptDir)\post_audit_workflow.py`" `"$AuditResultJson`" `"$DocumentPath`""
+if (-not [string]::IsNullOrWhiteSpace($FicGeneratedPath)) {
+    $PostAuditCmd += " --fic-file `"$FicGeneratedPath`""
+}
+Invoke-Expression $PostAuditCmd
+
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERREUR : Le Post-Audit a rencontré un problème." -ForegroundColor Red
     exit 1
 }
 
-# Nettoyage des JSON temporaires (optionnel, mais propre)
+# Nettoyage des JSON temporaires
 if (Test-Path $OcrResultFile) { Remove-Item $OcrResultFile }
-# Le rapport final peut être conservé ou nettoyé selon le besoin.
+if (Test-Path $AuditResultJson) { Remove-Item $AuditResultJson }
+if (Test-Path $AuditResultCsv) { Remove-Item $AuditResultCsv }
 
 Write-Host "`n=========================================" -ForegroundColor Magenta
 Write-Host " PIPELINE TERMINÉ AVEC SUCCÈS ! " -ForegroundColor Green

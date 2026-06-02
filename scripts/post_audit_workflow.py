@@ -87,6 +87,7 @@ def main():
     parser = argparse.ArgumentParser(description="Workflow de clôture de l'Audit AC360 (Alertes & Nettoyage).")
     parser.add_argument("report_json", help="Chemin vers le fichier audit_report.json (Phase 4).")
     parser.add_argument("source_file", help="Chemin du document PDF d'origine ayant généré le rapport.")
+    parser.add_argument("--fic-file", help="Chemin du document brouillon FIC (.docx) généré.", default=None)
     args = parser.parse_args()
 
     if not os.path.exists(args.report_json):
@@ -123,6 +124,15 @@ def main():
         print("Suppression du document temporaire conforme...")
         if os.path.exists(args.source_file):
             os.remove(args.source_file)
+
+    # 3. Nettoyage de la FIC (RGPD Anti-Leak)
+    if args.fic_file and os.path.exists(args.fic_file):
+        print(f"Nettoyage RGPD : Suppression du brouillon local {args.fic_file}")
+        try:
+            os.remove(args.fic_file)
+            print(f"[SÉCURITÉ] FIC locale supprimée (Anti-Data Leak).")
+        except Exception as e:
+            print(f"[ERREUR SÉCURITÉ] Impossible de supprimer la FIC : {e}")
 
     print("--- PROCESSUS D'AUDIT COMPLET TERMINÉ ---")
 
