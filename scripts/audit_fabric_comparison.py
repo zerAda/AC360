@@ -59,23 +59,19 @@ def fetch_artus_data(client_name=None):
     """
     conn = get_fabric_connection()
     if conn:
-        # Vraie requête sur Fabric
+        # Vraie requête sur Fabric avec Prepared Statements (Anti-SQL Injection)
         query = "SELECT client_id, nom_client, plafond_hospitalisation, date_effet FROM Artus_Contrats"
         if client_name:
-            # En production, on utiliserait des requêtes préparées pour éviter les injections SQL
-            query += f" WHERE nom_client LIKE '%{client_name}%'"
-        df = pd.read_sql(query, conn)
+            query += " WHERE nom_client LIKE ?"
+            # Utilisation de pyodbc avec paramètre (le % est ajouté autour de la variable)
+            df = pd.read_sql(query, conn, params=[f"%{client_name}%"])
+        else:
+            df = pd.read_sql(query, conn)
         conn.close()
         return df
     else:
-        # Données factices de fallback si pas de connexion Fabric
-        mock_data = {
-            'client_id': ['CLI1001', 'CLI1002'],
-            'nom_client': ['CLIENT FACTICE', 'GEREP ASSURANCES'],
-            'plafond_hospitalisation': ['300% BR', '500% BR'],
-            'date_effet': ['2026-01-01', '2026-05-01']
-        }
-        return pd.DataFrame(mock_data)
+        # FAIL-FAST: On refuse de comparer avec des données factices en production
+        raise ConnectionError("[ERREUR CRITIQUE] Impossible de se connecter à la base de données Fabric. L'audit a été interrompu pour des raisons de conformité (Pas de Fallback sur données factices).")
 
 def match_client_name(doc_name, fabric_df):
     """
