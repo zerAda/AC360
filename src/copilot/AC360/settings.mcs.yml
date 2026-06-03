@@ -12,11 +12,11 @@ configuration:
     defaultSchemaName: cra7f_AC360.gpt.default
 
   aISettings:
-    useModelKnowledge: true
+    useModelKnowledge: false
     isFileAnalysisEnabled: true
     isSemanticSearchEnabled: true
-    contentModeration: Low
-    optInUseLatestModels: false
+    contentModeration: High
+    optInUseLatestModels: true
 
   recognizer:
     kind: GenerativeAIRecognizer

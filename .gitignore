@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
+*.pyc
+*.pyo
 .Python
 env/
 build/
@@ -35,10 +37,24 @@ Thumbs.db
 
 # Databases
 *.db
+*.sqlite
 *.sqlite3
 
-# Environment
+# Environment / Secrets
 .env
+
+# Logs
+logs/
+*.log
+
+# Fichiers temporaires du pipeline d'audit
+temp_*.json
+final_audit_report.*
+jobs/
+
+# Archives & documents générés localement
+Archives_Documentaires/
+*.docx
 
 # Project Specific
 .planning/STATE.md.tmp

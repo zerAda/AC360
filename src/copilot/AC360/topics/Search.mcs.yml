@@ -18,6 +18,19 @@ beginDialog:
         - id: has-answer
           condition: =!IsBlank(Topic.Answer)
           actions:
+            - kind: SendActivity
+              id: send-answer
+              activity: "{Topic.Answer}"
+
             - kind: EndDialog
               id: end-topic
               clearTopicQueue: true
+
+      elseActions:
+        - kind: SendActivity
+          id: send-no-answer
+          activity: Je n'ai pas trouvé d'information dans les documents SharePoint pour cette demande.
+
+        - kind: EndDialog
+          id: end-no-answer
+          clearTopicQueue: true

@@ -20,7 +20,12 @@ beginDialog:
   actions:
     - kind: SendActivity
       id: SendActivity_oZ9SCY
-      activity: As an AI language model, I am not a licensed attorney and cannot provide legal advice. It's important to seek out the advice of a qualified legal professional who is licensed to practice law in your jurisdiction. They will be able to provide you with the specific legal advice that you need based on your individual circumstances.
+      activity: |-
+        Je peux vous aider à rechercher des informations dans les documents juridiques disponibles dans SharePoint.
+
+        Attention : Je suis un assistant documentaire, pas un juriste. Mes réponses sont basées uniquement sur les documents accessibles et ne constituent pas un avis juridique.
+
+        Quel document ou sujet juridique souhaitez-vous explorer ?
 
 inputType: {}
 outputType: {}

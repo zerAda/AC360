@@ -1,0 +1,62 @@
+title = "AC360 Gitleaks Configuration"
+
+[[rules]]
+id = "azure-client-secret"
+description = "Azure Client Secret"
+regex = '''(?i)(client.?secret|clientSecret).*['"][0-9a-zA-Z~_.-]{30,}['"]'''
+tags = ["azure", "secret"]
+
+[[rules]]
+id = "entra-tenant-id"
+description = "Entra ID Tenant ID"
+regex = '''(?i)(tenant.?id|tenantId).*['"][0-9a-f-]{36}['"]'''
+tags = ["azure", "entra"]
+
+[[rules]]
+id = "azure-api-key"
+description = "Azure API Key or Cognitive Services Key"
+regex = '''(?i)(AZURE_OCR_KEY|api.?key|apiKey).*['"][a-zA-Z0-9]{32,}['"]'''
+tags = ["azure", "cognitive"]
+
+[[rules]]
+id = "jwt-token"
+description = "JWT Token"
+regex = '''eyJ[a-zA-Z0-9+/=_-]{20,}\.eyJ[a-zA-Z0-9+/=_-]{20,}\.[a-zA-Z0-9+/=_-]{20,}'''
+tags = ["jwt", "token"]
+
+[[rules]]
+id = "teams-webhook"
+description = "Teams Webhook URL"
+regex = '''https://.*\.webhook\.office\.com/webhookb2/[a-zA-Z0-9@_-]+'''
+tags = ["teams", "webhook"]
+
+[[rules]]
+id = "sharepoint-connection-string"
+description = "SharePoint or Power Platform connection string"
+regex = '''(?i)(connectionString|conn_str|sharepoint.*password).*['"][^'"]{20,}['"]'''
+tags = ["sharepoint", "connection"]
+
+[[rules]]
+id = "azure-storage-key"
+description = "Azure Storage Account Key"
+regex = '''(?i)(AccountKey|storageKey).*[A-Za-z0-9+/]{86}=='''
+tags = ["azure", "storage"]
+
+[allowlist]
+regexes = [
+  '''\$\{.*\}''',
+  '''placeholder''',
+  '''votre-''',
+  '''XXXXXXX''',
+  '''\*\*\*''',
+  '''example\.com''',
+  '''<REPLACE_ME>''',
+  '''TODO'''
+]
+
+paths = [
+  ".git",
+  "node_modules",
+  "*.md",
+  "tests/red_team"
+]

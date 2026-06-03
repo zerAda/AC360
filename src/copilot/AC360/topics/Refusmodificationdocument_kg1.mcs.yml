@@ -1,5 +1,6 @@
 mcs.metadata:
   componentName: Refus modification document
+  enabled: false
 kind: AdaptiveDialog
 beginDialog:
   kind: OnRecognizedIntent
