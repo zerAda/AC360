@@ -13,6 +13,9 @@ import httpx
 import jwt
 from jwt.algorithms import RSAAlgorithm
 
+# Neutralisation des messages avant journalisation (anti fuite d'info / log-injection)
+from safe_logger import redact
+
 app = FastAPI(
     title="AC360 Audit Engine API",
     description="API Enterprise Grade pour déclencher le pipeline Python depuis Copilot Studio",
@@ -218,8 +221,13 @@ def run_audit_pipeline(job_id: str, doc_path: str, user_principal_name: str):
             log_audit_action(doc_path, "END_AUDIT", "SUCCESS", f"Pipeline terminé. job={job_id}")
             print(f"[API_WORKER] Audit terminé — job={job_id} — doc={doc_path}")
         else:
-            log_audit_action(doc_path, "END_AUDIT", "FAILED", f"Erreur Pipeline: {process.stderr}")
-            print(f"[API_WORKER_ERROR] Code {process.returncode}: {process.stderr}")
+            # Le stderr brut du pipeline peut contenir des chemins, des traces
+            # Python ou du contenu de document (OCR/FIC), voire des secrets. On
+            # le neutralise (masquage secrets/PII, contrôles, troncature) avant
+            # de le persister en base (audit_logs.details) ou de l'afficher.
+            safe_stderr = redact(process.stderr)
+            log_audit_action(doc_path, "END_AUDIT", "FAILED", f"Erreur Pipeline: {safe_stderr}")
+            print(f"[API_WORKER_ERROR] Code {process.returncode}: {safe_stderr}")
     except Exception as exc:
         print(f"[API_WORKER_ERROR] Exception fatale — job={job_id} : {exc}")
 
