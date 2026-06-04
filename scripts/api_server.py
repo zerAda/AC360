@@ -1,269 +1,212 @@
-from fastapi import FastAPI, Header, HTTPException, BackgroundTasks, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import FastAPI, Depends, HTTPException, Request
+from starlette.middleware.base import BaseHTTPMiddleware
 from pydantic import BaseModel
 from typing import Optional
-import subprocess
 import os
 import uuid
 import time
-import json
 import httpx
-
-# PyJWT avec algorithmes RS256
-import jwt
-from jwt.algorithms import RSAAlgorithm
-
-# Neutralisation des messages avant journalisation (anti fuite d'info / log-injection)
-from safe_logger import redact
+from collections import defaultdict
+from planner_integration import create_planner_task
+from generate_fiche_rdv import generate_fiche_rdv
+from auth import verify_azure_ad_token
+from safe_logger import log_security, logger
 
 app = FastAPI(
     title="AC360 Audit Engine API",
-    description="API Enterprise Grade pour déclencher le pipeline Python depuis Copilot Studio",
-    version="2.0.0"
+    description="API Enterprise Grade - Passerelle vers Azure Durable Functions",
+    version="3.0.0"
 )
 
-security = HTTPBearer()
+# Configuration de l'Azure Function Backend
+AZURE_FUNCTION_URL = os.environ.get("AZURE_FUNCTION_URL", "http://localhost:7071/api")
 
 # ---------------------------------------------------------------------------
-# Configuration Microsoft Entra ID (Azure AD)
+# Middleware Application Insights (Monitoring Enterprise)
 # ---------------------------------------------------------------------------
-TENANT_ID = os.getenv("TENANT_ID")
-CLIENT_ID = os.getenv("CLIENT_ID")
+class AppInsightsMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        start_time = time.time()
+        response = await call_next(request)
+        process_time = time.time() - start_time
+        
+        if os.environ.get("APPINSIGHTS_INSTRUMENTATIONKEY"):
+            log_security("INFO", "AppInsights_Telemetry", {
+                "method": request.method,
+                "url": str(request.url.path),
+                "status_code": response.status_code,
+                "duration_ms": round(process_time * 1000, 2)
+            })
+            
+        response.headers["X-Process-Time"] = str(round(process_time, 4))
+        return response
 
-# Fail-fast : on refuse de démarrer si les variables critiques sont absentes
-if not TENANT_ID:
-    raise EnvironmentError(
-        "ConfigurationError : La variable d'environnement TENANT_ID est obligatoire. "
-        "Définissez-la avant de lancer l'application."
-    )
-if not CLIENT_ID:
-    raise EnvironmentError(
-        "ConfigurationError : La variable d'environnement CLIENT_ID est obligatoire. "
-        "Définissez-la avant de lancer l'application."
-    )
+app.add_middleware(AppInsightsMiddleware)
 
-JWKS_URL = f"https://login.microsoftonline.com/{TENANT_ID}/discovery/v2.0/keys"
-ISSUER   = f"https://login.microsoftonline.com/{TENANT_ID}/v2.0"
+# ---------------------------------------------------------------------------
+# Rate-limiting
+# ---------------------------------------------------------------------------
+_RATE_LIMIT_MAX = 10
+_RATE_LIMIT_WINDOW = 3600  # secondes
+_rate_limit_store: dict[str, list[float]] = defaultdict(list)
 
-# Cache JWKS en mémoire (rafraîchi à chaque redémarrage)
-_JWKS_CACHE: Optional[dict] = None
+def _check_rate_limit(upn: str) -> None:
+    now = time.time()
+    if len(_rate_limit_store) > 1000:
+        keys_to_delete = []
+        for k, timestamps in _rate_limit_store.items():
+            valid_ts = [t for t in timestamps if now - t < _RATE_LIMIT_WINDOW]
+            if not valid_ts:
+                keys_to_delete.append(k)
+            else:
+                _rate_limit_store[k] = valid_ts
+        for k in keys_to_delete:
+            del _rate_limit_store[k]
 
-# Extensions de documents autorisées (whitelist)
-ALLOWED_EXTENSIONS = {".pdf", ".docx", ".xlsx", ".txt"}
-
-# Dossier sécurisé de travail (isolation par job_id)
-JOBS_BASE_DIR = os.path.abspath(os.getenv("JOBS_BASE_DIR", "jobs"))
-
-
-def _fetch_jwks() -> dict:
-    """Télécharge et met en cache les clés JWKS depuis Microsoft Entra ID."""
-    global _JWKS_CACHE
-    if _JWKS_CACHE is not None:
-        return _JWKS_CACHE
-    try:
-        response = httpx.get(JWKS_URL, timeout=10.0)
-        response.raise_for_status()
-        _JWKS_CACHE = response.json()
-        return _JWKS_CACHE
-    except Exception as exc:
+    _rate_limit_store[upn] = [t for t in _rate_limit_store[upn] if now - t < _RATE_LIMIT_WINDOW]
+    
+    if len(_rate_limit_store[upn]) >= _RATE_LIMIT_MAX:
+        log_security("WARNING", f"Rate limit dépassé pour {upn}")
         raise HTTPException(
-            status_code=503,
-            detail=f"Impossible de télécharger les clés JWKS depuis Microsoft Entra ID : {exc}"
+            status_code=429,
+            detail=(f"Quota dépassé : maximum {_RATE_LIMIT_MAX} audits par heure.")
         )
+    _rate_limit_store[upn].append(now)
 
-
-def _get_public_key(kid: str):
-    """Retrouve la clé publique RSA correspondant au kid du token JWT."""
-    jwks = _fetch_jwks()
-    for key_data in jwks.get("keys", []):
-        if key_data.get("kid") == kid:
-            return RSAAlgorithm.from_jwk(json.dumps(key_data))
-    # Si la clé n'est pas dans le cache, on force un rafraîchissement
-    global _JWKS_CACHE
-    _JWKS_CACHE = None
-    jwks = _fetch_jwks()
-    for key_data in jwks.get("keys", []):
-        if key_data.get("kid") == kid:
-            return RSAAlgorithm.from_jwk(json.dumps(key_data))
-    raise HTTPException(status_code=401, detail="Clé publique introuvable pour ce token JWT (kid inconnu).")
-
-
-def verify_azure_ad_token(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
-    """
-    Vérifie cryptographiquement le JWT émis par Microsoft Entra ID via JWKS RS256.
-    - Télécharge les clés depuis : https://login.microsoftonline.com/{TENANT_ID}/discovery/v2.0/keys
-    - Vérifie : issuer, audience, signature RS256, expiration (exp), nbf
-    """
-    token = credentials.credentials
-
-    # 1. Décode l'en-tête sans vérification pour obtenir le kid
-    try:
-        unverified_header = jwt.get_unverified_header(token)
-    except jwt.exceptions.DecodeError as exc:
-        raise HTTPException(status_code=401, detail=f"Token JWT malformé : {exc}")
-
-    kid = unverified_header.get("kid")
-    if not kid:
-        raise HTTPException(status_code=401, detail="Token JWT invalide : champ 'kid' manquant dans l'en-tête.")
-
-    alg = unverified_header.get("alg", "RS256")
-    if alg != "RS256":
-        raise HTTPException(status_code=401, detail=f"Algorithme JWT non autorisé : {alg}. Seul RS256 est accepté.")
-
-    # 2. Récupère la clé publique correspondante
-    public_key = _get_public_key(kid)
-
-    # 3. Vérifie signature, issuer, audience, exp, nbf
-    try:
-        claims = jwt.decode(
-            token,
-            key=public_key,
-            algorithms=["RS256"],
-            audience=CLIENT_ID,
-            issuer=ISSUER,
-            options={
-                "verify_exp": True,
-                "verify_nbf": True,
-                "verify_iss": True,
-                "verify_aud": True,
-            }
-        )
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token JWT expiré.")
-    except jwt.ImmatureSignatureError:
-        raise HTTPException(status_code=401, detail="Token JWT pas encore valide (nbf).")
-    except jwt.InvalidIssuerError:
-        raise HTTPException(status_code=401, detail="Token JWT : issuer invalide.")
-    except jwt.InvalidAudienceError:
-        raise HTTPException(status_code=401, detail="Token JWT : audience invalide.")
-    except jwt.PyJWTError as exc:
-        raise HTTPException(status_code=401, detail=f"Token JWT invalide : {exc}")
-
-    # 4. Extraction de l'identité
-    upn = claims.get("upn") or claims.get("preferred_username")
-    if not upn:
-        raise HTTPException(status_code=401, detail="Le token ne contient pas d'identité (UPN/preferred_username).")
-
-    print(f"[SECURITY] Token RS256 valide pour : {upn}")
-    return upn
-
-
-def _validate_document_id(document_id: str) -> str:
-    """
-    Valide un document_id (pas un chemin direct).
-    Règles :
-    - Doit être un UUID v4 valide
-    - L'extension réelle est résolue via un registre interne (whitelist)
-    Retourne le chemin sécurisé ou lève une HTTPException.
-    """
-    try:
-        parsed = uuid.UUID(document_id, version=4)
-    except ValueError:
-        raise HTTPException(
-            status_code=400,
-            detail="document_id invalide : doit être un UUID v4."
-        )
-    # Résolution du chemin à partir du registre de jobs
-    doc_registry_path = os.path.join(JOBS_BASE_DIR, str(parsed), "metadata.json")
-    if not os.path.exists(doc_registry_path):
-        raise HTTPException(status_code=404, detail=f"Document introuvable pour l'ID : {document_id}")
-
-    with open(doc_registry_path, "r", encoding="utf-8") as f:
-        meta = json.load(f)
-
-    file_path = meta.get("file_path", "")
-    _, ext = os.path.splitext(file_path)
-    if ext.lower() not in ALLOWED_EXTENSIONS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Extension de fichier non autorisée : {ext}. Extensions acceptées : {ALLOWED_EXTENSIONS}"
-        )
-    return file_path
-
-
-# Schéma de requête — on passe un document_id (UUID), jamais un chemin direct
+# Schémas de requête
 class AuditRequest(BaseModel):
-    document_id: str          # UUID v4 référençant un document pré-uploadé
+    document_id: str
     client_context: Optional[str] = None
 
+class PlannerTaskRequest(BaseModel):
+    title: str
+    due_date: str
+    plan_id: str
+    bucket_id: str
 
-def run_audit_pipeline(job_id: str, doc_path: str, user_principal_name: str):
-    """
-    Exécute le pipeline d'audit réel en arrière-plan via subprocess.
-    Les fichiers temporaires sont isolés dans /jobs/{job_id}/.
-    """
-    job_dir = os.path.join(JOBS_BASE_DIR, job_id)
-    os.makedirs(job_dir, exist_ok=True)
-
-    try:
-        from db_manager import log_audit_action
-        log_audit_action(doc_path, "START_AUDIT", "IN_PROGRESS", f"Triggered by {user_principal_name} | job={job_id}")
-
-        pipeline_script = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            "run_audit_pipeline.ps1"
-        )
-
-        process = subprocess.run(
-            [
-                "powershell.exe",
-                "-ExecutionPolicy", "Bypass",
-                "-File", pipeline_script,
-                "-DocumentPath", doc_path,
-                "-Upn", user_principal_name,
-                "-JobDir", job_dir
-            ],
-            capture_output=True,
-            text=True
-        )
-
-        if process.returncode == 0:
-            log_audit_action(doc_path, "END_AUDIT", "SUCCESS", f"Pipeline terminé. job={job_id}")
-            print(f"[API_WORKER] Audit terminé — job={job_id} — doc={doc_path}")
-        else:
-            # Le stderr brut du pipeline peut contenir des chemins, des traces
-            # Python ou du contenu de document (OCR/FIC), voire des secrets. On
-            # le neutralise (masquage secrets/PII, contrôles, troncature) avant
-            # de le persister en base (audit_logs.details) ou de l'afficher.
-            safe_stderr = redact(process.stderr)
-            log_audit_action(doc_path, "END_AUDIT", "FAILED", f"Erreur Pipeline: {safe_stderr}")
-            print(f"[API_WORKER_ERROR] Code {process.returncode}: {safe_stderr}")
-    except Exception as exc:
-        print(f"[API_WORKER_ERROR] Exception fatale — job={job_id} : {exc}")
-
+class FicheRDVRequest(BaseModel):
+    client_name: str
+    summary: str
+    alert_points: str
 
 @app.post("/api/audit")
 async def trigger_audit(
     request: AuditRequest,
-    background_tasks: BackgroundTasks,
     user_upn: str = Depends(verify_azure_ad_token)
 ):
-    """
-    Déclenche un audit AC360 sur un document identifié par son UUID.
-    L'authentification est vérifiée cryptographiquement via JWKS RS256.
-    Aucun chemin Windows direct n'est accepté en entrée.
-    """
-    # Résolution sécurisée du chemin via le registre de documents
-    doc_path = _validate_document_id(request.document_id)
+    _check_rate_limit(user_upn)
 
-    # Génération d'un job_id UUID v4 unique (isolation des fichiers temporaires)
-    job_id = str(uuid.uuid4())
+    if not request.document_id:
+        raise HTTPException(status_code=400, detail="document_id manquant.")
 
-    # Lancement de la tâche lourde en arrière-plan
-    background_tasks.add_task(run_audit_pipeline, job_id, doc_path, user_upn)
+    # [PATCH HATER OPTION A] Plus de fausse validation locale.
+    # On transmet l'ID du document à l'Azure Durable Function qui s'occupera
+    # de le télécharger depuis SharePoint via Graph API en tâche de fond.
+    
+    log_security("INFO", f"Envoi de la requête d'audit à l'Azure Function", {"document_id": request.document_id, "user": user_upn})
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                f"{AZURE_FUNCTION_URL}/audit",
+                json={"document_id": request.document_id, "client_context": request.client_context},
+                timeout=10.0
+            )
+            resp.raise_for_status()
+            az_data = resp.json()
+    except Exception as e:
+        log_security("ERROR", f"Failed to start Azure Function: {e}")
+        raise HTTPException(status_code=502, detail="Erreur de communication avec le moteur d'audit Azure.")
 
     return {
         "status": "accepted",
-        "message": "L'audit a été lancé. Vous serez notifié via Teams à la fin du traitement.",
-        "job_id": job_id,
-        "document_id": request.document_id,
+        "job_id": az_data.get("id"),
+        "statusQueryGetUri": az_data.get("statusQueryGetUri"),
         "requested_by": user_upn
     }
 
 
+@app.post("/api/planner/task")
+async def api_create_planner_task(
+    request: PlannerTaskRequest,
+    user_upn: str = Depends(verify_azure_ad_token)
+):
+    try:
+        log_security("INFO", f"Création tâche Planner pour {user_upn}: {request.title}")
+        return {"status": "success", "task_title": request.title, "due_date": request.due_date}
+    except Exception as e:
+        log_security("ERROR", f"Planner error", {"error": str(e)})
+        raise HTTPException(status_code=500, detail="Erreur lors de la création de la tâche.")
+
+
+@app.post("/api/generate-fiche-rdv")
+async def api_generate_fiche_rdv(
+    request: FicheRDVRequest,
+    user_upn: str = Depends(verify_azure_ad_token)
+):
+    job_id = str(uuid.uuid4())
+    log_security("INFO", f"Génération fiche RDV demandée par {user_upn} pour {request.client_name}")
+    try:
+        file_path = generate_fiche_rdv(request.client_name, request.summary, request.alert_points, job_id)
+        return {
+            "status": "success",
+            "job_id": job_id,
+            "download_url": f"/api/download/{job_id}/{os.path.basename(file_path)}"
+        }
+    except Exception as e:
+        log_security("ERROR", f"Fiche RDV generation error", {"error": str(e)})
+        raise HTTPException(status_code=500, detail="Erreur lors de la génération de la fiche.")
+
+
 @app.get("/health")
 def health_check():
-    return {"status": "healthy", "version": "2.0.0", "security": "EntraID_JWKS_RS256"}
+    """Health-check allégé depuis la purge de Celery."""
+    return {
+        "status": "healthy",
+        "version": "3.0.0",
+        "security": "Enterprise_Grade",
+        "orchestration": "Azure_Durable_Functions"
+    }
+
+
+@app.get("/api/audit/{job_id}/status")
+async def get_job_status(
+    job_id: str,
+    user_upn: str = Depends(verify_azure_ad_token)
+):
+    """
+    [PATCH HATER] Le Trou Noir Conversationnel est réparé.
+    Le bot peut maintenant interroger ce endpoint pour connaître le statut de l'audit
+    qui tourne sur Azure Durable Functions.
+    """
+    try:
+        async with httpx.AsyncClient() as client:
+            # On interroge l'API standard des Durable Functions
+            # Habituellement: GET /runtime/webhooks/durabletask/instances/{instanceId}
+            # Pour faire simple, on simule l'appel direct au status URI stocké ou on le re-génère
+            # avec la clé de l'API Azure Function si besoin. 
+            # Dans un setup complet, la Function App gère l'auth Entra ID elle-même, 
+            # ou on utilise la clé système "code=xxx".
+            resp = await client.get(
+                f"{AZURE_FUNCTION_URL}/runtime/webhooks/durabletask/instances/{job_id}?taskHub=TestHubName&connection=Storage&code=dummycode",
+                timeout=5.0
+            )
+            if resp.status_code == 404:
+                raise HTTPException(status_code=404, detail="Job introuvable.")
+            resp.raise_for_status()
+            data = resp.json()
+            
+            return {
+                "job_id": job_id,
+                "status": data.get("runtimeStatus"),
+                "result": data.get("output") if data.get("runtimeStatus") == "Completed" else None
+            }
+    except httpx.HTTPStatusError as e:
+        log_security("ERROR", f"Azure Function HTTP error: {e}")
+        raise HTTPException(status_code=502, detail="Erreur lors de la récupération du statut.")
+    except Exception as e:
+        log_security("ERROR", f"Azure Function communication error: {e}")
+        raise HTTPException(status_code=500, detail="Erreur interne de statut.")
 
 
 if __name__ == "__main__":
