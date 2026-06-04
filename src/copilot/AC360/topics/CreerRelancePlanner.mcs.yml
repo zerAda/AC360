@@ -1,0 +1,57 @@
+mcs.metadata:
+  componentName: Créer Relance Planner
+  description: Crée une tâche de suivi dans Microsoft Planner.
+kind: AdaptiveDialog
+beginDialog:
+  kind: OnIntent
+  id: main
+  intent:
+    triggerQueries:
+      - Créer une relance
+      - Ajouter une tâche Planner
+      - Rappelle-moi de relancer ce client
+  actions:
+    - kind: Question
+      id: ask-title
+      interruptionPolicy:
+        allowInterruption: true
+      variable: Topic.TaskTitle
+      prompt: "Quel est l'objet de cette relance (ex: Relancer M. Dupont pour le Kbis) ?"
+      entity: StringPrebuiltEntity
+
+    - kind: Question
+      id: ask-date
+      interruptionPolicy:
+        allowInterruption: true
+      variable: Topic.DueDate
+      prompt: "À quelle date dois-je planifier cette tâche (ex: 2024-12-31) ?"
+      entity: StringPrebuiltEntity
+
+    - kind: SendActivity
+      id: send-confirm
+      activity: "Création de la tâche en cours via l'API..."
+      
+    - kind: HttpRequestAction
+      id: http_planner
+      method: Post
+      url: https://ac360-api.azurewebsites.net/api/planner/task
+      headers:
+        Authorization: ="Bearer " & System.User.AccessToken
+      body:
+        content: |-
+          {
+            "title": "{Topic.TaskTitle}",
+            "due_date": "{Topic.DueDate}",
+            "plan_id": "DEFAULT_PLAN",
+            "bucket_id": "DEFAULT_BUCKET"
+          }
+        contentType: application/json
+      responseStringVariable: Topic.ApiResponse
+      
+    - kind: SendActivity
+      id: send-success
+      activity: "✅ La tâche **{Topic.TaskTitle}** a bien été ajoutée à votre Planner via Azure !"
+      
+    - kind: EndDialog
+      id: end-dialog
+      clearTopicQueue: true

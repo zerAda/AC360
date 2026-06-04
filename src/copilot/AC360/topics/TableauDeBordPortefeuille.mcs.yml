@@ -1,0 +1,110 @@
+mcs.metadata:
+  componentName: Tableau de bord portefeuille
+  description: Vue macro du portefeuille commercial — synthèse de tous les clients actifs, renouvellements à venir et alertes.
+kind: AdaptiveDialog
+beginDialog:
+  kind: OnRecognizedIntent
+  id: main
+  intent:
+    displayName: Tableau de bord portefeuille
+    triggerQueries:
+      - Vue d'ensemble de mon portefeuille
+      - Tableau de bord commercial
+      - Donne-moi une vue globale de mes clients
+      - Synthèse de mon portefeuille
+      - Quels sont mes clients actifs ?
+      - État de mon portefeuille
+      - Dashboard commercial
+      - Vue macro clients
+
+  actions:
+    - kind: SendActivity
+      id: msg_intro_dashboard
+      activity: |-
+        📊 Je prépare votre tableau de bord commercial en analysant les documents SharePoint...
+
+        *Cela peut prendre quelques instants selon le volume de documents disponibles.*
+
+    - kind: SearchAndSummarizeContent
+      id: search_dashboard
+      variable: Topic.Answer
+      userInput: '="Synthèse globale portefeuille clients : liste clients, contrats actifs, échéances renouvellement, sinistralité, alertes"'
+      moderationLevel: High
+      additionalInstructions: |-
+        Tu es AC360, Assistant Commercial Client 360 de GEREP.
+
+        MISSION : Produire un tableau de bord commercial macro à partir de TOUS les documents clients disponibles dans SharePoint.
+
+        RÈGLES :
+        - Baser la réponse exclusivement sur les documents SharePoint accessibles.
+        - Ne jamais inventer de données. Si une information est absente, l'indiquer.
+        - Ne pas mélanger les données de différents clients.
+        - Citer les sources pour chaque information critique.
+
+        FORMAT OBLIGATOIRE :
+
+        ## 📊 Tableau de Bord Commercial
+        *Données extraites de SharePoint*
+
+        ### 🏢 Portefeuille Clients (aperçu)
+        | Client | Statut | Échéance | Risque | Source |
+        |---|---|---|---|---|
+        | [Client A] | [Actif/À renouveler] | [Date] | [🟢/🟡/🔴] | [Fichier] |
+
+        ### ⏰ Renouvellements Urgents (< 90 jours)
+        - 🔴 **[Client]** — Échéance le [date] — [Contrat concerné]
+
+        ### ⚠️ Alertes Actives
+        - [Alerte 1 : sinistralité élevée, document manquant, impayé...]
+
+        ### 📈 Indicateurs Globaux
+        | Indicateur | Valeur | Source |
+        |---|---|---|
+        | Nombre de clients actifs | ... | |
+        | Volume de primes total | ... | |
+        | Clients à risque élevé | ... | |
+
+        ### 📚 Sources Utilisées
+        - [Liste des fichiers analysés]
+
+        Si les données sont insuffisantes : indiquer les informations manquantes et recommander d'enrichir SharePoint.
+      sharePointSearchDataSource: {}
+
+    - kind: ConditionGroup
+      id: condition_dashboard
+      conditions:
+        - id: has_answer_dashboard
+          condition: =!IsBlank(Topic.Answer)
+          actions:
+            - kind: SendActivity
+              id: display_dashboard
+              activity: "{Topic.Answer}"
+
+            - kind: SendActivity
+              id: followup_dashboard
+              activity: "💡 **Que souhaitez-vous approfondir ?**"
+              suggestedPrompts:
+                - Quels contrats expirent dans 30 jours ?
+                - Résume-moi le dossier d'un client spécifique
+                - Quels sont les clients à risque ?
+                - Analyse la sinistralité d'un client
+
+            - kind: EndDialog
+              id: end_dashboard
+              clearTopicQueue: true
+
+      elseActions:
+        - kind: SendActivity
+          id: msg_no_dashboard
+          activity: |-
+            ❌ Impossible de générer le tableau de bord.
+
+            Les documents nécessaires ne semblent pas disponibles dans SharePoint ou vous n'y avez pas accès.
+
+            💡 Vérifiez que vos dossiers clients sont bien indexés dans SharePoint.
+          suggestedPrompts:
+            - Recherche un document client spécifique
+
+        - kind: EndDialog
+          id: end_no_dashboard
+          clearTopicQueue: true

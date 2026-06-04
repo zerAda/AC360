@@ -1,0 +1,49 @@
+mcs.metadata:
+  componentName: Générer Fiche RDV
+  description: Compile les informations du client et génère un fichier Word (Fiche de Vol).
+kind: AdaptiveDialog
+beginDialog:
+  kind: OnIntent
+  id: main
+  intent:
+    triggerQueries:
+      - Génère la fiche de rendez-vous
+      - Prépare le One-Pager pour mon RDV
+      - Imprime la synthèse client
+      - Fiche de vol
+  actions:
+    - kind: Question
+      id: ask-client-name
+      interruptionPolicy:
+        allowInterruption: true
+      variable: Topic.ClientName
+      prompt: "Pour quel client souhaitez-vous générer la fiche de rendez-vous ?"
+      entity: StringPrebuiltEntity
+
+    - kind: SendActivity
+      id: send-confirm
+      activity: "⏳ Je rassemble les informations (Synthèse, Alertes) et je génère le document..."
+      
+    - kind: HttpRequestAction
+      id: http_fiche_rdv
+      method: Post
+      url: https://ac360-api.azurewebsites.net/api/generate-fiche-rdv
+      headers:
+        Authorization: ="Bearer " & System.User.AccessToken
+      body:
+        content: |-
+          {
+            "client_name": "{Topic.ClientName}",
+            "summary": "Généré via Azure Functions",
+            "alert_points": "Points d'alerte calculés"
+          }
+        contentType: application/json
+      responseStringVariable: Topic.ApiResponse
+      
+    - kind: SendActivity
+      id: send-success
+      activity: "✅ La fiche de rendez-vous a été générée via Azure (ID: {Topic.ApiResponse})."
+      
+    - kind: EndDialog
+      id: end-dialog
+      clearTopicQueue: true

@@ -1,0 +1,126 @@
+mcs.metadata:
+  componentName: Alertes renouvellement
+  description: Identifie les contrats clients arrivant à échéance dans 30, 60 ou 90 jours et génère une liste d'actions prioritaires.
+kind: AdaptiveDialog
+beginDialog:
+  kind: OnRecognizedIntent
+  id: main
+  intent:
+    displayName: Alertes renouvellement
+    triggerQueries:
+      - Quels contrats expirent bientôt ?
+      - Alertes renouvellement
+      - Contrats à renouveler
+      - Quelles échéances arrivent ?
+      - Renouvellements à venir
+      - Quels clients sont à renouveler ?
+      - Échéances du mois prochain
+      - Contrats qui expirent dans 30 jours
+      - Contrats qui expirent dans 60 jours
+      - Contrats qui expirent dans 90 jours
+
+  actions:
+    - kind: Question
+      id: ask_horizon
+      interruptionPolicy:
+        allowInterruption: true
+      variable: init:Topic.Horizon
+      prompt: |-
+        ⏰ Sur quel horizon souhaitez-vous voir les alertes de renouvellement ?
+      entity: StringPrebuiltEntity
+      suggestedPrompts:
+        - 30 jours
+        - 60 jours
+        - 90 jours
+        - Tous les renouvellements
+
+    - kind: SendActivity
+      id: msg_searching_renewals
+      activity: 🔍 Analyse des échéances contractuelles sur **{Topic.Horizon}**... Un instant.
+
+    - kind: SearchAndSummarizeContent
+      id: search_renewals
+      variable: Topic.Answer
+      userInput: '="Contrats arrivant à échéance renouvellement dans " & Topic.Horizon & " : dates d''expiration, clients, types de contrats, commerciaux responsables"'
+      moderationLevel: High
+      additionalInstructions: |-
+        Tu es AC360, Assistant Commercial Client 360 de GEREP.
+
+        MISSION : Identifier tous les contrats clients arrivant à échéance dans l'horizon "{Topic.Horizon}" à partir des documents SharePoint.
+
+        RÈGLES :
+        - Baser la réponse exclusivement sur les documents SharePoint accessibles.
+        - Trier par urgence décroissante (plus proche = plus urgent).
+        - Ne jamais inventer de dates. Si une date n'est pas trouvée, l'indiquer.
+        - Citer le fichier source pour chaque échéance.
+
+        FORMAT OBLIGATOIRE :
+
+        ## ⏰ Alertes Renouvellement — Horizon {Topic.Horizon}
+        *Analyse basée sur les documents SharePoint disponibles*
+
+        ### 🔴 Urgents (< 30 jours)
+        | Client | Contrat | Échéance | Commercial | Source |
+        |---|---|---|---|---|
+        | [Client] | [Frais de Santé / Prévoyance / ...] | [JJ/MM/AAAA] | [Nom] | [Fichier] |
+
+        ### 🟡 À Préparer (30-60 jours)
+        | Client | Contrat | Échéance | Commercial | Source |
+        |---|---|---|---|---|
+
+        ### 🟢 À Anticiper (60-90 jours)
+        | Client | Contrat | Échéance | Commercial | Source |
+        |---|---|---|---|---|
+
+        ### 🎯 Actions Prioritaires Recommandées
+        1. **[Client le plus urgent]** — Contacter immédiatement pour [action]
+        2. **[Client suivant]** — Préparer la proposition de renouvellement
+
+        ### 📚 Sources Analysées
+        - [Fichiers consultés]
+
+        ### ⚠️ Limites
+        - [Contrats dont la date d'échéance n'a pas pu être trouvée]
+      sharePointSearchDataSource: {}
+
+    - kind: ConditionGroup
+      id: condition_renewals
+      conditions:
+        - id: has_renewals
+          condition: =!IsBlank(Topic.Answer)
+          actions:
+            - kind: SendActivity
+              id: display_renewals
+              activity: "{Topic.Answer}"
+
+            - kind: SendActivity
+              id: followup_renewals
+              activity: "💡 **Prochaine étape ?**"
+              suggestedPrompts:
+                - Prépare mon RDV de renouvellement avec ce client
+                - Résume-moi le dossier de ce client
+                - Donne-moi les arguments de vente pour ce client
+                - Rédige un mail de relance pour ce client
+
+            - kind: EndDialog
+              id: end_renewals
+              clearTopicQueue: true
+
+      elseActions:
+        - kind: SendActivity
+          id: msg_no_renewals
+          activity: |-
+            ℹ️ Aucun renouvellement identifié sur l'horizon **{Topic.Horizon}** dans les documents disponibles.
+
+            Cela peut signifier que :
+            - Les dates d'échéance ne sont pas documentées dans SharePoint
+            - Tous les contrats sont renouvelés au-delà de cet horizon
+
+            💡 Vérifiez que les contrats sont bien enregistrés avec leurs dates dans SharePoint.
+          suggestedPrompts:
+            - Vue d'ensemble de mon portefeuille
+            - Résume-moi le dossier d'un client
+
+        - kind: EndDialog
+          id: end_no_renewals
+          clearTopicQueue: true

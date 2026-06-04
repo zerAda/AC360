@@ -1,0 +1,136 @@
+mcs.metadata:
+  componentName: Comparaison tarifaire concurrents
+  description: Compare les offres et tarifs GEREP avec ceux de la concurrence pour un client donné, à partir des documents disponibles.
+kind: AdaptiveDialog
+beginDialog:
+  kind: OnRecognizedIntent
+  id: main
+  intent:
+    displayName: Comparaison tarifaire concurrents
+    triggerQueries:
+      - Comparaison tarifaire concurrents
+      - Compare nos tarifs avec la concurrence
+      - Offres concurrentes pour ce client
+      - Comment on se situe face à la concurrence ?
+      - Analyse concurrentielle tarifaire
+      - Le concurrent propose quoi ?
+      - Avons-nous un avantage tarifaire ?
+      - Benchmark tarifaire
+      - Comparatif assureurs
+
+  actions:
+    - kind: Question
+      id: ask_client_tarif
+      interruptionPolicy:
+        allowInterruption: true
+      variable: init:Topic.ClientName
+      prompt: Pour quel client souhaitez-vous faire une comparaison tarifaire ?
+      entity: StringPrebuiltEntity
+
+    - kind: Question
+      id: ask_concurrents
+      interruptionPolicy:
+        allowInterruption: true
+      variable: init:Topic.Concurrent
+      prompt: |-
+        Quel(s) concurrent(s) souhaitez-vous comparer ?
+        *(ex : AXA, Malakoff Humanis, AG2R, Generali, April, Harmonie Mutuelle...)*
+      entity: StringPrebuiltEntity
+
+    - kind: SendActivity
+      id: msg_searching_tarif
+      activity: 💶 Analyse comparative des offres GEREP vs **{Topic.Concurrent}** pour **{Topic.ClientName}**...
+
+    - kind: SearchAndSummarizeContent
+      id: search_tarif_concurrence
+      variable: Topic.Answer
+      userInput: '="Comparaison tarifaire offres concurrentes " & Topic.Concurrent & " vs GEREP pour client " & Topic.ClientName & " : cotisations primes garanties niveaux"'
+      moderationLevel: High
+      additionalInstructions: |-
+        Tu es AC360, Assistant Commercial Client 360 de GEREP.
+
+        MISSION : Comparer les offres tarifaires GEREP avec celles du concurrent "{Topic.Concurrent}" pour le client "{Topic.ClientName}", à partir des documents SharePoint disponibles (appels d'offres, propositions, études comparatives, devis).
+
+        RÈGLES :
+        - Utiliser UNIQUEMENT les données présentes dans les documents SharePoint.
+        - Ne jamais inventer de tarifs, de garanties ou de niveaux de cotisation.
+        - Si aucune donnée concurrentielle n'est disponible, l'indiquer clairement.
+        - Rester factuel et objectif dans la comparaison.
+        - Citer les sources pour chaque donnée.
+
+        FORMAT OBLIGATOIRE :
+
+        ## 💶 Comparaison Tarifaire — {Topic.ClientName}
+        *GEREP vs {Topic.Concurrent}*
+
+        ### 📊 Tableau Comparatif
+
+        | Garantie | GEREP | {Topic.Concurrent} | Avantage |
+        |---|---|---|---|
+        | Frais de Santé | [Cotisation X€/mois] | [Cotisation Y€/mois] | [🟢 GEREP / 🔴 Concurrent / 🟡 Équivalent] |
+        | Prévoyance | [X€] | [Y€] | [🟢/🔴/🟡] |
+        | Niveau de couverture | [Détail] | [Détail] | [🟢/🔴/🟡] |
+        | Services associés | [Oui/Non] | [Oui/Non] | [🟢/🔴/🟡] |
+
+        ### 🏆 Avantages GEREP
+        - ✅ [Avantage 1 : prix, couverture, service, réseau...]
+        - ✅ [Avantage 2]
+
+        ### ⚠️ Points de Vigilance
+        - ⚠️ [Domaine où la concurrence est plus compétitive]
+
+        ### 🎤 Arguments à Utiliser en Rendez-Vous
+        1. **Sur le prix** : "[Argument basé sur les données]"
+        2. **Sur la qualité** : "[Argument basé sur les données]"
+        3. **Sur le service** : "[Argument basé sur les données]"
+
+        ### 📚 Sources Utilisées
+        - [Fichiers consultés]
+
+        ### ⚠️ Limites
+        - [Données manquantes ou périmées — ne pas inventer]
+        - Si aucune donnée concurrentielle n'est trouvée : "Aucune donnée sur {Topic.Concurrent} n'est disponible dans SharePoint pour ce client. Je vous recommande de consulter les dernières études de marché."
+      sharePointSearchDataSource: {}
+
+    - kind: ConditionGroup
+      id: condition_tarif
+      conditions:
+        - id: has_tarif
+          condition: =!IsBlank(Topic.Answer)
+          actions:
+            - kind: SendActivity
+              id: display_tarif
+              activity: "{Topic.Answer}"
+
+            - kind: SendActivity
+              id: followup_tarif
+              activity: "💡 **Pour aller plus loin dans votre préparation :**"
+              suggestedPrompts:
+                - Donne-moi les arguments de vente pour ce client
+                - Prépare mon RDV de renouvellement avec ce client
+                - Rédige un mail avec cette analyse comparative
+                - Analyse les gaps de couverture pour ce client
+
+            - kind: EndDialog
+              id: end_tarif
+              clearTopicQueue: true
+
+      elseActions:
+        - kind: SendActivity
+          id: msg_no_tarif
+          activity: |-
+            ℹ️ Aucune donnée de comparaison tarifaire trouvée pour **{Topic.ClientName}** face à **{Topic.Concurrent}** dans les documents disponibles.
+
+            Les données comparatives peuvent se trouver dans :
+            - Les appels d'offres et réponses concurrentes
+            - Les études de marché stockées dans SharePoint
+            - Les comptes-rendus de mise en concurrence
+
+            💡 Enrichissez SharePoint avec les devis concurrents pour que je puisse les analyser.
+          suggestedPrompts:
+            - Donne-moi les arguments de vente généraux
+            - Analyse concurrence générale
+
+        - kind: EndDialog
+          id: end_no_tarif
+          clearTopicQueue: true

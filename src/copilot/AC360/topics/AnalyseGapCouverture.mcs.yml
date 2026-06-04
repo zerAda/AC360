@@ -1,0 +1,115 @@
+mcs.metadata:
+  componentName: Analyse gap de couverture
+  description: Identifie les garanties absentes ou insuffisantes dans le contrat d'un client par rapport aux standards du marché.
+kind: AdaptiveDialog
+beginDialog:
+  kind: OnRecognizedIntent
+  id: main
+  intent:
+    displayName: Analyse gap de couverture
+    triggerQueries:
+      - Analyse les gaps de couverture
+      - Quelles garanties manquent ?
+      - Couverture insuffisante
+      - Analyse de couverture
+      - Le client est-il bien couvert ?
+      - Quels risques ne sont pas couverts ?
+      - Gap d'assurance
+      - Audit de couverture
+      - Risques non assurés
+
+  actions:
+    - kind: Question
+      id: ask_client_gap
+      interruptionPolicy:
+        allowInterruption: true
+      variable: init:Topic.ClientName
+      prompt: Pour quel client souhaitez-vous analyser les gaps de couverture ?
+      entity: StringPrebuiltEntity
+
+    - kind: SendActivity
+      id: msg_searching_gap
+      activity: 🔍 Analyse des garanties souscrites vs recommandées pour **{Topic.ClientName}**...
+
+    - kind: SearchAndSummarizeContent
+      id: search_gap
+      variable: Topic.Answer
+      userInput: '="Garanties couvertures contrats assurance souscrites pour " & Topic.ClientName & " : frais de santé prévoyance retraite dépendance"'
+      moderationLevel: High
+      additionalInstructions: |-
+        Tu es AC360, Assistant Commercial Client 360 de GEREP.
+
+        MISSION : Identifier les gaps de couverture du client "{Topic.ClientName}" — ce qui est souscrit vs ce qui est recommandé selon les standards marché.
+
+        RÈGLES :
+        - Utiliser UNIQUEMENT les données des documents SharePoint.
+        - Ne jamais inventer de garanties ou de montants.
+        - Baser les recommandations sur les bonnes pratiques du marché de l'assurance collective.
+        - Citer les sources.
+
+        FORMAT OBLIGATOIRE :
+
+        ## 🔍 Analyse de Couverture — {Topic.ClientName}
+
+        ### ✅ Garanties Souscrites
+        | Garantie | Niveau | Adéquation | Source |
+        |---|---|---|---|
+        | Frais de Santé | [Base/Confort/Haut de gamme] | [🟢 OK / 🟡 Insuffisant / 🔴 Absent] | [Fichier] |
+        | Prévoyance Décès | [Capital X€] | [🟢/🟡/🔴] | [Fichier] |
+        | Prévoyance Incapacité | [X% salaire] | [🟢/🟡/🔴] | [Fichier] |
+        | Retraite supplémentaire | [Article 83/PER] | [🟢/🟡/🔴] | [Fichier] |
+        | Dépendance | [Oui/Non] | [🟢/🟡/🔴] | [Fichier] |
+
+        ### ❌ Gaps Identifiés (Opportunités Commerciales)
+        | Gap | Impact Salarié | Recommandation | Priorité |
+        |---|---|---|---|
+        | [Garantie absente] | [Risque pour le salarié] | [Solution GEREP] | [🔴/🟡/🟢] |
+
+        ### 💡 Axes de Développement Commercial
+        1. 🔴 **[Gap critique]** — À aborder en priorité lors du prochain RDV
+        2. 🟡 **[Gap modéré]** — Opportunité de cross-selling
+        3. 🟢 **[Amélioration possible]** — À mentionner
+
+        ### 📚 Sources Utilisées
+        - [Fichiers]
+
+        ### ⚠️ Limites
+        - [Garanties dont les détails n'ont pas pu être trouvés]
+      sharePointSearchDataSource: {}
+
+    - kind: ConditionGroup
+      id: condition_gap
+      conditions:
+        - id: has_gap
+          condition: =!IsBlank(Topic.Answer)
+          actions:
+            - kind: SendActivity
+              id: display_gap
+              activity: "{Topic.Answer}"
+
+            - kind: SendActivity
+              id: followup_gap
+              activity: "💡 **Prochaine étape ?**"
+              suggestedPrompts:
+                - Donne-moi les arguments de vente pour ce client
+                - Compare nos tarifs avec la concurrence
+                - Prépare mon RDV de renouvellement avec ce client
+                - Rédige un mail avec ces recommandations
+
+            - kind: EndDialog
+              id: end_gap
+              clearTopicQueue: true
+
+      elseActions:
+        - kind: SendActivity
+          id: msg_no_gap
+          activity: |-
+            ℹ️ Impossible d'analyser les garanties de **{Topic.ClientName}** — les documents de contrat ne sont pas disponibles.
+
+            Assurez-vous que les contrats et conditions générales sont bien stockés dans SharePoint.
+          suggestedPrompts:
+            - Quels documents manquent pour ce client ?
+
+        - kind: EndDialog
+          id: end_no_gap
+          clearTopicQueue: true

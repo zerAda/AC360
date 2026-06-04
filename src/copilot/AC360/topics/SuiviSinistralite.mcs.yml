@@ -1,0 +1,120 @@
+mcs.metadata:
+  componentName: Suivi sinistralité
+  description: Analyse l'historique et le niveau de sinistralité d'un client pour préparer un rendez-vous ou évaluer le risque.
+kind: AdaptiveDialog
+beginDialog:
+  kind: OnRecognizedIntent
+  id: main
+  intent:
+    displayName: Suivi sinistralité
+    triggerQueries:
+      - Suivi sinistralité
+      - Historique des sinistres du client
+      - Quelle est la sinistralité de ce client ?
+      - Analyse les sinistres
+      - Sinistres déclarés
+      - Taux de sinistralité
+      - Bilan sinistres
+      - Résultat technique du client
+      - Statistiques sinistres
+
+  actions:
+    - kind: Question
+      id: ask_client_sinistres
+      interruptionPolicy:
+        allowInterruption: true
+      variable: init:Topic.ClientName
+      prompt: Pour quel client souhaitez-vous analyser la sinistralité ?
+      entity: StringPrebuiltEntity
+
+    - kind: SendActivity
+      id: msg_searching_sinistres
+      activity: 📉 Analyse de la sinistralité de **{Topic.ClientName}** en cours...
+
+    - kind: SearchAndSummarizeContent
+      id: search_sinistralite
+      variable: Topic.Answer
+      userInput: ="Sinistralité sinistres déclarés historique résultat technique " & Topic.ClientName
+      moderationLevel: High
+      additionalInstructions: |-
+        Tu es AC360, Assistant Commercial Client 360 de GEREP.
+
+        MISSION : Analyser l'historique de sinistralité du client "{Topic.ClientName}" à partir des documents SharePoint.
+
+        RÈGLES :
+        - Utiliser UNIQUEMENT les données des documents SharePoint accessibles.
+        - Ne jamais inventer de montants, de dates ou de statistiques.
+        - Si aucun sinistre n'est documenté, l'indiquer clairement.
+        - Citer le fichier source pour chaque donnée.
+
+        FORMAT OBLIGATOIRE :
+
+        ## 📉 Analyse Sinistralité — {Topic.ClientName}
+
+        ### 📊 Bilan Global
+        | Période | Nbre sinistres | Montant total | S/P (%) | Source |
+        |---|---|---|---|---|
+        | [Année N] | [X] | [Xk€] | [X%] | [Fichier] |
+        | [Année N-1] | [X] | [Xk€] | [X%] | [Fichier] |
+
+        ### 🔍 Sinistres Significatifs
+        | Date | Nature | Montant | Statut | Source |
+        |---|---|---|---|---|
+        | [JJ/MM/AAAA] | [AT / Maladie / Décès / ...] | [X€] | [Clos/En cours] | [Fichier] |
+
+        ### 📈 Tendance
+        - **Évolution S/P :** [Hausse / Stable / Baisse] sur les X dernières années
+        - **Risque pour le renouvellement :** [🔴 Élevé / 🟡 Modéré / 🟢 Faible]
+        - **Impact tarifaire probable :** [+X% / Stable / -X%]
+
+        ### 💡 Recommandations Commerciales
+        1. [Argument / action à préparer pour le RDV]
+        2. [Mesure préventive à proposer]
+
+        ### 📚 Sources Utilisées
+        - [Fichiers]
+
+        ### ⚠️ Limites
+        - [Données manquantes ou périodes non couvertes]
+      sharePointSearchDataSource: {}
+
+    - kind: ConditionGroup
+      id: condition_sinistralite
+      conditions:
+        - id: has_sinistres
+          condition: =!IsBlank(Topic.Answer)
+          actions:
+            - kind: SendActivity
+              id: display_sinistralite
+              activity: "{Topic.Answer}"
+
+            - kind: SendActivity
+              id: followup_sinistralite
+              activity: "💡 **Que voulez-vous faire avec ces données ?**"
+              suggestedPrompts:
+                - Prépare mon RDV de renouvellement avec ce client
+                - Donne-moi les arguments de vente pour ce client
+                - Analyse les gaps de couverture pour ce client
+                - Compare nos tarifs avec la concurrence
+
+            - kind: EndDialog
+              id: end_sinistralite
+              clearTopicQueue: true
+
+      elseActions:
+        - kind: SendActivity
+          id: msg_no_sinistres
+          activity: |-
+            ℹ️ Aucune donnée de sinistralité trouvée pour **{Topic.ClientName}** dans les documents disponibles.
+
+            Les statistiques sinistres peuvent se trouver dans :
+            - Les bilans annuels de l'assureur
+            - Les comptes-rendus de réunion de suivi
+            - Les relevés de sinistres transmis par l'assureur
+          suggestedPrompts:
+            - Résume-moi le dossier de ce client
+            - Quels documents manquent ?
+
+        - kind: EndDialog
+          id: end_no_sinistres
+          clearTopicQueue: true
