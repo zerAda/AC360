@@ -6,6 +6,7 @@ import os
 import uuid
 import time
 import httpx
+import asyncio
 from collections import defaultdict
 from planner_integration import create_planner_task
 from generate_fiche_rdv import generate_fiche_rdv
@@ -20,6 +21,14 @@ app = FastAPI(
 
 # Configuration de l'Azure Function Backend
 AZURE_FUNCTION_URL = os.environ.get("AZURE_FUNCTION_URL", "http://localhost:7071/api")
+AZURE_FUNCTION_KEY = os.environ.get("AZURE_FUNCTION_KEY", "")
+
+# Global HTTP Client pour éviter le Socket Exhaustion
+http_client = httpx.AsyncClient(limits=httpx.Limits(max_keepalive_connections=50, max_connections=200))
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    await http_client.aclose()
 
 # ---------------------------------------------------------------------------
 # Middleware Application Insights (Monitoring Enterprise)
@@ -50,18 +59,23 @@ _RATE_LIMIT_MAX = 10
 _RATE_LIMIT_WINDOW = 3600  # secondes
 _rate_limit_store: dict[str, list[float]] = defaultdict(list)
 
-def _check_rate_limit(upn: str) -> None:
+async def cleanup_rate_limits():
+    now = time.time()
+    keys_to_delete = []
+    for k, timestamps in list(_rate_limit_store.items()):
+        valid_ts = [t for t in timestamps if now - t < _RATE_LIMIT_WINDOW]
+        if not valid_ts:
+            keys_to_delete.append(k)
+        else:
+            _rate_limit_store[k] = valid_ts
+        await asyncio.sleep(0)  # Ne pas bloquer l'Event Loop
+    for k in keys_to_delete:
+        _rate_limit_store.pop(k, None)
+
+async def _check_rate_limit(upn: str) -> None:
     now = time.time()
     if len(_rate_limit_store) > 1000:
-        keys_to_delete = []
-        for k, timestamps in _rate_limit_store.items():
-            valid_ts = [t for t in timestamps if now - t < _RATE_LIMIT_WINDOW]
-            if not valid_ts:
-                keys_to_delete.append(k)
-            else:
-                _rate_limit_store[k] = valid_ts
-        for k in keys_to_delete:
-            del _rate_limit_store[k]
+        asyncio.create_task(cleanup_rate_limits())
 
     _rate_limit_store[upn] = [t for t in _rate_limit_store[upn] if now - t < _RATE_LIMIT_WINDOW]
     
@@ -94,7 +108,7 @@ async def trigger_audit(
     request: AuditRequest,
     user_upn: str = Depends(verify_azure_ad_token)
 ):
-    _check_rate_limit(user_upn)
+    await _check_rate_limit(user_upn)
 
     if not request.document_id:
         raise HTTPException(status_code=400, detail="document_id manquant.")
@@ -106,14 +120,13 @@ async def trigger_audit(
     log_security("INFO", f"Envoi de la requête d'audit à l'Azure Function", {"document_id": request.document_id, "user": user_upn})
     
     try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                f"{AZURE_FUNCTION_URL}/audit",
-                json={"document_id": request.document_id, "client_context": request.client_context},
-                timeout=10.0
-            )
-            resp.raise_for_status()
-            az_data = resp.json()
+        resp = await http_client.post(
+            f"{AZURE_FUNCTION_URL}/audit",
+            json={"document_id": request.document_id, "client_context": request.client_context},
+            timeout=10.0
+        )
+        resp.raise_for_status()
+        az_data = resp.json()
     except Exception as e:
         log_security("ERROR", f"Failed to start Azure Function: {e}")
         raise HTTPException(status_code=502, detail="Erreur de communication avec le moteur d'audit Azure.")
@@ -129,14 +142,20 @@ async def trigger_audit(
 @app.post("/api/planner/task")
 async def api_create_planner_task(
     request: PlannerTaskRequest,
+    req: Request,
     user_upn: str = Depends(verify_azure_ad_token)
 ):
     try:
+        token = req.headers.get("Authorization", "").replace("Bearer ", "")
         log_security("INFO", f"Création tâche Planner pour {user_upn}: {request.title}")
-        return {"status": "success", "task_title": request.title, "due_date": request.due_date}
+        result = await create_planner_task(token, request.plan_id, request.bucket_id, request.title, request.due_date)
+        return {"status": "success", "task_title": request.title, "due_date": request.due_date, "planner_task_id": result.get("id")}
+    except httpx.HTTPStatusError as e:
+        log_security("ERROR", f"Graph API Error: {e.response.text}")
+        raise HTTPException(status_code=502, detail="Erreur Microsoft Graph.")
     except Exception as e:
         log_security("ERROR", f"Planner error", {"error": str(e)})
-        raise HTTPException(status_code=500, detail="Erreur lors de la création de la tâche.")
+        raise HTTPException(status_code=500, detail="Erreur interne lors de la création de la tâche.")
 
 
 @app.post("/api/generate-fiche-rdv")
@@ -180,27 +199,29 @@ async def get_job_status(
     qui tourne sur Azure Durable Functions.
     """
     try:
-        async with httpx.AsyncClient() as client:
-            # On interroge l'API standard des Durable Functions
-            # Habituellement: GET /runtime/webhooks/durabletask/instances/{instanceId}
-            # Pour faire simple, on simule l'appel direct au status URI stocké ou on le re-génère
-            # avec la clé de l'API Azure Function si besoin. 
-            # Dans un setup complet, la Function App gère l'auth Entra ID elle-même, 
-            # ou on utilise la clé système "code=xxx".
-            resp = await client.get(
-                f"{AZURE_FUNCTION_URL}/runtime/webhooks/durabletask/instances/{job_id}?taskHub=TestHubName&connection=Storage&code=dummycode",
-                timeout=5.0
-            )
-            if resp.status_code == 404:
-                raise HTTPException(status_code=404, detail="Job introuvable.")
-            resp.raise_for_status()
-            data = resp.json()
+        # On interroge l'API standard des Durable Functions
+        # Habituellement: GET /runtime/webhooks/durabletask/instances/{instanceId}
+        # Pour faire simple, on simule l'appel direct au status URI stocké ou on le re-génère
+        # avec la clé de l'API Azure Function si besoin. 
+        # Dans un setup complet, la Function App gère l'auth Entra ID elle-même, 
+        # ou on utilise la clé système.
+        
+        auth_param = f"&code={AZURE_FUNCTION_KEY}" if AZURE_FUNCTION_KEY else ""
+        
+        resp = await http_client.get(
+            f"{AZURE_FUNCTION_URL}/runtime/webhooks/durabletask/instances/{job_id}?taskHub=TestHubName&connection=Storage{auth_param}",
+            timeout=5.0
+        )
+        if resp.status_code == 404:
+            raise HTTPException(status_code=404, detail="Job introuvable.")
+        resp.raise_for_status()
+        data = resp.json()
             
-            return {
-                "job_id": job_id,
-                "status": data.get("runtimeStatus"),
-                "result": data.get("output") if data.get("runtimeStatus") == "Completed" else None
-            }
+        return {
+            "job_id": job_id,
+            "status": data.get("runtimeStatus"),
+            "result": data.get("output") if data.get("runtimeStatus") == "Completed" else None
+        }
     except httpx.HTTPStatusError as e:
         log_security("ERROR", f"Azure Function HTTP error: {e}")
         raise HTTPException(status_code=502, detail="Erreur lors de la récupération du statut.")
