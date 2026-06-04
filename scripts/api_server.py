@@ -1,5 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi.responses import FileResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from typing import Optional
 import os
@@ -166,7 +168,14 @@ async def api_generate_fiche_rdv(
     job_id = str(uuid.uuid4())
     log_security("INFO", f"Génération fiche RDV demandée par {user_upn} pour {request.client_name}")
     try:
-        file_path = generate_fiche_rdv(request.client_name, request.summary, request.alert_points, job_id)
+        # Prevent event loop blocking by offloading the synchronous file I/O to a threadpool
+        file_path = await run_in_threadpool(
+            generate_fiche_rdv,
+            request.client_name,
+            request.summary,
+            request.alert_points,
+            job_id
+        )
         return {
             "status": "success",
             "job_id": job_id,
@@ -175,6 +184,33 @@ async def api_generate_fiche_rdv(
     except Exception as e:
         log_security("ERROR", f"Fiche RDV generation error", {"error": str(e)})
         raise HTTPException(status_code=500, detail="Erreur lors de la génération de la fiche.")
+
+@app.get("/api/download/{job_id}/{filename}")
+async def download_fiche_rdv(
+    job_id: str,
+    filename: str,
+    user_upn: str = Depends(verify_azure_ad_token)
+):
+    """
+    [PATCH HATER] L'endpoint fantôme est réparé.
+    Le fichier Word généré peut enfin être téléchargé en toute sécurité.
+    """
+    if ".." in filename or "/" in filename or "\\" in filename:
+        log_security("WARNING", f"Tentative de Path Traversal : {filename} par {user_upn}")
+        raise HTTPException(status_code=400, detail="Nom de fichier invalide.")
+    
+    from config import JOBS_BASE_DIR
+    file_path = os.path.join(JOBS_BASE_DIR, job_id, filename)
+    
+    if not os.path.exists(file_path):
+        log_security("WARNING", f"Fichier non trouvé : {file_path}")
+        raise HTTPException(status_code=404, detail="Fichier introuvable.")
+        
+    return FileResponse(
+        path=file_path, 
+        filename=filename, 
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
 
 
 @app.get("/health")
