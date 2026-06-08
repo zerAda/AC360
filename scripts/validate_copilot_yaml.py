@@ -136,6 +136,9 @@ def validate_all():
     if ko or rag_ko:
         print("\n[ECHEC] Validation Copilot Studio en échec.")
         sys.exit(1)
+    elif not ok:
+        print("\n[ECHEC] Aucun fichier YAML analysé. Le répertoire est vide ou introuvable.")
+        sys.exit(1)
     else:
         print("\n[SUCCES] Tous les fichiers YAML sont valides et sans silent-RAG.")
         sys.exit(0)

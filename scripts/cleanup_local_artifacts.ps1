@@ -18,38 +18,28 @@ $Root = Split-Path $PSScriptRoot -Parent
 
 Write-Host "`n🧹 Nettoyage des artefacts locaux AC360..." -ForegroundColor Cyan
 
-$Patterns = @(
-    # Caches Python
-    "$Root\**\__pycache__",
-    "$Root\**\*.pyc",
-    "$Root\**\*.pyo",
+# [PATCH HATER] Correction du nettoyeur inopérant : Remplacement de l'invalid globbing ** par Get-ChildItem -Recurse
+$RecursivePatterns = @(
+    "__pycache__", "*.pyc", "*.pyo",
+    "*.db", "*.sqlite", "*.sqlite3", "*.log",
+    "temp_*.json", "final_audit_report.json", "final_audit_report.csv"
+)
 
-    # Bases de données locales
-    "$Root\**\*.db",
-    "$Root\**\*.sqlite",
-    "$Root\**\*.sqlite3",
-
-    # Logs
+$ExplicitPaths = @(
     "$Root\logs",
-    "$Root\**\*.log",
-
-    # Fichiers temporaires pipeline
-    "$Root\**\temp_*.json",
-    "$Root\**\final_audit_report.json",
-    "$Root\**\final_audit_report.csv",
-
-    # Répertoires jobs (UUID isolés)
     "$Root\jobs",
-
-    # Archives documentaires locales
     "$Root\Archives_Documentaires"
 )
 
 $TotalDeleted = 0
 
-foreach ($Pattern in $Patterns) {
-    $Items = Get-Item -Path $Pattern -ErrorAction SilentlyContinue
+# Nettoyage récursif
+foreach ($Pattern in $RecursivePatterns) {
+    $Items = Get-ChildItem -Path $Root -Filter $Pattern -Recurse -Force -ErrorAction SilentlyContinue
     foreach ($Item in $Items) {
+        # Si c'est un dossier et qu'on le supprime, ne pas essayer de supprimer ses enfants individuellement
+        if (-not (Test-Path $Item.FullName)) { continue }
+        
         try {
             if ($Item.PSIsContainer) {
                 Remove-Item -Recurse -Force $Item.FullName
@@ -61,6 +51,19 @@ foreach ($Pattern in $Patterns) {
             $TotalDeleted++
         } catch {
             Write-Host "  ⚠️  Impossible de supprimer $($Item.FullName) : $($_.Exception.Message)" -ForegroundColor Red
+        }
+    }
+}
+
+# Nettoyage des dossiers racines explicites
+foreach ($Path in $ExplicitPaths) {
+    if (Test-Path $Path) {
+        try {
+            Remove-Item -Recurse -Force $Path
+            Write-Host "  🗂️  Dossier racine supprimé : $Path" -ForegroundColor Yellow
+            $TotalDeleted++
+        } catch {
+            Write-Host "  ⚠️  Impossible de supprimer $Path : $($_.Exception.Message)" -ForegroundColor Red
         }
     }
 }

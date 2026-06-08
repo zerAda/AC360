@@ -63,10 +63,10 @@ def generate_fiche_rdv(client_name: str, summary: str, alert_points: str, job_id
 
     file_path = job_dir / f"Fiche_RDV_{safe_name}.docx"
 
-    # Vérification Path Traversal via commonpath
+    # [PATCH HATER] Correction du bypass Path Traversal (P0-05) : utilisation de resolved.parents au lieu de str().startswith()
     resolved = file_path.resolve()
     base_resolved = Path(JOBS_BASE_DIR).resolve()
-    if not str(resolved).startswith(str(base_resolved)):
+    if not (base_resolved in resolved.parents or resolved == base_resolved):
         raise PermissionError(f"Path traversal détecté : {resolved}")
 
     doc = Document()
