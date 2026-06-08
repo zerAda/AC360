@@ -54,9 +54,18 @@ Write-Host "Récupération des informations de connexion..." -ForegroundColor Cy
 $endpoint = az cognitiveservices account show --name $CognitiveServiceName --resource-group $ResourceGroupName --query "properties.endpoint" -o tsv
 $key1 = az cognitiveservices account keys list --name $CognitiveServiceName --resource-group $ResourceGroupName --query "key1" -o tsv
 
+# [PATCH HATER] Masquer le secret dans les logs de CI/CD (GitHub Actions / Azure DevOps)
+if ($env:GITHUB_ACTIONS -eq "true") {
+    Write-Host "::add-mask::$key1"
+}
+Write-Host "##vso[task.setsecret]$key1" # Azure DevOps mask
+
+# Sauvegarde sécurisée dans un fichier local ignoré par git
+$envFile = Join-Path $PSScriptRoot "..\.env.generated"
+"AZURE_OCR_ENDPOINT=$endpoint" | Out-File -FilePath $envFile -Encoding utf8
+"AZURE_OCR_KEY=$key1" | Out-File -FilePath $envFile -Encoding utf8 -Append
+
 Write-Host "`n=================================================" -ForegroundColor Magenta
 Write-Host "DÉPLOIEMENT TERMINÉ AVEC SUCCÈS !" -ForegroundColor Green
-Write-Host "Veuillez copier ces valeurs dans votre fichier .env :" -ForegroundColor Yellow
-Write-Host "AZURE_OCR_ENDPOINT=$endpoint"
-Write-Host "AZURE_OCR_KEY=$key1"
+Write-Host "Les clés ont été sauvegardées de manière sécurisée dans $envFile" -ForegroundColor Yellow
 Write-Host "=================================================`n" -ForegroundColor Magenta

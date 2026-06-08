@@ -75,8 +75,21 @@ foreach ($file in $files) {
         $sourceUrl = "$InboxFolderUrl/$fileName"
         $destUrl = $targetFolderRelativeUrl
         
-        Move-PnPFile -SourceUrl $sourceUrl -TargetUrl $destUrl -Force
-        Write-Host "➜ Déplacé avec succès vers : $destUrl" -ForegroundColor Green
+        # [PATCH HATER] Prévention de la perte de données (Collision de fichiers)
+        $existingFile = Get-PnPFile -Url "$destUrl/$fileName" -ErrorAction SilentlyContinue
+        if ($existingFile) {
+            $timestamp = (Get-Date).ToString("yyyyMMdd_HHmmss")
+            $newFileName = $fileName.Replace(".pdf", "_$timestamp.pdf")
+            Write-Host "[WARNING] Le fichier existe déjà. Renommage en $newFileName pour éviter l'écrasement." -ForegroundColor Yellow
+            
+            # PnP PowerShell ne permet pas de renommer directement au déplacement, on renomme d'abord
+            Rename-PnPFile -ServerRelativeUrl $sourceUrl -TargetFileName $newFileName -Force
+            $sourceUrl = "$InboxFolderUrl/$newFileName"
+            $fileName = $newFileName
+        }
+        
+        Move-PnPFile -SourceUrl $sourceUrl -TargetUrl $destUrl
+        Write-Host "➜ Déplacé avec succès vers : $destUrl/$fileName" -ForegroundColor Green
         
         $logData += [PSCustomObject]@{
             Date = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
