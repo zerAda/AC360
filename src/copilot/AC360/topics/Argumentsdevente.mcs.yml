@@ -29,7 +29,7 @@ beginDialog:
 
     - kind: SearchAndSummarizeContent
       id: search_rag_sales
-      query: "Client {Topic.ClientName} : garanties manquantes, points faibles couverture, concurrence, besoins prévoyance santé retraite"
+      userInput: ="Client " & Topic.ClientName & " : garanties manquantes, points faibles couverture, concurrence, besoins prévoyance santé retraite"
       variable: Topic.Answer
       moderationLevel: High
       additionalInstructions: |-
