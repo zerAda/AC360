@@ -5,7 +5,14 @@ import jwt
 from jwt.algorithms import RSAAlgorithm
 from fastapi import HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from config import JWKS_URL, CLIENT_ID, API_AUDIENCE, ALLOWED_ISSUERS, REQUIRED_SCOPES, REQUIRED_ROLES
+from config import load_config
+config = load_config()
+
+JWKS_URL = config.jwks_url
+API_AUDIENCE = config.client_id
+ALLOWED_ISSUERS = [config.issuer]
+REQUIRED_SCOPES = config.required_scopes
+REQUIRED_ROLES = config.required_roles
 from safe_logger import log_security
 
 security = HTTPBearer()

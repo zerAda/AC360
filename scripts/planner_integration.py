@@ -1,5 +1,5 @@
 import httpx
-from config import TENANT_ID
+from config import load_config
 from safe_logger import log_security
 
 GRAPH_API_BASE = "https://graph.microsoft.com/v1.0"

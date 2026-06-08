@@ -108,6 +108,7 @@ class FicheRDVRequest(BaseModel):
 @app.post("/api/audit")
 async def trigger_audit(
     request: AuditRequest,
+    req: Request,
     user_upn: str = Depends(verify_azure_ad_token)
 ):
     await _check_rate_limit(user_upn)
@@ -122,9 +123,19 @@ async def trigger_audit(
     log_security("INFO", f"Envoi de la requête d'audit à l'Azure Function", {"document_id": request.document_id, "user": user_upn})
     
     try:
+        # Forward auth if available, append key to URL if present
+        auth_headers = {}
+        if req and req.headers.get("Authorization"):
+            auth_headers["Authorization"] = req.headers["Authorization"]
+
+        func_url = f"{AZURE_FUNCTION_URL}/audit"
+        if AZURE_FUNCTION_KEY:
+            func_url += f"?code={AZURE_FUNCTION_KEY}"
+
         resp = await http_client.post(
-            f"{AZURE_FUNCTION_URL}/audit",
+            func_url,
             json={"document_id": request.document_id, "client_context": request.client_context},
+            headers=auth_headers,
             timeout=10.0
         )
         resp.raise_for_status()
@@ -201,8 +212,9 @@ async def download_fiche_rdv(
         log_security("WARNING", f"Tentative de Path Traversal : {filename} par {user_upn}")
         raise HTTPException(status_code=400, detail="Nom de fichier invalide.")
     
-    from config import JOBS_BASE_DIR
-    file_path = os.path.join(JOBS_BASE_DIR, job_id, filename)
+    from config import load_config
+    config = load_config()
+    file_path = os.path.join(config.jobs_base_dir, job_id, filename)
     
     if not os.path.exists(file_path):
         log_security("WARNING", f"Fichier non trouvé : {file_path}")
@@ -210,7 +222,7 @@ async def download_fiche_rdv(
         
     # [PATCH IDOR] Verify the authenticated user owns this file
     import json
-    meta_path = os.path.join(JOBS_BASE_DIR, job_id, "meta.json")
+    meta_path = os.path.join(config.jobs_base_dir, job_id, "meta.json")
     if os.path.exists(meta_path):
         with open(meta_path, "r", encoding="utf-8") as f:
             meta = json.load(f)
@@ -262,8 +274,11 @@ async def get_job_status(
         auth_param = f"&code={AZURE_FUNCTION_KEY}" if AZURE_FUNCTION_KEY else ""
         task_hub = os.environ.get("TASK_HUB_NAME", "TestHubName")
         
+        import urllib.parse
+        safe_job_id = urllib.parse.quote(job_id)
+        
         resp = await http_client.get(
-            f"{AZURE_FUNCTION_URL}/runtime/webhooks/durabletask/instances/{job_id}?taskHub={task_hub}&connection=Storage{auth_param}",
+            f"{AZURE_FUNCTION_URL}/runtime/webhooks/durabletask/instances/{safe_job_id}?taskHub={task_hub}&connection=Storage{auth_param}",
             timeout=5.0
         )
         if resp.status_code == 404:

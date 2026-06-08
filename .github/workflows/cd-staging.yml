@@ -1,0 +1,134 @@
+# ============================================================
+# AC360 — Déploiement Staging (manuel)
+# Déclenché manuellement via workflow_dispatch
+# ============================================================
+
+name: AC360 CD — Staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version à déployer (ex: 1.2.0)"
+        required: true
+        type: string
+
+jobs:
+
+  # ============================================================
+  # JOB UNIQUE — Déploiement en environnement Staging
+  # ============================================================
+  deploy-staging:
+    name: 🚀 Deploy Staging v${{ github.event.inputs.version }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout du code source
+        uses: actions/checkout@v4
+
+      - name: Afficher la version à déployer
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          echo "🚀 Démarrage du déploiement AC360 en Staging"
+          echo "   Version  : $INPUT_VERSION"
+          echo "   Branche  : $REF_NAME"
+          echo "   Commit   : $SHA"
+          echo "   Acteur   : $ACTOR"
+
+      - name: Installer PowerShell sur Ubuntu
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y powershell
+
+      - name: Vérifier la version de PowerShell
+        run: pwsh --version
+
+      - name: Générer le package de release
+        env:
+          TENANT_ID: ${{ secrets.TENANT_ID }}
+          CLIENT_ID: ${{ secrets.CLIENT_ID }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          pwsh scripts/package_release.ps1 \
+            -Version "$INPUT_VERSION"
+
+      - name: Lister les artefacts générés
+        run: |
+          echo "📦 Artefacts produits :"
+          find . -name "*.zip" -o -name "*.tar.gz" | head -20
+
+      - name: Uploader le package comme artefact GitHub
+        uses: actions/upload-artifact@v4
+        with:
+          name: ac360-staging-v${{ github.event.inputs.version }}-${{ github.run_number }}
+          path: |
+            *.zip
+            dist/*.zip
+            release/*.zip
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Checklist post-déploiement Staging
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          ## 🚀 AC360 — Déploiement Staging terminé
+
+          | Indicateur | Valeur |
+          |---|---|
+          | **Version** | `${{ github.event.inputs.version }}` |
+          | **Branche** | `${{ github.ref_name }}` |
+          | **Commit** | `${{ github.sha }}` |
+          | **Acteur** | `${{ github.actor }}` |
+          | **Run** | [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |
+
+          ---
+
+          ## 📋 Checklist post-déploiement Staging
+
+          Vérifiez manuellement les points suivants après le déploiement :
+
+          ### 🔌 Copilot Studio
+          - [ ] Importer le package dans l'environnement **Staging** Copilot Studio
+          - [ ] Vérifier que tous les topics sont activés et configurés
+          - [ ] Tester le topic `ConversationStart` → message d'accueil OK
+          - [ ] Tester le topic `Rsumdossierclient` avec un dossier de test
+
+          ### 🔐 Sécurité & Auth
+          - [ ] Vérifier la connexion Microsoft Entra ID (JWT RS256)
+          - [ ] Contrôler que `useModelKnowledge: false` est bien actif
+          - [ ] Vérifier le niveau de modération : `High`
+
+          ### 📁 SharePoint Knowledge
+          - [ ] Confirmer que la source SharePoint Staging est connectée
+          - [ ] Tester une recherche de document client
+
+          ### 🌐 API FastAPI (si déployée)
+          - [ ] Vérifier que l'API répond sur `/health`
+          - [ ] Tester l'endpoint `/run-audit` avec un `document_id` valide
+          - [ ] Contrôler les logs pour absence d'erreurs 5xx
+
+          ### 🔔 Notifications Teams
+          - [ ] Vérifier que les notifications post-audit arrivent sur le bon canal
+          - [ ] Contrôler le format du message adaptatif
+
+          ### 📊 Monitoring
+          - [ ] Vérifier les métriques dans Copilot Studio Analytics
+          - [ ] Confirmer l'absence d'erreurs dans les logs Power Platform
+
+          ---
+
+          > ⚠️ **Après validation Staging** : déclencher le workflow de promotion vers Production.
+          EOF
+
+      - name: Afficher le résumé final
+        run: |
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  ✅ Déploiement Staging AC360 v${{ github.event.inputs.version }} OK"
+          echo "  📦 Package uploadé comme artefact GitHub"
+          echo "  📋 Checklist disponible dans le GitHub Summary"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

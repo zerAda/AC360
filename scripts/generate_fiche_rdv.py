@@ -12,7 +12,8 @@ except ImportError:
     DOCX_AVAILABLE = False
 
 try:
-    from config import JOBS_BASE_DIR
+    from config import load_config
+    JOBS_BASE_DIR = load_config().jobs_base_dir
 except ImportError:
     JOBS_BASE_DIR = os.path.abspath("jobs")
 
