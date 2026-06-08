@@ -35,7 +35,7 @@ beginDialog:
         - id: condition_DGc1Wy-item-0
           condition: =Topic.EndConversation = true
           actions:
-            - kind: BeginDialog
+            - kind: ReplaceDialog
               id: dn94DC
               dialog: cra7f_AC360.topic.EndofConversation
 

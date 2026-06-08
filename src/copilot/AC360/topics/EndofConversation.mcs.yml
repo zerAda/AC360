@@ -70,7 +70,7 @@ beginDialog:
             - id: DPveFP
               condition: =Topic.TryAgain = false
               actions:
-                - kind: BeginDialog
+                - kind: ReplaceDialog
                   id: cngqi4
                   dialog: cra7f_AC360.topic.Escalate
 
