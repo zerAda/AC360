@@ -29,7 +29,7 @@ beginDialog:
 
     - kind: SearchAndSummarizeContent
       id: search_rag_rdv
-      userInput: ="Dossier " & Topic.ClientName & " : historique, contrats actuels, sinistres, plaintes ou insatisfactions, tarifs en cours"
+      userInput: '="Dossier " & Topic.ClientName & " : historique, contrats actuels, sinistres, plaintes ou insatisfactions, tarifs en cours"'
       variable: Topic.Answer
       moderationLevel: High
       additionalInstructions: |-
