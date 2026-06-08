@@ -26,8 +26,14 @@ def evaluate_fic_rules(motif):
     """
     Évalue les règles métier d'Adel pour déterminer si une FIC doit être générée.
     """
-    motif_lower = motif.lower()
-    
+    motif_lower = (motif or "").lower()
+
+    # [HONNÊTETÉ] Motif non extractible du document : on ne fabrique pas un verdict
+    # confiant. On génère un brouillon par prudence MAIS on signale explicitement
+    # qu'une revue humaine est requise (le motif n'a pas pu être déterminé).
+    if not motif_lower or motif_lower.strip() in ("non_determine", "non déterminé"):
+        return True, "À VÉRIFIER : motif non déterminé depuis le document (revue humaine requise)"
+
     # [PATCH HATER] Critères d'exclusion de FIC (DOIVENT ÊTRE ÉVALUÉS EN PREMIER)
     if any(keyword in motif_lower for keyword in ["reprise de gestion", "changement tarif", "gestionnaire"]):
         return False, "Non requis (Reprise/Tarif/Gestionnaire)"

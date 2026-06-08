@@ -206,11 +206,24 @@ def perform_audit(ocr_data, artus_df):
             "commentaire": "Fuzzy matching < 85%"
         })
 
+    # [HONNÊTETÉ] Le motif d'opération doit provenir des données réelles extraites,
+    # jamais d'une valeur simulée présentée comme réelle. S'il n'est pas extractible
+    # du document OCR, on le marque explicitement NON_DETERMINE + motif_source=absent
+    # afin qu'aucun étage aval (génération FIC) ne traite une valeur fabriquée comme
+    # un fait. À VALIDER EN ENVIRONNEMENT RÉEL : mapping des libellés OCR -> motif.
+    motif = ""
+    for key, val in ocr_data.get("fields", {}).items():
+        if "motif" in str(key).lower() or "operation" in str(key).lower():
+            motif = (val.get("value") if isinstance(val, dict) else str(val)) or ""
+            if motif:
+                break
+
     return {
         "client_document": doc_client_name,
         "meilleur_match_fabric": best_match_row['nom_client'] if best_match_row is not None else None,
         "score_correspondance_nom": best_match_score,
-        "motif_operation": "modification de garantie", # Valeur simulée pour illustrer les règles d'Adel
+        "motif_operation": motif or "NON_DETERMINE",
+        "motif_source": "ocr" if motif else "absent",
         "details_ecarts": audit_results
     }
 
