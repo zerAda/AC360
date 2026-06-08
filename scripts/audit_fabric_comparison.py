@@ -131,7 +131,14 @@ def perform_audit(ocr_data, artus_df):
     # 1. Extraction du nom client depuis le document
     doc_client_name = ""
     if "nom_client" in ocr_data.get("fields", {}):
-        doc_client_name = ocr_data["fields"]["nom_client"]["value"]
+        doc_client_name = ocr_data["fields"]["nom_client"].get("value", "")
+    # Fallback to prebuilt model format (keyValuePairs)
+    if not doc_client_name:
+        for kv in ocr_data.get("keyValuePairs", []):
+            key_str = str(kv.get("key", {}).get("content", "")).lower()
+            if "nom" in key_str and ("client" in key_str or "société" in key_str or "raison sociale" in key_str):
+                doc_client_name = str(kv.get("value", {}).get("content", "")).strip()
+                break
     
     print(f"-> Nom client détecté sur le document : {doc_client_name}")
     
@@ -183,7 +190,7 @@ def perform_audit(ocr_data, artus_df):
             "valeur_document": doc_client_name,
             "valeur_gestion_artus": "NON TROUVÉ",
             "ecart_detecte": True,
-            "commentaire": "Fuzzy matching < 75%"
+            "commentaire": "Fuzzy matching < 85%"
         })
 
     return {

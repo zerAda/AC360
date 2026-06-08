@@ -169,6 +169,8 @@ async def api_generate_fiche_rdv(
     log_security("INFO", f"Génération fiche RDV demandée par {user_upn} pour {request.client_name}")
     try:
         # Prevent event loop blocking by offloading the synchronous file I/O to a threadpool
+        import os
+        os.environ["CURRENT_USER_UPN"] = user_upn
         file_path = await run_in_threadpool(
             generate_fiche_rdv,
             request.client_name,
@@ -205,6 +207,21 @@ async def download_fiche_rdv(
     if not os.path.exists(file_path):
         log_security("WARNING", f"Fichier non trouvé : {file_path}")
         raise HTTPException(status_code=404, detail="Fichier introuvable.")
+        
+    # [PATCH IDOR] Verify the authenticated user owns this file
+    import json
+    meta_path = os.path.join(JOBS_BASE_DIR, job_id, "meta.json")
+    if os.path.exists(meta_path):
+        with open(meta_path, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+            if meta.get("user_upn") != user_upn:
+                log_security("WARNING", f"Tentative IDOR par {user_upn} sur la job_id {job_id}")
+                raise HTTPException(status_code=403, detail="Accès refusé.")
+    else:
+        # Legacy behavior: if no meta.json, restrict just in case or allow if strictly needed.
+        # Strict by default:
+        log_security("WARNING", f"Fichier meta.json manquant pour le job {job_id}")
+        raise HTTPException(status_code=403, detail="Propriétaire non vérifiable.")
         
     return FileResponse(
         path=file_path, 
@@ -243,9 +260,10 @@ async def get_job_status(
         # ou on utilise la clé système.
         
         auth_param = f"&code={AZURE_FUNCTION_KEY}" if AZURE_FUNCTION_KEY else ""
+        task_hub = os.environ.get("TASK_HUB_NAME", "TestHubName")
         
         resp = await http_client.get(
-            f"{AZURE_FUNCTION_URL}/runtime/webhooks/durabletask/instances/{job_id}?taskHub=TestHubName&connection=Storage{auth_param}",
+            f"{AZURE_FUNCTION_URL}/runtime/webhooks/durabletask/instances/{job_id}?taskHub={task_hub}&connection=Storage{auth_param}",
             timeout=5.0
         )
         if resp.status_code == 404:

@@ -27,10 +27,10 @@ def send_teams_alert(report_data):
             })
 
     # Si aucun écart n'a été remonté explicitement, on vérifie quand même si l'audit global a échoué (ex: Client non trouvé)
-    if not facts and report_data.get("score_correspondance_nom", 0) < 75:
+    if not facts and report_data.get("score_correspondance_nom", 0) < 85:
         facts.append({
             "name": "Correspondance Client",
-            "value": "Échec d'identification du client dans Fabric (< 75%)"
+            "value": "Échec d'identification du client dans Fabric (< 85%)"
         })
 
     # Message adaptatif (MessageCard simple) pour Teams
@@ -86,7 +86,7 @@ def archive_and_cleanup(source_file, target_folder="Archives_Documentaires/Erreu
     # (Dans un contexte complet, on pourrait uploader sur SharePoint via Graph API ou PnP)
     os.makedirs(target_folder, exist_ok=True)
 
-    timestamp = datetime.now().strftime("%Y%md_%H%M%S")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     file_name = os.path.basename(source_file)
     archive_path = os.path.join(target_folder, f"ARCHIVE_{timestamp}_{file_name}")
 
@@ -127,7 +127,7 @@ def main():
             break
             
     # Si le client n'a pas été trouvé, c'est aussi un écart grave
-    if report_data.get("score_correspondance_nom", 0) < 75:
+    if report_data.get("score_correspondance_nom", 0) < 85:
         has_ecart = True
 
     if has_ecart:

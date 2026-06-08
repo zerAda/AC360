@@ -61,6 +61,12 @@ def generate_fiche_rdv(client_name: str, summary: str, alert_points: str, job_id
     job_dir = Path(JOBS_BASE_DIR) / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
 
+    # Save metadata for IDOR protection
+    meta_path = job_dir / "meta.json"
+    import json
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump({"user_upn": os.environ.get("CURRENT_USER_UPN", "unknown")}, f)
+
     file_path = job_dir / f"Fiche_RDV_{safe_name}.docx"
 
     # [PATCH HATER] Correction du bypass Path Traversal (P0-05) : utilisation de resolved.parents au lieu de str().startswith()
