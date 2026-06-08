@@ -15,7 +15,9 @@ $ExcludePatterns = @(
     "Archives_Documentaires", "jobs",
     "test_audits.db", "matrice_classement_clients.xlsx",
     "docs_content.txt", "matrice_content.*",
-    "*.docx", ".mcs\botdefinition.json"
+    "*.docx", ".mcs\botdefinition.json",
+    # [PATCH HATER] Fix Release Bomb : Ne pas inclure l'ancien dossier release
+    "release", "release\*", "release/*"
 )
 
 $Timestamp = (Get-Date -Format "yyyyMMdd_HHmmss")
@@ -48,12 +50,15 @@ if (-not $DryRun) {
         New-Item -ItemType Directory -Force -Path (Split-Path $dest) | Out-Null
         Copy-Item $f.FullName -Destination $dest -Force
     }
-    Compress-Archive -Path $PackageDir -DestinationPath $ZipPath -Force
+    
+    # [PATCH HATER] Fix Ghost Manifest : Générer le manifeste AVANT de zipper
     $Manifest = Join-Path $PackageDir "RELEASE_MANIFEST.txt"
     "AC360 Release Manifest" | Out-File $Manifest
     "Timestamp : $Timestamp" | Add-Content $Manifest
     "Commit : $(git rev-parse --short HEAD 2>$null)" | Add-Content $Manifest
     "Fichiers : $($Files.Count)" | Add-Content $Manifest
+    
+    Compress-Archive -Path $PackageDir -DestinationPath $ZipPath -Force
     Write-Host "Package : $ZipPath" -ForegroundColor Green
 } else {
     $Files | Select-Object -ExpandProperty FullName | ForEach-Object { Write-Host "  [SERAIT INCLUS] $_" }

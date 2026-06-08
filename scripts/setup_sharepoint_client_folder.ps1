@@ -25,7 +25,9 @@ param (
     [Parameter(Mandatory=$true)]
     [string]$ClientFolderName,
     
-    [string]$LibraryName = "Dossiers_Clients"
+    [string]$LibraryName = "Dossiers_Clients",
+    [string]$ClientId = $env:ENTRA_CLIENT_ID,
+    [string]$ClientSecret = $env:ENTRA_CLIENT_SECRET
 )
 
 # 1. Définition de la structure issue de la matrice
@@ -75,7 +77,12 @@ if (-not (Get-Module -ListAvailable -Name PnP.PowerShell)) {
 
 # 3. Connexion au SharePoint
 Write-Host "Connexion au site SharePoint : $SiteUrl" -ForegroundColor Cyan
-Connect-PnPOnline -Url $SiteUrl -Interactive
+# [PATCH HATER] Remplacement du -Interactive par une Auth Headless (App-Only) pour éviter un hang en CI/CD
+if ([string]::IsNullOrEmpty($ClientId) -or [string]::IsNullOrEmpty($ClientSecret)) {
+    Write-Host "[ERREUR] ClientId ou ClientSecret manquant. Le mode interactif est proscrit en automatisation." -ForegroundColor Red
+    exit 1
+}
+Connect-PnPOnline -Url $SiteUrl -ClientId $ClientId -ClientSecret $ClientSecret
 
 # 4. Vérification/Création du dossier Client Racine
 $RootClientPath = "$LibraryName/$ClientFolderName"
