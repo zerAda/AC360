@@ -89,6 +89,48 @@ async def _check_rate_limit(upn: str) -> None:
         )
     _rate_limit_store[upn].append(now)
 
+# ---------------------------------------------------------------------------
+# Validation des identifiants (anti path-traversal + anti accès arbitraire)
+# ---------------------------------------------------------------------------
+def _validate_document_id(document_id: str) -> str:
+    """Valide qu'un identifiant est un UUID canonique ET qu'il correspond à une
+    ressource connue (répertoire de job sous ``jobs_base_dir``).
+
+    Double objectif de sécurité :
+      * empêcher le path traversal sur un segment d'URL (``..``, chemins absolus,
+        séparateurs) en exigeant un UUID strict ;
+      * empêcher l'énumération/accès à des ressources arbitraires en vérifiant
+        l'existence du répertoire de job.
+
+    Lève ``HTTPException`` 400 (format invalide) ou 404 (ressource inconnue).
+    Retourne l'UUID normalisé en cas de succès.
+    """
+    try:
+        normalized = str(uuid.UUID(str(document_id)))
+    except (ValueError, AttributeError, TypeError):
+        raise HTTPException(
+            status_code=400,
+            detail="Identifiant invalide : un UUID canonique est attendu.",
+        )
+
+    from config import load_config
+    config = load_config()
+    base = os.path.abspath(config.jobs_base_dir)
+    resolved = os.path.abspath(os.path.join(base, normalized))
+
+    # Défense en profondeur : le chemin résolu doit rester confiné sous la base.
+    try:
+        if os.path.commonpath([resolved, base]) != base:
+            raise HTTPException(status_code=400, detail="Identifiant invalide.")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Identifiant invalide.")
+
+    if not os.path.isdir(resolved):
+        raise HTTPException(status_code=404, detail="Ressource introuvable.")
+
+    return normalized
+
+
 # Schémas de requête
 class AuditRequest(BaseModel):
     document_id: str
@@ -211,7 +253,11 @@ async def download_fiche_rdv(
     if ".." in filename or "/" in filename or "\\" in filename:
         log_security("WARNING", f"Tentative de Path Traversal : {filename} par {user_upn}")
         raise HTTPException(status_code=400, detail="Nom de fichier invalide.")
-    
+
+    # [SECURITY] Le segment job_id doit être un UUID connu : empêche le path
+    # traversal sur le job_id lui-même (ex: job_id="..") et l'accès arbitraire.
+    job_id = _validate_document_id(job_id)
+
     from config import load_config
     config = load_config()
     file_path = os.path.join(config.jobs_base_dir, job_id, filename)

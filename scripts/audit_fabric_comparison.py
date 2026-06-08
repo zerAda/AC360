@@ -7,13 +7,25 @@ from dotenv import load_dotenv
 # [PATCH HATER] Correction de l'oubli fatal qui faisait crasher la connexion à Fabric
 import struct
 
-# Optional dependencies for Fabric/SQL
-try:
-    import pyodbc
-    from azure.identity import DefaultAzureCredential
-except ImportError:
-    print("Erreur : pyodbc ou azure-identity manquant. Exécutez 'pip install -r requirements.txt'.")
-    exit(1)
+# NOTE: pyodbc + azure-identity sont des dépendances *optionnelles* (driver natif
+# ODBC requis). On les charge paresseusement dans get_fabric_connection() et on
+# ne fait JAMAIS exit() à l'import — sinon la collection pytest et tout import du
+# module casseraient dans un environnement sans la stack Fabric/SQL.
+
+
+def _require_fabric_sdk():
+    """Importe pyodbc + azure-identity à la demande. Lève une RuntimeError
+    explicite (et non un exit) si la dépendance optionnelle est absente."""
+    try:
+        import pyodbc
+        from azure.identity import DefaultAzureCredential
+    except ImportError as exc:  # pragma: no cover - dépend de l'environnement
+        raise RuntimeError(
+            "pyodbc ou azure-identity manquant (driver ODBC requis). "
+            "Exécutez 'pip install -r requirements.txt'."
+        ) from exc
+    return pyodbc, DefaultAzureCredential
+
 
 load_dotenv()
 
@@ -31,6 +43,7 @@ def get_fabric_connection():
         return None
 
     try:
+        pyodbc, DefaultAzureCredential = _require_fabric_sdk()
         credential = DefaultAzureCredential()
         # Scope pour Azure SQL / Fabric
         token = credential.get_token("https://database.windows.net/.default")

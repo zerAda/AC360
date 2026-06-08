@@ -55,6 +55,20 @@ jobs/
 # Archives & documents générés localement
 Archives_Documentaires/
 *.docx
+*.xlsx
+*.xlsm
+*.csv
+*.tsv
+docs_content.txt
+
+# Tests / cache
+.pytest_cache/
+
+# Release packages
+release/
+
+# Export Copilot sensible (régénérable depuis src/copilot/AC360/**)
+.mcs/botdefinition.json
 
 # Project Specific
 .planning/STATE.md.tmp

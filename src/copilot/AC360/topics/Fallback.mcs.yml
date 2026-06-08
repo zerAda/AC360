@@ -1,22 +1,45 @@
 mcs.metadata:
   componentName: Secours
-  description: Cette rubrique système se déclenche quand l’énoncé de l’utilisateur ne correspond à aucune rubrique existante.
+  description: Rubrique système unique déclenchée quand l’énoncé ne correspond à aucune rubrique. Tente d’abord une réponse générative sourcée (SharePoint), puis bascule sur la reformulation / l’escalade.
 kind: AdaptiveDialog
 beginDialog:
   kind: OnUnknownIntent
   id: main
   actions:
+    # 1) Tentative de réponse générative STRICTEMENT sourcée sur SharePoint.
+    - kind: SearchAndSummarizeContent
+      id: search-content
+      variable: Topic.Answer
+      userInput: =System.Activity.Text
+      moderationLevel: High
+
     - kind: ConditionGroup
-      id: conditionGroup_LktzXw
+      id: has-answer-conditions
       conditions:
-        - id: conditionItem_tlGIVo
-          condition: =System.FallbackCount < 3
+        - id: has-answer
+          condition: =!IsBlank(Topic.Answer)
           actions:
             - kind: SendActivity
-              id: sendMessage_QZreqo
-              activity: Désolé, je ne suis pas sûr de savoir comment vous aider. Pouvez-vous reformuler votre question ?
+              id: send-answer
+              activity: "{Topic.Answer}"
 
+            - kind: EndDialog
+              id: end-topic
+              clearTopicQueue: true
+
+      # 2) Aucune réponse sourcée : reformulation puis escalade après 3 échecs.
       elseActions:
-        - kind: ReplaceDialog
-          id: 5aXj5M
-          dialog: cra7f_AC360.topic.Escalate
+        - kind: ConditionGroup
+          id: conditionGroup_LktzXw
+          conditions:
+            - id: conditionItem_tlGIVo
+              condition: =System.FallbackCount < 3
+              actions:
+                - kind: SendActivity
+                  id: sendMessage_QZreqo
+                  activity: Désolé, je ne suis pas sûr de savoir comment vous aider. Pouvez-vous reformuler votre question ?
+
+          elseActions:
+            - kind: ReplaceDialog
+              id: 5aXj5M
+              dialog: cra7f_AC360.topic.Escalate

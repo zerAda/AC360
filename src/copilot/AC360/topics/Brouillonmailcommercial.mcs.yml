@@ -59,8 +59,10 @@ beginDialog:
         Points à valider avant envoi :
         - [éléments incertains ou manquants]
 
-        **IMPORTANT : Ajoute systématiquement ce lien cliquable exact à la toute fin de ta réponse pour ouvrir Outlook, en l'adaptant avec tes données :**
-        `[📧 Ouvrir ce brouillon dans Outlook](mailto:contact@client.com?subject=Objet%20du%20mail&body=Bonjour%2C%0A%0A...corps%20du%20mail...%0A%0ACordialement)`
+        Le brouillon reste un texte à copier-coller manuellement par le commercial
+        après validation humaine. Ne génère JAMAIS de lien d'ouverture de messagerie
+        ni aucun lien d'envoi automatique (risque d'exfiltration de données, de
+        phishing et de non-conformité DLP). Tu ne déclenches aucun envoi d'e-mail.
 
         Si une information manque, ne la complète pas. Écris plutôt : "[à compléter]".
       sharePointSearchDataSource: {}

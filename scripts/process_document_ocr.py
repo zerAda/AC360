@@ -1,16 +1,36 @@
 import os
-import sys
 import json
 import argparse
 from dotenv import load_dotenv
 
-# Optional dependencies for Azure
-try:
-    from azure.core.credentials import AzureKeyCredential
-    from azure.ai.formrecognizer import DocumentAnalysisClient
-except ImportError:
-    print("Erreur : Le SDK Azure n'est pas installé. Exécutez 'pip install -r requirements.txt'.")
-    sys.exit(1)
+# NOTE: Le SDK Azure est une dépendance *optionnelle* chargée paresseusement au
+# runtime (voir _require_azure_sdk). On n'appelle JAMAIS sys.exit() à l'import :
+# cela casserait la collection pytest et tout import du module dans un
+# environnement sans le SDK natif. Les noms restent exposés au niveau module
+# (initialisés à None) pour rester mockables par les tests.
+AzureKeyCredential = None
+DocumentAnalysisClient = None
+
+
+def _require_azure_sdk():
+    """Importe le SDK Azure à la demande et le mémorise au niveau module. Lève
+    une RuntimeError explicite (et non un sys.exit) si la dépendance optionnelle
+    est absente. Si les symboles ont déjà été fournis (import réel ou mock de
+    test), ils sont réutilisés tels quels."""
+    global AzureKeyCredential, DocumentAnalysisClient
+    if AzureKeyCredential is None or DocumentAnalysisClient is None:
+        try:
+            from azure.core.credentials import AzureKeyCredential as _AKC
+            from azure.ai.formrecognizer import DocumentAnalysisClient as _DAC
+        except ImportError as exc:  # pragma: no cover - dépend de l'environnement
+            raise RuntimeError(
+                "Le SDK Azure (azure-ai-formrecognizer) n'est pas installé. "
+                "Exécutez 'pip install -r requirements.txt'."
+            ) from exc
+        AzureKeyCredential = _AKC
+        DocumentAnalysisClient = _DAC
+    return AzureKeyCredential, DocumentAnalysisClient
+
 
 # Load environment variables from .env file
 load_dotenv()
@@ -24,9 +44,10 @@ def extract_document_azure(file_path):
     Utilise le modèle prebuilt-document pour extraire les paires Clé-Valeur et les Tableaux.
     """
     print(f"[AZURE MODE] Connexion à l'endpoint : {AZURE_OCR_ENDPOINT}")
-    
+
+    AzureKeyCredential, DocumentAnalysisClient = _require_azure_sdk()
     document_analysis_client = DocumentAnalysisClient(
-        endpoint=AZURE_OCR_ENDPOINT, 
+        endpoint=AZURE_OCR_ENDPOINT,
         credential=AzureKeyCredential(AZURE_OCR_KEY)
     )
 

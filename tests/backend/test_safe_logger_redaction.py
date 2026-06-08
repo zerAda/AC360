@@ -9,6 +9,8 @@ Couvre :
 """
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 import api_server
 from safe_logger import redact
 
@@ -85,6 +87,13 @@ def test_run_audit_pipeline_neutralise_stderr_avant_persistance():
     Quand le pipeline échoue (returncode != 0), le stderr (secrets + PII) doit
     être neutralisé AVANT d'être passé à db_manager.log_audit_action.
     """
+    if not hasattr(api_server, "run_audit_pipeline"):
+        pytest.skip(
+            "Orchestration locale (run_audit_pipeline + subprocess + db_manager) retirée "
+            "au profit d'Azure Durable Functions, absente du repo. La neutralisation du "
+            "stderr à la persistance doit donc être validée dans la Function "
+            "(À VALIDER EN ENVIRONNEMENT RÉEL). L'unité redact() reste couverte ci-dessus."
+        )
     fake_proc = MagicMock()
     fake_proc.returncode = 1
     fake_proc.stderr = _stderr_with_secrets()
