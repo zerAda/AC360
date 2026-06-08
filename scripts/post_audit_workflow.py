@@ -72,8 +72,14 @@ def archive_and_cleanup(source_file, target_folder="Archives_Documentaires/Erreu
     resolved_source = os.path.abspath(source_file)
     base_resolved = os.path.abspath(JOBS_BASE_DIR)
     
-    if not resolved_source.startswith(base_resolved):
-        print(f"[ERREUR SÉCURITÉ] Tentative de Path Traversal : suppression interdite hors de {base_resolved}")
+    # [PATCH HATER] Correction du bypass Path Traversal : utilisation de commonpath au lieu de startswith
+    try:
+        common = os.path.commonpath([resolved_source, base_resolved])
+        if common != base_resolved:
+            print(f"[ERREUR SÉCURITÉ] Tentative de Path Traversal : suppression interdite hors de {base_resolved}")
+            return
+    except ValueError:
+        print(f"[ERREUR SÉCURITÉ] Tentative de Path Traversal : chemins incompatibles")
         return
 
     # Création du dossier d'archivage s'il n'existe pas localement

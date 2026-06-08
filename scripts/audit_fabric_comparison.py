@@ -4,6 +4,8 @@ import argparse
 import pandas as pd
 from thefuzz import fuzz
 from dotenv import load_dotenv
+# [PATCH HATER] Correction de l'oubli fatal qui faisait crasher la connexion à Fabric
+import struct
 
 # Optional dependencies for Fabric/SQL
 try:

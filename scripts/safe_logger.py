@@ -24,8 +24,30 @@ Les motifs de secrets s'alignent sur ceux de .gitleaks.toml.
 """
 
 import re
+import logging
 
-__all__ = ["redact", "MAX_LEN"]
+# [PATCH HATER] Implémentation du Logger fantôme qui faisait crasher l'API Server
+logger = logging.getLogger("AC360")
+logger.setLevel(logging.INFO)
+
+def log_security(level: str, message: str, data: dict = None):
+    """
+    Journalise un message de sécurité de manière neutre et sécurisée.
+    """
+    safe_msg = redact(message)
+    extra_info = f" | {data}" if data else ""
+    full_msg = f"{safe_msg}{extra_info}"
+    
+    if level == "INFO":
+        logger.info(full_msg)
+    elif level == "WARNING":
+        logger.warning(full_msg)
+    elif level == "ERROR":
+        logger.error(full_msg)
+    else:
+        logger.debug(full_msg)
+
+__all__ = ["redact", "MAX_LEN", "logger", "log_security"]
 
 # Longueur maximale conservée pour un message journalisé (extrait borné).
 MAX_LEN = 800
