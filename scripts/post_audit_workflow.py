@@ -63,6 +63,19 @@ def archive_and_cleanup(source_file, target_folder="Archives_Documentaires/Erreu
         print(f"[WARNING] Le fichier source {source_file} n'existe plus.")
         return
 
+    # [PATCH HATER] Sécurisation contre le Path Traversal et suppression arbitraire
+    try:
+        from config import JOBS_BASE_DIR
+    except ImportError:
+        JOBS_BASE_DIR = os.path.abspath("jobs")
+        
+    resolved_source = os.path.abspath(source_file)
+    base_resolved = os.path.abspath(JOBS_BASE_DIR)
+    
+    if not resolved_source.startswith(base_resolved):
+        print(f"[ERREUR SÉCURITÉ] Tentative de Path Traversal : suppression interdite hors de {base_resolved}")
+        return
+
     # Création du dossier d'archivage s'il n'existe pas localement
     # (Dans un contexte complet, on pourrait uploader sur SharePoint via Graph API ou PnP)
     os.makedirs(target_folder, exist_ok=True)

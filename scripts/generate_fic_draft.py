@@ -28,14 +28,14 @@ def evaluate_fic_rules(motif):
     """
     motif_lower = motif.lower()
     
+    # [PATCH HATER] Critères d'exclusion de FIC (DOIVENT ÊTRE ÉVALUÉS EN PREMIER)
+    if any(keyword in motif_lower for keyword in ["reprise de gestion", "changement tarif", "gestionnaire"]):
+        return False, "Non requis (Reprise/Tarif/Gestionnaire)"
+        
     # Critères de création de FIC
     if any(keyword in motif_lower for keyword in ["conseil", "modif", "modification", "catégorie", "categorie"]):
         return True, "Requis (Modification/Conseil)"
     
-    # Critères d'exclusion de FIC
-    if any(keyword in motif_lower for keyword in ["reprise de gestion", "changement tarif", "gestionnaire"]):
-        return False, "Non requis (Reprise/Tarif)"
-        
     # Par défaut, si doute, on génère
     return True, "Requis (Par défaut)"
 

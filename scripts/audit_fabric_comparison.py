@@ -85,8 +85,11 @@ def match_client_name(doc_name, fabric_df):
     best_match = None
     best_score = 0
     
+    import re
     # Mots de rejet (entités différentes)
     rejet_words = ["banque", "holding", "international", "france", "groupe"]
+
+    doc_words = set(re.findall(r'\b\w+\b', doc_name.lower()))
 
     for index, row in fabric_df.iterrows():
         fabric_name = str(row['nom_client'])
@@ -94,9 +97,10 @@ def match_client_name(doc_name, fabric_df):
         # Score de base
         score = fuzz.token_sort_ratio(doc_name.lower(), fabric_name.lower())
         
-        # Pénalité stricte (Enterprise Grade)
+        # [PATCH HATER] Pénalité stricte mais juste (évite de pénaliser "Lafrance" à cause de "france")
+        fabric_words = set(re.findall(r'\b\w+\b', fabric_name.lower()))
         for word in rejet_words:
-            if (word in doc_name.lower()) != (word in fabric_name.lower()):
+            if (word in doc_words) != (word in fabric_words):
                 score -= 20 # Pénalité très lourde
                 
         # Pénalité de longueur
