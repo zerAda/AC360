@@ -27,10 +27,6 @@ beginDialog:
               clearTopicQueue: true
 
       elseActions:
-        - kind: SendActivity
-          id: send-no-answer
-          activity: Je n'ai pas trouvé d'information dans les documents SharePoint pour cette demande.
-
-        - kind: EndDialog
-          id: end-no-answer
-          clearTopicQueue: true
+        - kind: BeginDialog
+          id: redirect-to-fallback
+          dialog: cra7f_AC360.topic.Fallback
