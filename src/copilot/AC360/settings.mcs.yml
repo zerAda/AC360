@@ -5,7 +5,7 @@ authenticationMode: Integrated
 authenticationTrigger: Always
 configuration:
   settings:
-    GenerativeActionsEnabled: true
+    GenerativeActionsEnabled: false
 
   isAgentConnectable: true
   gPTSettings:
@@ -13,7 +13,7 @@ configuration:
 
   aISettings:
     useModelKnowledge: false
-    isFileAnalysisEnabled: true
+    isFileAnalysisEnabled: false
     isSemanticSearchEnabled: true
     contentModeration: High
     optInUseLatestModels: true
