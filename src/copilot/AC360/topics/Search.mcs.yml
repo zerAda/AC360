@@ -27,6 +27,6 @@ beginDialog:
               clearTopicQueue: true
 
       elseActions:
-        - kind: BeginDialog
+        - kind: ReplaceDialog
           id: redirect-to-fallback
           dialog: cra7f_AC360.topic.Fallback

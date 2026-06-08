@@ -17,6 +17,6 @@ beginDialog:
               activity: Désolé, je ne suis pas sûr de savoir comment vous aider. Pouvez-vous reformuler votre question ?
 
       elseActions:
-        - kind: BeginDialog
+        - kind: ReplaceDialog
           id: 5aXj5M
           dialog: cra7f_AC360.topic.Escalate
