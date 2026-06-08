@@ -44,7 +44,8 @@ Connect-PnPTenant -Url $TenantUrl -Credentials $Credential
 
 # Rcuprer les sites
 Write-Host "Rcupration des sites..." -ForegroundColor Green
-$Sites = Get-PnPSite - LIMITED | Select-Object Title, Url, Template
+# [PATCH HATER] Correction de la faute de syntaxe fatale et de la mauvaise commande
+$Sites = Get-PnPTenantSite | Select-Object Title, Url, Template
 
 # Exporter
 $Results = @()

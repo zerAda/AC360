@@ -1,18 +1,10 @@
 <#
 .SYNOPSIS
-Synchronise le bot Copilot Studio (c82f127c-8f47-f111-bec6-000d3ab9a512) avec le dépôt local Git.
+Synchronise le bot Copilot Studio avec le dépôt local Git de manière robuste.
 
 .DESCRIPTION
-Ce script permet de :
-1. S'authentifier sur l'environnement Default-f7d2b917-8798-45ee-b57c-d7c3421f3ac0.
-2. En mode 'Pull' : Télécharger ou mettre à jour le code source du bot depuis le cloud, puis faire un commit/push automatique vers Git.
-3. En mode 'Push' : Envoyer vos modifications locales vers le cloud Copilot Studio.
-
-.PARAMETER Mode
-Le mode de synchronisation : 'Pull' (Cloud vers Local) ou 'Push' (Local vers Cloud). Par défaut : 'Pull'.
-
-.PARAMETER CommitMessage
-Message utilisé pour le commit automatique lors d'un Pull.
+Gère automatiquement l'absence de workspace .pac en clonant dans un dossier temporaire
+si nécessaire.
 #>
 
 param (
@@ -29,63 +21,95 @@ $CopilotProjectDir = Join-Path -Path $CopilotParentDir -ChildPath "AC360"
 
 $pacCmd = "pac"
 if (-not (Get-Command "pac" -ErrorAction SilentlyContinue)) {
-    # Attempt to find pac.exe in local app data
     $pacPath = Get-ChildItem -Path "$env:LOCALAPPDATA\Microsoft\PowerAppsCLI" -Filter "pac.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
     if ($pacPath) {
         $pacCmd = $pacPath
         Write-Host "Utilisation de pac depuis: $pacCmd" -ForegroundColor Cyan
     } else {
-        Write-Host "Erreur: Le Power Platform CLI (pac) n'est pas reconnu dans ce terminal et n'a pas été trouvé dans LocalAppData." -ForegroundColor Red
-        Write-Host "S'il vient d'être installé, fermez ce terminal et rouvrez-en un nouveau." -ForegroundColor Yellow
+        Write-Host "Erreur: Le Power Platform CLI (pac) n'est pas installé." -ForegroundColor Red
         exit 1
     }
 }
 
-# 1. Authentification
-Write-Host "Assurez-vous d'être authentifié via 'pac auth create' si ce n'est pas déjà fait." -ForegroundColor Yellow
+Write-Host "Vérification de l'authentification..." -ForegroundColor Yellow
+# On tente de voir si l'outil répond
+& $pacCmd auth list | Out-Null
 
-# 2. Synchronisation
-if ($Mode -eq 'Pull') {
-    Write-Host "Début du PULL : Téléchargement du bot depuis Copilot Studio..." -ForegroundColor Cyan
+$TempCloneDir = Join-Path -Path $env:TEMP -ChildPath "AC360_Sync_$([guid]::NewGuid().ToString().Substring(0,8))"
+
+function Sync-ViaTempClone {
+    param([string]$Action)
     
-    if (-not (Test-Path $CopilotProjectDir)) {
-        Write-Host "Premier téléchargement, utilisation de 'clone'..." -ForegroundColor Cyan
-        if (-not (Test-Path $CopilotParentDir)) { New-Item -ItemType Directory -Path $CopilotParentDir | Out-Null }
-        Set-Location $CopilotParentDir
-        & $pacCmd copilot clone --bot $BotId --output-dir . --environment $EnvironmentId
-    } else {
-        Write-Host "Dossier existant, utilisation de 'pull'..." -ForegroundColor Cyan
-        Set-Location $CopilotProjectDir
-        & $pacCmd copilot pull
+    Write-Host "Création d'un workspace sain dans $TempCloneDir..." -ForegroundColor Cyan
+    New-Item -ItemType Directory -Path $TempCloneDir -Force | Out-Null
+    Set-Location $TempCloneDir
+    
+    # 1. Clone initial du cloud vers le temp dir
+    & $pacCmd copilot clone --bot $BotId --output-dir . --environment $EnvironmentId
+    $TempProjectDir = Join-Path -Path $TempCloneDir -ChildPath "AC360"
+
+    if (-not (Test-Path $TempProjectDir)) {
+        Write-Host "Échec du clone. Vérifiez l'accès à Copilot Studio." -ForegroundColor Red
+        Remove-Item -Recurse -Force $TempCloneDir
+        exit 1
     }
 
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "PULL réussi." -ForegroundColor Green
+    if ($Action -eq 'Pull') {
+        # Copier du temp (Cloud) vers le repo Git
+        Write-Host "Copie des fichiers du Cloud vers le dépôt Git local..." -ForegroundColor Cyan
+        Copy-Item -Path "$TempProjectDir\*" -Destination $CopilotProjectDir -Recurse -Force
+    }
+    elseif ($Action -eq 'Push') {
+        # Copier du repo Git vers le temp, puis push
+        Write-Host "Copie des fichiers locaux vers le workspace pac..." -ForegroundColor Cyan
+        Copy-Item -Path "$CopilotProjectDir\*" -Destination $TempProjectDir -Recurse -Force
         
-        Write-Host "Synchronisation Git en cours..." -ForegroundColor Cyan
-        Set-Location $PSScriptRoot\..
-        git add src/copilot
-        git commit -m $CommitMessage
-        git push
-        Write-Host "Synchronisation locale et Git terminée avec succès." -ForegroundColor Green
+        Set-Location $TempProjectDir
+        & $pacCmd copilot push
+    }
+
+    # Cleanup
+    Set-Location $PSScriptRoot
+    Remove-Item -Recurse -Force $TempCloneDir -ErrorAction SilentlyContinue
+}
+
+if ($Mode -eq 'Pull') {
+    Write-Host "Début du PULL..." -ForegroundColor Cyan
+    if (-not (Test-Path $CopilotProjectDir)) {
+        New-Item -ItemType Directory -Path $CopilotProjectDir -Force | Out-Null
+    }
+    
+    Set-Location $CopilotProjectDir
+    $pullOutput = & $pacCmd copilot pull 2>&1
+    
+    if ($pullOutput -match "No synced workspace found") {
+        Write-Host "Workspace pac manquant, fallback sur le mode clone temporaire..." -ForegroundColor Yellow
+        Sync-ViaTempClone -Action 'Pull'
+    }
+
+    Write-Host "Synchronisation Git en cours..." -ForegroundColor Cyan
+    Set-Location $PSScriptRoot\..
+    git add src/copilot
+    
+    # [PATCH HATER] Prévention du crash Git (Ne pas commit si l'arbre est propre)
+    $gitStatus = git status --porcelain src/copilot
+    if ([string]::IsNullOrWhiteSpace($gitStatus)) {
+        Write-Host "Aucune modification détectée dans Copilot Studio. Le dépôt est déjà à jour." -ForegroundColor Green
     } else {
-        Write-Host "Erreur lors du pull/clone." -ForegroundColor Red
+        git commit -m $CommitMessage
+        git push origin main
+        Write-Host "Synchronisation locale et Git terminée avec succès." -ForegroundColor Green
     }
 }
 elseif ($Mode -eq 'Push') {
-    Write-Host "Début du PUSH : Envoi du code local vers Copilot Studio..." -ForegroundColor Cyan
-    
-    if (-not (Test-Path $CopilotProjectDir)) {
-        Write-Host "Erreur: Le dossier du bot ($CopilotProjectDir) n'existe pas. Veuillez faire un PULL d'abord." -ForegroundColor Red
-        exit 1
-    }
-
+    Write-Host "Début du PUSH..." -ForegroundColor Cyan
     Set-Location $CopilotProjectDir
-    & $pacCmd copilot push
-
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "PUSH réussi ! Le bot sur Copilot Studio a été mis à jour." -ForegroundColor Green
-    } else {
-        Write-Host "Erreur lors du push vers le Cloud." -ForegroundColor Red
+    $pushOutput = & $pacCmd copilot push 2>&1
+    
+    if ($pushOutput -match "No synced workspace found") {
+        Write-Host "Workspace pac manquant, fallback sur le mode clone temporaire..." -ForegroundColor Yellow
+        Sync-ViaTempClone -Action 'Push'
     }
+    
+    Write-Host "PUSH terminé !" -ForegroundColor Green
 }

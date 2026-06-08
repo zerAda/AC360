@@ -48,7 +48,8 @@ Write-Host "Rcupration des groupes et permissions..." -ForegroundColor Green
 $Permissions = @()
 
 # Groupes SharePoint
-$Groups = Get-PnPGroup
+# [PATCH HATER] Correction de l'export vide : Get-PnPGroup ne charge pas les utilisateurs par défaut
+$Groups = Get-PnPGroup -Includes Users
 foreach ($Group in $Groups) {
     Write-Host "Groupe : $($Group.Title)"
     $Permissions += [PSCustomObject]@{
