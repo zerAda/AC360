@@ -59,6 +59,10 @@ beginDialog:
         - id: has_answer_rdv_client
           condition: =!IsBlank(Topic.Answer)
           actions:
+            - kind: SendActivity
+              id: display_answer_rdv_client
+              activity: "{Topic.Answer}"
+
             - kind: EndDialog
               id: end_rdv_client
               clearTopicQueue: true

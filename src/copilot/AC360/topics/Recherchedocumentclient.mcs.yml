@@ -58,6 +58,10 @@ beginDialog:
         - id: has_answer_recherche_doc
           condition: =!IsBlank(Topic.Answer)
           actions:
+            - kind: SendActivity
+              id: display_answer_recherche_doc
+              activity: "{Topic.Answer}"
+
             - kind: EndDialog
               id: end_recherche_doc
               clearTopicQueue: true

@@ -60,6 +60,10 @@ beginDialog:
         - id: has_answer_risques_client
           condition: =!IsBlank(Topic.Answer)
           actions:
+            - kind: SendActivity
+              id: display_answer_risques_client
+              activity: "{Topic.Answer}"
+
             - kind: EndDialog
               id: end_risques_client
               clearTopicQueue: true

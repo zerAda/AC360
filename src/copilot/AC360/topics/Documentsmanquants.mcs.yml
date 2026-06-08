@@ -56,6 +56,10 @@ beginDialog:
         - id: has_answer_documents_manquants
           condition: =!IsBlank(Topic.Answer)
           actions:
+            - kind: SendActivity
+              id: display_answer_documents_manquants
+              activity: "{Topic.Answer}"
+
             - kind: EndDialog
               id: end_documents_manquants
               clearTopicQueue: true

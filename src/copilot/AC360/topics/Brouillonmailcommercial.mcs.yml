@@ -71,6 +71,10 @@ beginDialog:
         - id: has_answer_mail_client
           condition: =!IsBlank(Topic.Answer)
           actions:
+            - kind: SendActivity
+              id: display_answer_mail_client
+              activity: "{Topic.Answer}"
+
             - kind: EndDialog
               id: end_mail_client
               clearTopicQueue: true
