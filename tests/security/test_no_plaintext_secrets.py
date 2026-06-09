@@ -46,6 +46,9 @@ def test_no_plaintext_secrets():
                 pass  # ignore read errors on binary/weird files
 
     # On autorise le fichier de test lui-même et les mocks/exemples
-    found_secrets = [f for f in found_secrets if not f.endswith("test_no_plaintext_secrets.py") and not f.endswith(".example")]
+    found_secrets = [
+        f for f in found_secrets
+        if not f.endswith("test_no_plaintext_secrets.py") and not f.endswith(".example")
+    ]
 
     assert len(found_secrets) == 0, f"Des potentiels secrets ont été trouvés dans : {found_secrets}"

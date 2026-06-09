@@ -166,7 +166,9 @@ def main():
             garanties[champ] = val
 
     # Nettoyage du nom pour le fichier
-    safe_client_name = "".join([c for c in client_name if c.isalpha() or c.isdigit() or c == ' ']).rstrip().replace(" ", "_")
+    safe_client_name = "".join(
+        c for c in client_name if c.isalpha() or c.isdigit() or c == ' '
+    ).rstrip().replace(" ", "_")
     output_filename = f"FIC_Brouillon_{safe_client_name}_{datetime.now().strftime('%Y%m%d')}.docx"
     output_path = os.path.join(args.output_dir, output_filename)
 

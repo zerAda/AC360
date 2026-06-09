@@ -40,7 +40,8 @@ def test_no_forbidden_files_in_repo():
             if d in FORBIDDEN_DIRS:
                 # __pycache__ could be created by pytest, but shouldn't be tracked.
                 # However, this test is running locally so it might exist.
-                # We'll rely on git tracking or just warn. We'll skip __pycache__ in strict local testing unless it's in a package.
+                # We'll rely on git tracking or just warn. __pycache__ is
+                # skipped in strict local testing unless it's in a package.
                 pass
 
         # Check files

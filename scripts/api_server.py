@@ -173,7 +173,8 @@ async def trigger_audit(
     # On transmet l'ID du document à l'Azure Durable Function qui s'occupera
     # de le télécharger depuis SharePoint via Graph API en tâche de fond.
 
-    log_security("INFO", "Envoi de la requête d'audit à l'Azure Function", {"document_id": request.document_id, "user": user_upn})
+    log_security("INFO", "Envoi de la requête d'audit à l'Azure Function",
+                 {"document_id": request.document_id, "user": user_upn})
 
     try:
         # Forward auth if available, append key to URL if present
@@ -215,7 +216,8 @@ async def api_create_planner_task(
         token = req.headers.get("Authorization", "").replace("Bearer ", "")
         log_security("INFO", f"Création tâche Planner pour {user_upn}: {request.title}")
         result = await create_planner_task(token, request.plan_id, request.bucket_id, request.title, request.due_date)
-        return {"status": "success", "task_title": request.title, "due_date": request.due_date, "planner_task_id": result.get("id")}
+        return {"status": "success", "task_title": request.title,
+                "due_date": request.due_date, "planner_task_id": result.get("id")}
     except httpx.HTTPStatusError as e:
         log_security("ERROR", f"Graph API Error: {e.response.text}")
         raise HTTPException(status_code=502, detail="Erreur Microsoft Graph.")
@@ -317,26 +319,26 @@ async def get_job_status(
     user_upn: str = Depends(verify_azure_ad_token)
 ):
     """
-    [PATCH HATER] Le Trou Noir Conversationnel est réparé.
-    Le bot peut maintenant interroger ce endpoint pour connaître le statut de l'audit
-    qui tourne sur Azure Durable Functions.
+    Interroge le statut d'une orchestration d'audit sur Azure Durable Functions.
+    Le bot Copilot interroge cet endpoint pour connaître l'avancement de l'audit.
     """
     try:
-        # On interroge l'API standard des Durable Functions
-        # Habituellement: GET /runtime/webhooks/durabletask/instances/{instanceId}
-        # Pour faire simple, on simule l'appel direct au status URI stocké ou on le re-génère
-        # avec la clé de l'API Azure Function si besoin.
-        # Dans un setup complet, la Function App gère l'auth Entra ID elle-même,
-        # ou on utilise la clé système.
-
+        # Appel à l'API standard des instances Durable Functions :
+        # GET /runtime/webhooks/durabletask/instances/{instanceId}
+        # Le task hub DOIT être configuré explicitement (pas de valeur de test
+        # par défaut) afin de ne jamais interroger un hub de test en production.
         auth_param = f"&code={AZURE_FUNCTION_KEY}" if AZURE_FUNCTION_KEY else ""
-        task_hub = os.environ.get("TASK_HUB_NAME", "TestHubName")
+        task_hub = os.environ.get("TASK_HUB_NAME")
+        if not task_hub:
+            log_security("ERROR", "TASK_HUB_NAME non configuré — statut d'audit indisponible")
+            raise HTTPException(status_code=500, detail="Configuration du moteur d'audit incomplète.")
 
         import urllib.parse
         safe_job_id = urllib.parse.quote(job_id)
 
         resp = await http_client.get(
-            f"{AZURE_FUNCTION_URL}/runtime/webhooks/durabletask/instances/{safe_job_id}?taskHub={task_hub}&connection=Storage{auth_param}",
+            f"{AZURE_FUNCTION_URL}/runtime/webhooks/durabletask/instances/{safe_job_id}"
+            f"?taskHub={task_hub}&connection=Storage{auth_param}",
             timeout=5.0
         )
         if resp.status_code == 404:
@@ -349,6 +351,10 @@ async def get_job_status(
             "status": data.get("runtimeStatus"),
             "result": data.get("output") if data.get("runtimeStatus") == "Completed" else None
         }
+    except HTTPException:
+        # Laisse passer nos réponses HTTP volontaires (404 job introuvable,
+        # 500 configuration) sans les ré-emballer en 500 générique.
+        raise
     except httpx.HTTPStatusError as e:
         log_security("ERROR", f"Azure Function HTTP error: {e}")
         raise HTTPException(status_code=502, detail="Erreur lors de la récupération du statut.")

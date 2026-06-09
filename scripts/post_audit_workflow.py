@@ -27,7 +27,8 @@ def send_teams_alert(report_data):
                 "value": f"Document: {ecart.get('valeur_document')} | Fabric: {ecart.get('valeur_gestion_artus')}"
             })
 
-    # Si aucun écart n'a été remonté explicitement, on vérifie quand même si l'audit global a échoué (ex: Client non trouvé)
+    # Si aucun écart explicite, on vérifie quand même si l'audit global a
+    # échoué (ex: client non trouvé).
     if not facts and report_data.get("score_correspondance_nom", 0) < 85:
         facts.append({
             "name": "Correspondance Client",

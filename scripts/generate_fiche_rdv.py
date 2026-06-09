@@ -70,7 +70,8 @@ def generate_fiche_rdv(client_name: str, summary: str, alert_points: str, job_id
 
     file_path = job_dir / f"Fiche_RDV_{safe_name}.docx"
 
-    # [PATCH HATER] Correction du bypass Path Traversal (P0-05) : utilisation de resolved.parents au lieu de str().startswith()
+    # Correction du bypass Path Traversal : on confine via resolved.parents
+    # plutôt que str().startswith() (contournable).
     resolved = file_path.resolve()
     base_resolved = Path(JOBS_BASE_DIR).resolve()
     if not (base_resolved in resolved.parents or resolved == base_resolved):

@@ -88,7 +88,11 @@ def fetch_artus_data(client_name=None):
         return df
     else:
         # FAIL-FAST: On refuse de comparer avec des données factices en production
-        raise ConnectionError("[ERREUR CRITIQUE] Impossible de se connecter à la base de données Fabric. L'audit a été interrompu pour des raisons de conformité (Pas de Fallback sur données factices).")
+        raise ConnectionError(
+            "[ERREUR CRITIQUE] Impossible de se connecter à la base de données Fabric. "
+            "L'audit a été interrompu pour des raisons de conformité "
+            "(Pas de Fallback sur données factices)."
+        )
 
 
 def match_client_name(doc_name, fabric_df):
@@ -132,7 +136,8 @@ def match_client_name(doc_name, fabric_df):
 
     # Le seuil d'exigence passe de 75% à 85% (Plus strict)
     if best_score >= 85:
-        print(f"[MATCHING] Client identifié de manière sécurisée : '{doc_name}' => '{best_match['nom_client']}' (Score: {best_score}%)")
+        print(f"[MATCHING] Client identifié de manière sécurisée : '{doc_name}' "
+              f"=> '{best_match['nom_client']}' (Score: {best_score}%)")
         return best_match, best_score
     else:
         print(f"[ATTENTION] Aucun match suffisamment sûr trouvé pour '{doc_name}' (Meilleur score: {best_score}%)")
@@ -211,7 +216,8 @@ def perform_audit(ocr_data, artus_df):
             })
 
     else:
-        print(f"-> ÉCHEC DE CORRESPONDANCE : Aucun client Fabric ne correspond à {doc_client_name} (Meilleur score: {best_match_score}%)")
+        print(f"-> ÉCHEC DE CORRESPONDANCE : Aucun client Fabric ne correspond à "
+              f"{doc_client_name} (Meilleur score: {best_match_score}%)")
         audit_results.append({
             "champ": "nom_client",
             "valeur_document": doc_client_name,
@@ -243,7 +249,8 @@ def perform_audit(ocr_data, artus_df):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Moteur d'audit comparant les données OCR avec Microsoft Fabric (Artus).")
+    parser = argparse.ArgumentParser(
+        description="Moteur d'audit comparant les données OCR avec Microsoft Fabric (Artus).")
     parser.add_argument("ocr_file", help="Chemin du fichier JSON généré par l'OCR (Phase 3).")
     parser.add_argument("--out-json", help="Chemin d'export du rapport JSON.", default="audit_report.json")
     parser.add_argument("--out-csv", help="Chemin d'export du rapport CSV.", default="audit_report.csv")
@@ -275,7 +282,9 @@ def main():
         df_export.to_csv(args.out_csv, index=False, encoding='utf-8-sig')
     else:
         # Fichier vide avec en-têtes
-        pd.DataFrame(columns=["champ", "valeur_document", "valeur_gestion_artus", "ecart_detecte", "commentaire"]).to_csv(args.out_csv, index=False)
+        pd.DataFrame(
+            columns=["champ", "valeur_document", "valeur_gestion_artus", "ecart_detecte", "commentaire"]
+        ).to_csv(args.out_csv, index=False)
 
     print("--- AUDIT TERMINÉ ---")
     print(f"Rapports générés : {args.out_json} et {args.out_csv}")

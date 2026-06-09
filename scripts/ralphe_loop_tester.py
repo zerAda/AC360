@@ -9,7 +9,8 @@ import sys
 # pour interroger directement le bot Copilot Studio déployé en production.
 # Il vérifie que le bot n'est plus silencieux et qu'il répond correctement aux scénarios commerciaux.
 
-# ⚠️ REMPLACEZ CETTE VALEUR PAR VOTRE SECRET DIRECT LINE (disponible dans Copilot Studio > Settings > Channels > Custom Website)
+# ⚠️ REMPLACEZ par votre secret Direct Line
+# (Copilot Studio > Settings > Channels > Custom Website).
 DIRECT_LINE_SECRET = "VOTRE_SECRET_DIRECT_LINE_ICI"
 
 # Les 5 scénarios commerciaux critiques à valider en boucle
