@@ -28,7 +28,7 @@ def _deps(*, ocr=None, reference=None, fic_calls=None, ocr_raises=False):
             raise RuntimeError("AZURE_OCR_KEY=supersecret-leaked-value boom")
         return ocr if ocr is not None else _ocr_with()
 
-    def fetch_reference(name):
+    def fetch_reference(identity):
         return reference
 
     def make_fic(name, result):

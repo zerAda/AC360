@@ -80,13 +80,15 @@ class AuditDeps:
 
     - download(document_id) -> chemin local du document
     - ocr(path) -> dict OCR brut (schemas/ocr_result.schema.json)
-    - fetch_reference(client_name) -> dict de référence Fabric, ou None si absent
+    - fetch_reference(identity) -> dict de référence Fabric, ou None si absent.
+      ``identity`` = {"nom_client": str|None, "siret": str|None} (rapprochement
+      par SIRET exact prioritaire, puis nom).
     - make_fic(client_name, audit_result) -> chemin FIC, ou None (optionnel)
     - compare(audit_input) -> audit_result (défaut : fabric_audit_engine.audit)
     """
     download: Callable[[str], str]
     ocr: Callable[[str], Dict[str, Any]]
-    fetch_reference: Callable[[Optional[str]], Optional[Dict[str, Any]]]
+    fetch_reference: Callable[[Dict[str, Any]], Optional[Dict[str, Any]]]
     make_fic: Optional[Callable[[Optional[str], Dict[str, Any]], Optional[str]]] = None
     compare: Callable[[Dict[str, Any]], Dict[str, Any]] = _default_compare
 
@@ -157,9 +159,11 @@ def run_audit(
 
         canonical = extract_canonical_fields(ocr_result)
         client_name = canonical.get("nom_client") or client_context
-        _stage("extract", True, f"client={'<set>' if client_name else '<none>'}")
+        siret = canonical.get("siret")
+        _stage("extract", True,
+               f"client={'<set>' if client_name else '<none>'} siret={'<set>' if siret else '<none>'}")
 
-        reference = deps.fetch_reference(client_name)
+        reference = deps.fetch_reference({"nom_client": client_name, "siret": siret})
         if not reference:
             result: Dict[str, Any] = {
                 "client_document": client_name,

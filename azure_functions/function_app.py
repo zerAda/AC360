@@ -70,12 +70,16 @@ def _ocr(path: str) -> dict:
     return extract_document_azure(path)
 
 
-def _fetch_reference(client_name):
+def _fetch_reference(identity):
     """Référence client depuis Microsoft Fabric (OneLake Delta, pur Python — pas
-    d'ODBC). Rapprochement par nom (et SIRET si disponible). Retourne le dict
-    consommable par l'audit, ou None si le client n'est pas trouvé."""
+    d'ODBC). Rapprochement par SIRET exact (prioritaire) puis nom. ``identity`` =
+    {"nom_client", "siret"}. Retourne le dict de référence, ou None si absent."""
     from fabric_onelake import fetch_client_reference
-    return fetch_client_reference(client_name=client_name)
+    identity = identity or {}
+    return fetch_client_reference(
+        client_name=identity.get("nom_client"),
+        siret=identity.get("siret"),
+    )
 
 
 def _build_garanties(audit_result: dict) -> dict:

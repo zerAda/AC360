@@ -44,6 +44,7 @@ _FIELD_ALIASES: Dict[str, List[str]] = {
     "motif_operation": [
         "motif operation", "motif", "nature operation", "objet",
     ],
+    "siret": ["siret", "n siret", "numero siret", "siren"],
 }
 
 # Tolérances / seuils (centralisés, alignés sur audit_fabric_comparison).

@@ -57,16 +57,30 @@ def test_fetch_reference_uses_onelake(monkeypatch):
             "siret": "39000000000000", "produits": ["Produit A"],
         },
     )
-    ref = fa._fetch_reference("GEREP")
+    ref = fa._fetch_reference({"nom_client": "GEREP", "siret": "39000000000000"})
     assert ref["nom_client"] == "GEREP SA"
     assert ref["produits"] == ["Produit A"]
+
+
+def test_fetch_reference_prioritises_siret(monkeypatch):
+    import fabric_onelake
+    captured = {}
+
+    def fake(client_name=None, siret=None):
+        captured["siret"] = siret
+        captured["name"] = client_name
+        return {"nom_client": "X", "siret": siret, "numcli": "9", "produits": []}
+
+    monkeypatch.setattr(fabric_onelake, "fetch_client_reference", fake)
+    fa._fetch_reference({"nom_client": "GEREP", "siret": "39000000000000"})
+    assert captured["siret"] == "39000000000000"
 
 
 def test_fetch_reference_none_when_no_match(monkeypatch):
     import fabric_onelake
     monkeypatch.setattr(fabric_onelake, "fetch_client_reference",
                         lambda client_name=None, siret=None: None)
-    assert fa._fetch_reference("absent") is None
+    assert fa._fetch_reference({"nom_client": "absent"}) is None
 
 
 # --- Corps d'activité -------------------------------------------------------
@@ -75,7 +89,7 @@ def test_run_activity_happy_path(monkeypatch):
         download=lambda d: "/tmp/x.pdf",
         ocr=lambda p: {"metadata": {"source_file": "x", "extraction_mode": "t"},
                        "fields": {"Raison sociale": {"value": "GEREP SA"}}, "tables": []},
-        fetch_reference=lambda n: {"nom_client": "GEREP SA", "plafond_hospitalisation": "1000"},
+        fetch_reference=lambda ident: {"nom_client": "GEREP SA", "plafond_hospitalisation": "1000"},
         make_fic=lambda n, r: None,
     )
     monkeypatch.setattr(fa, "_DEPS", deps)
