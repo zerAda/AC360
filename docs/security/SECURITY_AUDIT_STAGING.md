@@ -57,19 +57,12 @@
 - `AC360-API-staging` (`5399f31e-...`) : **valide** des jetons (audience + scope
   `Audit.Trigger`). **Aucun secret** (une API n'en a pas besoin).
 
-### ⚠️ SP d'automatisation — À SUPPRIMER
-- `AC360-Automation` (`794146cb-...`) a été créé pour le **setup** (grant par site
-  SharePoint, dépôt du document de test). Il détient **Graph Sites.FullControl.All**
-  (tenant-wide) + un secret.
-- Sa copie de secret en Key Vault a été supprimée. **Son credential Entra existe
-  encore.**
-- **Action requise** (privilège annuaire / PIM) :
-  ```bash
-  az ad app delete --id 794146cb-bc80-4612-a6d3-e90875531e95
-  ```
-  → Réactivez le rôle PIM (Global Admin / Application Administrator) puis exécutez,
-  ou demandez-moi de le faire pendant la fenêtre d'activation. **Tant qu'il existe,
-  c'est la plus grosse surface d'attaque résiduelle.**
+### ✅ SP d'automatisation — SUPPRIMÉ
+- `AC360-Automation` (`794146cb-...`), créé pour le **setup** (grant SharePoint par
+  site, dépôt du document de test), détenait **Graph Sites.FullControl.All** +
+  un secret.
+- **Application + service principal supprimés** d'Entra (vérifié : `az ad app list`
+  → `[]`). Secret retiré de Key Vault. **Surface d'attaque éliminée.**
 
 ## 4. Données
 
@@ -103,15 +96,26 @@
 - 🟡 Recommandé en PROD : diagnostic settings → Log Analytics pour Key Vault,
   Storage, Function ; activer **Microsoft Defender for Cloud** sur l'abonnement.
 
-## Plan d'action résiduel (par priorité)
+## Corrections appliquées pendant l'audit ✅
 
-| # | Action | Sévérité | Qui |
+| # | Action | État |
+|---|---|---|
+| 1 | Supprimer le SP `AC360-Automation` (Sites.FullControl.All) | ✅ Fait & vérifié |
+| 2 | Réactiver `httpsOnly` sur la Function (régression) | ✅ Fait |
+| 3 | Activer la **purge protection** Key Vault | ✅ Fait |
+| 4 | Retirer `automation-sp-secret` du Key Vault | ✅ Fait |
+| 5 | Restreindre l'ingress Function aux 22 IP de la passerelle | ✅ Fait & vérifié (IP externe → **403**) |
+| 6 | Journalisation d'audit Key Vault (AuditEvent → storage) | ✅ Fait |
+| 7 | MI Fabric en lecture seule OneLake (drop Contributor) | ✅ Fait |
+
+## Plan d'action résiduel (PROD)
+
+| # | Action | Sévérité | Quand |
 |---|---|---|---|
-| 1 | Supprimer le SP `AC360-Automation` | 🟠 Haute | Vous (réactiver PIM) ou moi pendant la fenêtre |
-| 2 | Restreindre l'ingress Function aux IP de la passerelle | 🟡 Moyenne | Moi (sur demande) |
-| 3 | Private Endpoints (KV, Storage) en PROD | 🟡 Moyenne | À la promotion PROD |
-| 4 | Diagnostic settings → Log Analytics + Defender for Cloud | 🟢 Basse | À la promotion PROD |
-| 5 | Re-vérifier `httpsOnly` après chaque redéploiement | 🟢 Basse | CI / script |
+| 1 | Private Endpoints (KV, Storage) | 🟡 Moyenne | Promotion PROD |
+| 2 | Defender for Cloud + diagnostic settings → Log Analytics | 🟢 Basse | Promotion PROD |
+| 3 | Re-vérifier `httpsOnly` après chaque redéploiement | 🟢 Basse | CI / script |
+| 4 | Identité managée pour `AzureWebJobsStorage` (au lieu de la clé) | 🟢 Basse | Durcissement PROD |
 
 ## Conclusion
 
