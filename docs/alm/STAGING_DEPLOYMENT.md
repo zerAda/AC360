@@ -108,3 +108,31 @@ az functionapp deployment source config-zip -g rg-ac360-staging -n ac360-func-st
 Staging sur F0 (OCR) + Consumption (Functions) + stockage standard ≈ quelques
 centimes à quelques euros/mois à faible volume. Aucune ressource « production »
 (S0, plan premium) n'a été créée.
+
+## ✅ E2E COMPLET SUR DONNÉES RÉELLES (2026-06-09)
+
+Pipeline vérifié de bout en bout sur Azure, document SharePoint réel + données
+Fabric réelles :
+
+| Étape | Résultat |
+|---|---|
+| validate / download (SharePoint MI) / ocr (F0) / extract | ✅ |
+| fetch_reference (OneLake Delta, pur Python) | ✅ lecture réelle de tbl_super_product_client_api_gold |
+| Verdict | CLIENT_NON_TROUVE (doc de test fictif « GEREP SA » -> correct) |
+
+orchestration runtimeStatus=Completed, error=null.
+
+### Fabric — accès OneLake
+- Workspace DEV : GEREP_Fabric_DEV (a1dad2a0-...), Lakehouse_Gold (832729f5-...).
+- Table de référence : tbl_super_product_client_api_gold (noms lisibles + SIRET ;
+  la table client agrégée est hashée RGPD).
+- Identité managée de la Function : rôle **Contributor** sur le workspace
+  (Viewer donne le SQL endpoint mais PAS la lecture OneLake directe).
+- Tenant setting « OneLakeForThirdParty » : déjà activé.
+
+### Durcissement production recommandé
+- Remplacer le rôle workspace Contributor par un **rôle d'accès aux données
+  OneLake au niveau item** (lecture seule sur la seule table de référence) —
+  moindre privilège.
+- Évolution scalable : exposer la table via l'**API GraphQL Fabric** (requête
+  filtrée côté serveur, déjà utilisée dans le workspace).
