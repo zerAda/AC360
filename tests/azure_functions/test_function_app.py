@@ -3,7 +3,6 @@ import os
 import sys
 from unittest.mock import MagicMock
 
-import pandas as pd
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))
@@ -48,23 +47,25 @@ def test_make_fic_calls_generator_with_adapted_args(tmp_path, monkeypatch):
     assert path.endswith("FIC_Brouillon_GEREP_SA.docx")
 
 
-# --- Adaptateur référence Fabric -------------------------------------------
-def test_fetch_reference_maps_dataframe_row(monkeypatch):
-    df = pd.DataFrame([{
-        "client_id": 1, "nom_client": "GEREP SA",
-        "plafond_hospitalisation": "1000", "date_effet": "2026-06-01",
-    }])
-    import audit_fabric_comparison
-    monkeypatch.setattr(audit_fabric_comparison, "fetch_artus_data", lambda name: df)
+# --- Adaptateur référence Fabric (OneLake) ---------------------------------
+def test_fetch_reference_uses_onelake(monkeypatch):
+    import fabric_onelake
+    monkeypatch.setattr(
+        fabric_onelake, "fetch_client_reference",
+        lambda client_name=None, siret=None: {
+            "numcli": "1", "nom_client": "GEREP SA",
+            "siret": "39000000000000", "produits": ["Produit A"],
+        },
+    )
     ref = fa._fetch_reference("GEREP")
     assert ref["nom_client"] == "GEREP SA"
-    assert ref["plafond_hospitalisation"] == "1000"
+    assert ref["produits"] == ["Produit A"]
 
 
-def test_fetch_reference_returns_none_when_empty(monkeypatch):
-    import audit_fabric_comparison
-    monkeypatch.setattr(audit_fabric_comparison, "fetch_artus_data",
-                        lambda name: pd.DataFrame())
+def test_fetch_reference_none_when_no_match(monkeypatch):
+    import fabric_onelake
+    monkeypatch.setattr(fabric_onelake, "fetch_client_reference",
+                        lambda client_name=None, siret=None: None)
     assert fa._fetch_reference("absent") is None
 
 

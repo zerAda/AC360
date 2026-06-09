@@ -71,17 +71,11 @@ def _ocr(path: str) -> dict:
 
 
 def _fetch_reference(client_name):
-    from audit_fabric_comparison import fetch_artus_data
-    df_ref = fetch_artus_data(client_name)
-    if df_ref is None or getattr(df_ref, "empty", True):
-        return None
-    row = df_ref.iloc[0].to_dict()
-    return {
-        "client_id": row.get("client_id"),
-        "nom_client": row.get("nom_client"),
-        "plafond_hospitalisation": row.get("plafond_hospitalisation"),
-        "date_effet": str(row.get("date_effet")) if row.get("date_effet") is not None else None,
-    }
+    """Référence client depuis Microsoft Fabric (OneLake Delta, pur Python — pas
+    d'ODBC). Rapprochement par nom (et SIRET si disponible). Retourne le dict
+    consommable par l'audit, ou None si le client n'est pas trouvé."""
+    from fabric_onelake import fetch_client_reference
+    return fetch_client_reference(client_name=client_name)
 
 
 def _build_garanties(audit_result: dict) -> dict:

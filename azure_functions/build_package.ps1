@@ -29,8 +29,9 @@ Copy-Item (Join-Path $here "shared") $build -Recurse
 
 # 2. Vendoring des modules Python de scripts/ requis au runtime.
 $mods = @(
-    "fabric_audit_engine.py", "safe_logger.py", "config.py", "db_manager.py",
-    "process_document_ocr.py", "audit_fabric_comparison.py", "generate_fic_draft.py"
+    "fabric_audit_engine.py", "fabric_onelake.py", "safe_logger.py", "config.py",
+    "db_manager.py", "process_document_ocr.py", "audit_fabric_comparison.py",
+    "generate_fic_draft.py"
 )
 foreach ($m in $mods) {
     Copy-Item (Join-Path $root "scripts/$m") $build
