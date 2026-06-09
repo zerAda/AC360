@@ -113,24 +113,24 @@ def validate_all():
         except Exception as e:
             ko.append((yml_file.name, f"Erreur lecture: {e}"))
 
-    print(f"\n=== Validation YAML Copilot Studio ===")
+    print("\n=== Validation YAML Copilot Studio ===")
     print(f"Répertoire : {COPILOT_ROOT}")
-    print(f"")
+    print("")
     for name in ok:
         print(f"  [OK]  {name}")
     for name, err in ko:
         print(f"  [KO]  {name} -> {err}")
-    print(f"")
+    print("")
     print(f"Résultat YAML : {len(ok)} OK / {len(ko)} KO")
 
-    print(f"")
-    print(f"=== Contrôle anti-silent-RAG ===")
+    print("")
+    print("=== Contrôle anti-silent-RAG ===")
     if rag_ko:
         for name, var, issue in rag_ko:
             print(f"  [KO]  {name} ({var}) -> {issue}")
     else:
-        print(f"  [OK]  Aucune topic RAG silencieuse détectée.")
-    print(f"")
+        print("  [OK]  Aucune topic RAG silencieuse détectée.")
+    print("")
     print(f"Résultat RAG : {len(rag_ko)} KO")
 
     if ko or rag_ko:

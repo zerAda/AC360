@@ -38,6 +38,7 @@ load_dotenv()
 AZURE_OCR_ENDPOINT = os.getenv("AZURE_OCR_ENDPOINT")
 AZURE_OCR_KEY = os.getenv("AZURE_OCR_KEY")
 
+
 def extract_document_azure(file_path):
     """
     Extrait les données du document via Azure AI Document Intelligence.
@@ -54,7 +55,7 @@ def extract_document_azure(file_path):
     print(f"[AZURE MODE] Analyse du fichier : {file_path}...")
     with open(file_path, "rb") as f:
         poller = document_analysis_client.begin_analyze_document("prebuilt-document", document=f)
-    
+
     result = poller.result()
 
     # Structuration de la sortie JSON
@@ -121,8 +122,9 @@ def main():
     # Sauvegarde du résultat
     with open(args.output, 'w', encoding='utf-8') as f:
         json.dump(result_data, f, ensure_ascii=False, indent=4)
-    
+
     print(f"\n[SUCCÈS] Extraction terminée. Résultats sauvegardés dans : {args.output}")
+
 
 if __name__ == "__main__":
     main()

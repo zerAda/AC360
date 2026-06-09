@@ -67,13 +67,37 @@ def _fetch_reference(client_name):
     }
 
 
+def _build_garanties(audit_result: dict) -> dict:
+    """Adapte le résultat d'audit typé -> dict {garantie: valeur} pour la FIC."""
+    garanties = {}
+    for field in audit_result.get("fields", []):
+        champ = field.get("champ")
+        valeur = field.get("valeur_reference") or field.get("valeur_document")
+        if champ and valeur is not None:
+            garanties[champ] = valeur
+    return garanties
+
+
+def _date_effet(audit_result: dict):
+    for field in audit_result.get("fields", []):
+        if field.get("champ") == "date_effet":
+            return field.get("valeur_reference") or field.get("valeur_document")
+    return None
+
+
 def _make_fic(client_name, audit_result):
     # Génère un brouillon de FIC pour revue humaine (verdict ECART/INCERTAIN).
     from generate_fic_draft import generate_fic_document
     out_dir = os.environ.get("JOBS_BASE_DIR", "jobs")
     os.makedirs(out_dir, exist_ok=True)
-    out_path = os.path.join(out_dir, f"FIC_{(client_name or 'client').replace(' ', '_')}.docx")
-    generate_fic_document(client_name, None, audit_result, out_path)
+    safe = "".join(c for c in (client_name or "client") if c.isalnum() or c == " ").strip().replace(" ", "_")
+    out_path = os.path.join(out_dir, f"FIC_Brouillon_{safe or 'client'}.docx")
+    generate_fic_document(
+        client_name,
+        _date_effet(audit_result),
+        _build_garanties(audit_result),
+        out_path,
+    )
     return out_path
 
 

@@ -48,6 +48,7 @@ def _fetch_jwks(force: bool = False) -> dict:
             detail="Impossible de télécharger les clés JWKS depuis Microsoft Entra ID."
         )
 
+
 def _get_public_key(kid: str):
     jwks = _fetch_jwks()
     for key_data in jwks.get("keys", []):
@@ -62,6 +63,7 @@ def _get_public_key(kid: str):
 
     log_security("ERROR", f"Public key not found for kid: {kid}")
     raise HTTPException(status_code=401, detail="Clé publique introuvable (kid inconnu).")
+
 
 def verify_azure_ad_token(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
     token = credentials.credentials

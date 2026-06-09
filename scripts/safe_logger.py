@@ -30,6 +30,7 @@ import logging
 logger = logging.getLogger("AC360")
 logger.setLevel(logging.INFO)
 
+
 def log_security(level: str, message: str, data: dict = None):
     """
     Journalise un message de sécurité de manière neutre et sécurisée.
@@ -37,7 +38,7 @@ def log_security(level: str, message: str, data: dict = None):
     safe_msg = redact(message)
     extra_info = f" | {data}" if data else ""
     full_msg = f"{safe_msg}{extra_info}"
-    
+
     if level == "INFO":
         logger.info(full_msg)
     elif level == "WARNING":
@@ -46,6 +47,7 @@ def log_security(level: str, message: str, data: dict = None):
         logger.error(full_msg)
     else:
         logger.debug(full_msg)
+
 
 __all__ = ["redact", "MAX_LEN", "logger", "log_security"]
 

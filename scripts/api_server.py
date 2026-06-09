@@ -13,7 +13,7 @@ from collections import defaultdict
 from planner_integration import create_planner_task
 from generate_fiche_rdv import generate_fiche_rdv
 from auth import verify_azure_ad_token
-from safe_logger import log_security, logger
+from safe_logger import log_security
 
 app = FastAPI(
     title="AC360 Audit Engine API",
@@ -28,6 +28,7 @@ AZURE_FUNCTION_KEY = os.environ.get("AZURE_FUNCTION_KEY", "")
 # Global HTTP Client pour éviter le Socket Exhaustion
 http_client = httpx.AsyncClient(limits=httpx.Limits(max_keepalive_connections=50, max_connections=200))
 
+
 @app.on_event("shutdown")
 async def shutdown_event():
     await http_client.aclose()
@@ -35,12 +36,14 @@ async def shutdown_event():
 # ---------------------------------------------------------------------------
 # Middleware Application Insights (Monitoring Enterprise)
 # ---------------------------------------------------------------------------
+
+
 class AppInsightsMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         start_time = time.time()
         response = await call_next(request)
         process_time = time.time() - start_time
-        
+
         if os.environ.get("APPINSIGHTS_INSTRUMENTATIONKEY"):
             log_security("INFO", "AppInsights_Telemetry", {
                 "method": request.method,
@@ -48,9 +51,10 @@ class AppInsightsMiddleware(BaseHTTPMiddleware):
                 "status_code": response.status_code,
                 "duration_ms": round(process_time * 1000, 2)
             })
-            
+
         response.headers["X-Process-Time"] = str(round(process_time, 4))
         return response
+
 
 app.add_middleware(AppInsightsMiddleware)
 
@@ -60,6 +64,7 @@ app.add_middleware(AppInsightsMiddleware)
 _RATE_LIMIT_MAX = 10
 _RATE_LIMIT_WINDOW = 3600  # secondes
 _rate_limit_store: dict[str, list[float]] = defaultdict(list)
+
 
 async def cleanup_rate_limits():
     now = time.time()
@@ -74,13 +79,14 @@ async def cleanup_rate_limits():
     for k in keys_to_delete:
         _rate_limit_store.pop(k, None)
 
+
 async def _check_rate_limit(upn: str) -> None:
     now = time.time()
     if len(_rate_limit_store) > 1000:
         asyncio.create_task(cleanup_rate_limits())
 
     _rate_limit_store[upn] = [t for t in _rate_limit_store[upn] if now - t < _RATE_LIMIT_WINDOW]
-    
+
     if len(_rate_limit_store[upn]) >= _RATE_LIMIT_MAX:
         log_security("WARNING", f"Rate limit dépassé pour {upn}")
         raise HTTPException(
@@ -92,6 +98,8 @@ async def _check_rate_limit(upn: str) -> None:
 # ---------------------------------------------------------------------------
 # Validation des identifiants (anti path-traversal + anti accès arbitraire)
 # ---------------------------------------------------------------------------
+
+
 def _validate_document_id(document_id: str) -> str:
     """Valide qu'un identifiant est un UUID canonique ET qu'il correspond à une
     ressource connue (répertoire de job sous ``jobs_base_dir``).
@@ -136,16 +144,19 @@ class AuditRequest(BaseModel):
     document_id: str
     client_context: Optional[str] = None
 
+
 class PlannerTaskRequest(BaseModel):
     title: str
     due_date: str
     plan_id: str
     bucket_id: str
 
+
 class FicheRDVRequest(BaseModel):
     client_name: str
     summary: str
     alert_points: str
+
 
 @app.post("/api/audit")
 async def trigger_audit(
@@ -161,9 +172,9 @@ async def trigger_audit(
     # [PATCH HATER OPTION A] Plus de fausse validation locale.
     # On transmet l'ID du document à l'Azure Durable Function qui s'occupera
     # de le télécharger depuis SharePoint via Graph API en tâche de fond.
-    
-    log_security("INFO", f"Envoi de la requête d'audit à l'Azure Function", {"document_id": request.document_id, "user": user_upn})
-    
+
+    log_security("INFO", "Envoi de la requête d'audit à l'Azure Function", {"document_id": request.document_id, "user": user_upn})
+
     try:
         # Forward auth if available, append key to URL if present
         auth_headers = {}
@@ -209,7 +220,7 @@ async def api_create_planner_task(
         log_security("ERROR", f"Graph API Error: {e.response.text}")
         raise HTTPException(status_code=502, detail="Erreur Microsoft Graph.")
     except Exception as e:
-        log_security("ERROR", f"Planner error", {"error": str(e)})
+        log_security("ERROR", "Planner error", {"error": str(e)})
         raise HTTPException(status_code=500, detail="Erreur interne lors de la création de la tâche.")
 
 
@@ -237,8 +248,9 @@ async def api_generate_fiche_rdv(
             "download_url": f"/api/download/{job_id}/{os.path.basename(file_path)}"
         }
     except Exception as e:
-        log_security("ERROR", f"Fiche RDV generation error", {"error": str(e)})
+        log_security("ERROR", "Fiche RDV generation error", {"error": str(e)})
         raise HTTPException(status_code=500, detail="Erreur lors de la génération de la fiche.")
+
 
 @app.get("/api/download/{job_id}/{filename}")
 async def download_fiche_rdv(
@@ -261,11 +273,11 @@ async def download_fiche_rdv(
     from config import load_config
     config = load_config()
     file_path = os.path.join(config.jobs_base_dir, job_id, filename)
-    
+
     if not os.path.exists(file_path):
         log_security("WARNING", f"Fichier non trouvé : {file_path}")
         raise HTTPException(status_code=404, detail="Fichier introuvable.")
-        
+
     # [PATCH IDOR] Verify the authenticated user owns this file
     import json
     meta_path = os.path.join(config.jobs_base_dir, job_id, "meta.json")
@@ -280,10 +292,10 @@ async def download_fiche_rdv(
         # Strict by default:
         log_security("WARNING", f"Fichier meta.json manquant pour le job {job_id}")
         raise HTTPException(status_code=403, detail="Propriétaire non vérifiable.")
-        
+
     return FileResponse(
-        path=file_path, 
-        filename=filename, 
+        path=file_path,
+        filename=filename,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
 
@@ -313,16 +325,16 @@ async def get_job_status(
         # On interroge l'API standard des Durable Functions
         # Habituellement: GET /runtime/webhooks/durabletask/instances/{instanceId}
         # Pour faire simple, on simule l'appel direct au status URI stocké ou on le re-génère
-        # avec la clé de l'API Azure Function si besoin. 
-        # Dans un setup complet, la Function App gère l'auth Entra ID elle-même, 
+        # avec la clé de l'API Azure Function si besoin.
+        # Dans un setup complet, la Function App gère l'auth Entra ID elle-même,
         # ou on utilise la clé système.
-        
+
         auth_param = f"&code={AZURE_FUNCTION_KEY}" if AZURE_FUNCTION_KEY else ""
         task_hub = os.environ.get("TASK_HUB_NAME", "TestHubName")
-        
+
         import urllib.parse
         safe_job_id = urllib.parse.quote(job_id)
-        
+
         resp = await http_client.get(
             f"{AZURE_FUNCTION_URL}/runtime/webhooks/durabletask/instances/{safe_job_id}?taskHub={task_hub}&connection=Storage{auth_param}",
             timeout=5.0
@@ -331,7 +343,7 @@ async def get_job_status(
             raise HTTPException(status_code=404, detail="Job introuvable.")
         resp.raise_for_status()
         data = resp.json()
-            
+
         return {
             "job_id": job_id,
             "status": data.get("runtimeStatus"),
