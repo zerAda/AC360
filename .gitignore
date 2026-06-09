@@ -70,5 +70,9 @@ release/
 # Export Copilot sensible (régénérable depuis src/copilot/AC360/**)
 .mcs/botdefinition.json
 
+# Azure Functions — settings locaux (peuvent contenir des connection strings)
+local.settings.json
+**/local.settings.json
+
 # Project Specific
 .planning/STATE.md.tmp
