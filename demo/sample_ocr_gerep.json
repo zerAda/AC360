@@ -1,0 +1,24 @@
+{
+  "metadata": {
+    "source_file": "Contrat_GEREP_2026.pdf",
+    "extraction_mode": "azure-prebuilt-document",
+    "pages": 2
+  },
+  "fields": {
+    "Raison sociale": { "value": "GEREP SA", "confidence": 0.97 },
+    "Date d'effet": { "value": "01/06/2026", "confidence": 0.95 },
+    "N° de contrat": { "value": "AB-2026-0142", "confidence": 0.93 }
+  },
+  "tables": [
+    {
+      "row_count": 2,
+      "column_count": 2,
+      "cells": [
+        { "row_index": 0, "column_index": 0, "content": "Garantie" },
+        { "row_index": 0, "column_index": 1, "content": "Plafond" },
+        { "row_index": 1, "column_index": 0, "content": "Plafond hospitalisation" },
+        { "row_index": 1, "column_index": 1, "content": "1 500 €" }
+      ]
+    }
+  ]
+}

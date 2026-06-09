@@ -72,6 +72,9 @@ test-results/
 # Release packages
 release/
 
+# Sorties de démo générées (les fixtures demo/*.json restent versionnées)
+demo/out/
+
 # Export Copilot sensible (régénérable depuis src/copilot/AC360/**)
 .mcs/botdefinition.json
 
