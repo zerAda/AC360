@@ -63,12 +63,24 @@ Gates : **`pytest` 100 passed / 1 skipped** (départ : 1 erreur de collection + 
 Gates : **`pytest` 112 passed / 1 skipped** ; `flake8` 0 ; `validate_copilot_yaml`
 39/0 ; package dry-run clean.
 
+## Itération 4 — Durcissement « anti-hater » (suite)
+
+- **Robustesse** : validation JSON-schema au runtime (rejet OCR malformé,
+  vérification du verdict produit) ; **mypy** strict sur le cœur métier + job CI.
+- **Tests sécurité** : couverture IDOR / path-traversal / UUID / fail-closed meta
+  sur `/api/download` (6) ; rate-limiting (2) ; statut fail-closed (3). **122
+  tests** (cœur métier 90-98 % de couverture, rapportée en CI).
+- **Maturité dépôt** : `SECURITY.md` (divulgation responsable), `dependabot.yml`,
+  gate CI désormais : gitleaks → tests sécu → YAML → pytest+coverage → flake8
+  (bloquant) → mypy (bloquant) → package dry-run.
+
 ## Score global
 
-**~80/100** (estimation honnête). **Toujours pas 90 — et ce n'est plus une
+**~82/100** (estimation honnête). **Toujours pas 90 — et ce n'est plus une
 question de code.** Le plafond restant est **structurel** : déploiement +
 validation en environnement réel (OCR à provisionner, Function à déployer,
-Fabric/Copilot/red-team/DLP à valider). Le code, lui, est robuste et testé.
+Fabric/Copilot/red-team/DLP à valider). Le code, lui, est robuste, typé et testé
+(122 tests, flake8 0, mypy clean).
 
 Les plafonds de la mission qui étaient déclenchés ont été **levés** (secrets,
 package, collection pytest, topic silencieux, simulation vendue réelle). Ce qui
