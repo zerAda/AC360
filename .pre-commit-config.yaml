@@ -1,0 +1,32 @@
+# Hooks de pré-commit AC360 — alignés sur les gates CI (setup.cfg).
+# Installation : pip install pre-commit && pre-commit install
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+      - id: detect-private-key
+
+  - repo: https://github.com/pycqa/flake8
+    rev: 7.1.1
+    hooks:
+      - id: flake8
+        # Configuration dans setup.cfg [flake8].
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.11.2
+    hooks:
+      - id: mypy
+        # Cibles + options dans setup.cfg [mypy].
+        pass_filenames: false
+        additional_dependencies: []
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.2
+    hooks:
+      - id: gitleaks
