@@ -1,4 +1,6 @@
 import json
+import os
+import time
 from typing import Optional
 import httpx
 import jwt
@@ -17,16 +19,27 @@ from safe_logger import log_security
 
 security = HTTPBearer()
 
+# Cache JWKS avec TTL (rotation des clés signées par Entra ID). Le cache est
+# rafraîchi quand il dépasse JWKS_TTL_SECONDS, ET de façon forcée sur un kid
+# inconnu (rotation anticipée). Évite le risque d'un cache indéfini.
+JWKS_TTL_SECONDS = int(os.getenv("JWKS_TTL_SECONDS", "3600"))
 _JWKS_CACHE: Optional[dict] = None
+_JWKS_CACHE_TS: float = 0.0
 
-def _fetch_jwks() -> dict:
-    global _JWKS_CACHE
-    if _JWKS_CACHE is not None:
+
+def _jwks_cache_valid() -> bool:
+    return _JWKS_CACHE is not None and (time.monotonic() - _JWKS_CACHE_TS) < JWKS_TTL_SECONDS
+
+
+def _fetch_jwks(force: bool = False) -> dict:
+    global _JWKS_CACHE, _JWKS_CACHE_TS
+    if not force and _jwks_cache_valid():
         return _JWKS_CACHE
     try:
-        response = httpx.get(JWKS_URL, timeout=10.0)
+        response = httpx.get(JWKS_URL, timeout=config.jwks_timeout)
         response.raise_for_status()
         _JWKS_CACHE = response.json()
+        _JWKS_CACHE_TS = time.monotonic()
         return _JWKS_CACHE
     except Exception as exc:
         log_security("ERROR", f"Failed to fetch JWKS: {exc}")
@@ -40,14 +53,13 @@ def _get_public_key(kid: str):
     for key_data in jwks.get("keys", []):
         if key_data.get("kid") == kid:
             return RSAAlgorithm.from_jwk(json.dumps(key_data))
-    
-    global _JWKS_CACHE
-    _JWKS_CACHE = None
-    jwks = _fetch_jwks()
+
+    # kid inconnu : rotation possible -> on force un rafraîchissement unique.
+    jwks = _fetch_jwks(force=True)
     for key_data in jwks.get("keys", []):
         if key_data.get("kid") == kid:
             return RSAAlgorithm.from_jwk(json.dumps(key_data))
-    
+
     log_security("ERROR", f"Public key not found for kid: {kid}")
     raise HTTPException(status_code=401, detail="Clé publique introuvable (kid inconnu).")
 
