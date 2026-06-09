@@ -1,6 +1,9 @@
 # AC360 — Architecture Globale & Sécurité
 
-> **Statut** : Approuvé (Enterprise-Ready)  
+> **Statut** : CONDITIONALLY READY — pilote staging supervisé. NON production-ready
+> tant que le backend Durable Functions n'est pas déployé et que l'OCR / Fabric /
+> Entra ID / SharePoint ne sont pas validés en environnement réel.
+> Voir `AC360_FINAL_ENTERPRISE_READINESS_REPORT.md` (score honnête ~77/100).
 > **Version** : 2.0 (Post-Audit Hostile)
 
 ## Vue d'ensemble

@@ -25,7 +25,7 @@ Toute modification apportée à AC360 (que ce soit via l'UI Copilot Studio ou le
 
 ## 3. Audits et Red-Teaming (Continuité de Sécurité)
 
-La posture "Enterprise-Ready" d'AC360 exige une surveillance continue :
+La cible de posture de sécurité d'AC360 (à atteindre avant production) exige une surveillance continue :
 - **Bimestriel** : Tentative de Jailbreak / Prompt Injection par un acteur interne indépendant. Les `additionalInstructions` du RAG doivent être testées (Domaine 7).
 - **Semestriel** : Rotation des clés (Azure OCR, Secrets Fabric, JWT). Inscription dans le registre `docs/security/SECRET_ROTATION.md`.
 - **En continu** : Scan PowerShell pour interdire l'ajout d'injections potentielles (`Invoke-Expression`).

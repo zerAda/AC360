@@ -74,5 +74,12 @@ release/
 local.settings.json
 **/local.settings.json
 
+# Scratch / dev throwaways (ne pas committer)
+add_tags.py
+patch_yaml.py
+CLAUDE_HANDOFF.md
+docs/antigravity_*.md
+docs/MASTER_AUDIT_VERDICT.md
+
 # Project Specific
 .planning/STATE.md.tmp
