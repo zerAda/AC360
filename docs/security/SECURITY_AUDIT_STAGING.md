@@ -96,6 +96,33 @@
 - 🟡 Recommandé en PROD : diagnostic settings → Log Analytics pour Key Vault,
   Storage, Function ; activer **Microsoft Defender for Cloud** sur l'abonnement.
 
+## 7. Code applicatif (SAST / dépendances / secrets)
+
+Scan complet du code le 2026-06-09 :
+
+| Scanner | Périmètre | Résultat |
+|---|---|---|
+| **bandit** (SAST Python, sévérité moyenne+) | `scripts/` + `azure_functions/` | ✅ **0 High, 0 Medium** après corrections |
+| **pip-audit** (CVE dépendances) | `requirements.txt` | ✅ **Aucune vulnérabilité connue** |
+| **scan_secrets** + recherche historique git | repo + `git log --all` | ✅ **Aucun secret en clair** (jamais commité) |
+| Suite de tests sécurité (`tests/security|red_team|backend`) | — | ✅ 66 passés |
+
+Corrections de code appliquées :
+- `post_audit_workflow.py`, `ralphe_loop_tester.py` : ajout de `timeout` sur tous
+  les appels réseau (anti-DoS / blocage de thread).
+- `query_bot.py` : suppression de `shell=True` (arguments en liste, anti-injection
+  CWE-78) + garde de schéma HTTPS sur `urlopen`.
+- `read_docx.py` : passage à **`defusedxml`** (anti-XXE / Billion Laughs, CWE-20).
+- `api_server.py` : bind `0.0.0.0` justifié (`# nosec B104`) — requis dans le
+  conteneur App Service, l'ingress étant filtré par la plateforme + IP + JWT.
+- Suppression du répertoire de travail `.build/` (contenait localement une clé de
+  compte de stockage et des clés de webhook Durable — **jamais commité**, gitignoré).
+- **CI** : ajout de `bandit` + `pip-audit` (bloquants) aux côtés de gitleaks.
+
+> Note hors périmètre AC360 : l'abonnement Azure comporte plusieurs **Owners
+> externes (#EXT#)** au niveau souscription (IAM GEREP préexistant, non créé par
+> ce projet). Recommandation : revue d'accès périodique côté équipe sécurité GEREP.
+
 ## Corrections appliquées pendant l'audit ✅
 
 | # | Action | État |

@@ -71,6 +71,16 @@ jobs:
         run: |
           python -m pytest tests/security/ -v --tb=short
 
+      - name: SAST Python (bandit, sévérité moyenne+)
+        run: |
+          pip install bandit
+          bandit -r scripts azure_functions -ll
+
+      - name: Audit des dépendances (pip-audit / CVE)
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt
+
   # ============================================================
   # JOB 2 — Validation des YAML Copilot Studio
   # BLOQUANT : échec si YAML invalide

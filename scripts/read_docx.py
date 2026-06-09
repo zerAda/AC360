@@ -1,7 +1,8 @@
 import zipfile
-import xml.etree.ElementTree as ET
 import glob
 import os
+# defusedxml : parseur XML durci (anti XXE / Billion Laughs / entités externes).
+import defusedxml.ElementTree as ET
 
 
 def extract_text_from_docx(docx_path):
@@ -16,8 +17,7 @@ def extract_text_from_docx(docx_path):
         paragraphs = []
         current_para = []
 
-        # [PATCH HATER] iterparse évite de charger tout l'arbre en mémoire et mitige
-        # partiellement les attaques XXE/Billion Laughs comparé à ET.XML()
+        # defusedxml.iterparse : streaming + protection XXE/entity-expansion.
         for event, elem in ET.iterparse(xml_file, events=('start', 'end')):
             if event == 'start' and elem.tag == PARA:
                 current_para = []

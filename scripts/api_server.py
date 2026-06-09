@@ -371,4 +371,7 @@ async def get_job_status(
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("api_server:app", host="0.0.0.0", port=8000, reload=False)
+    # host 0.0.0.0 REQUIS dans le conteneur App Service (le binding interne ne
+    # restreint pas l'exposition : l'ingress est géré par App Service +
+    # restrictions IP + auth JWT Entra). nosec B104 justifié.
+    uvicorn.run("api_server:app", host="0.0.0.0", port=8000, reload=False)  # nosec B104

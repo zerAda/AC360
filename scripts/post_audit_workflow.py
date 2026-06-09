@@ -50,7 +50,8 @@ def send_teams_alert(report_data):
     }
 
     try:
-        response = requests.post(TEAMS_WEBHOOK_URL, json=payload, headers={"Content-Type": "application/json"})
+        response = requests.post(TEAMS_WEBHOOK_URL, json=payload,
+                                 headers={"Content-Type": "application/json"}, timeout=15)
         response.raise_for_status()
         print("[SUCCÈS] Alerte Teams envoyée avec succès.")
     except Exception as e:

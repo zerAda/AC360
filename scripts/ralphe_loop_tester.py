@@ -46,7 +46,8 @@ TEST_CASES = [
 def start_conversation():
     print("🔄 Initialisation de la session Direct Line...")
     headers = {"Authorization": f"Bearer {DIRECT_LINE_SECRET}"}
-    response = requests.post("https://directline.botframework.com/v3/directline/conversations", headers=headers)
+    response = requests.post("https://directline.botframework.com/v3/directline/conversations",
+                             headers=headers, timeout=15)
     if response.status_code in (200, 201):
         data = response.json()
         return data["conversationId"], data["token"]
@@ -66,7 +67,7 @@ def send_message(conversation_id, token, text):
         "text": text
     }
     url = f"https://directline.botframework.com/v3/directline/conversations/{conversation_id}/activities"
-    response = requests.post(url, headers=headers, json=payload)
+    response = requests.post(url, headers=headers, json=payload, timeout=15)
     return response.status_code == 200
 
 
@@ -75,7 +76,7 @@ def get_activities(conversation_id, token, watermark=None):
     url = f"https://directline.botframework.com/v3/directline/conversations/{conversation_id}/activities"
     if watermark:
         url += f"?watermark={watermark}"
-    response = requests.get(url, headers=headers)
+    response = requests.get(url, headers=headers, timeout=15)
     if response.status_code == 200:
         return response.json()
     return {"activities": [], "watermark": watermark}
