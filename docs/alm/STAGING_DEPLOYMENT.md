@@ -33,12 +33,25 @@ En-têtes de la passerelle (vérifiés sur `/health`) : `Strict-Transport-Securi
 max-age=31536000; includeSubDomains`, `X-Content-Type-Options: nosniff`,
 `X-Frame-Options: DENY`, `Cache-Control: no-store`. **Aucun chemin HTTP en clair.**
 
-## Passerelle API — DÉPLOYÉE ET VÉRIFIÉE
+## Passerelle API — DÉPLOYÉE, AUTH ACTIVE ET VÉRIFIÉE
 
-- `GET https://ac360-gateway-staging.azurewebsites.net/health` → **HTTP 200**
+- `GET /health` → **HTTP 200** (public)
   `{"status":"healthy","version":"3.0.0","auth":"entra-id-jwt","orchestration":"azure-durable-functions"}`
-- L'auth JWT Entra protège `/api/audit` ; **bloquée tant que le `CLIENT_ID`
-  (app registration Entra) n'est pas fourni** — `CLIENT_ID=PENDING_ENTRA_APP_REG`.
+- `POST /api/audit` **sans token** → **HTTP 401** (auth JWT Entra appliquée). ✅
+
+## Identité & secrets (Key Vault)
+
+| Élément | Valeur |
+|---|---|
+| App registration Entra | `AC360-API-staging`, `CLIENT_ID = 5399f31e-c4d5-46db-b620-033e59abda84`, scope `Audit.Trigger` (token v2) |
+| Identité managée Function | `710e845c-...` — **Sites.Selected** (Graph) accordé (accès SharePoint moindre privilège) |
+| Identité managée Passerelle | `be67f9db-...` |
+| **Key Vault** | `ac360-kv-staging` (RBAC, retention 90 j) |
+| Secrets stockés | `ocr-key`, `function-key` |
+| Références | Function `AZURE_OCR_KEY` et Passerelle `AZURE_FUNCTION_KEY` = `@Microsoft.KeyVault(...)` — **aucune clé en clair** dans les app settings ; résolution via MI (Key Vault Secrets User). |
+
+> Identifiants non secrets (`CLIENT_ID`, `TENANT_ID`, `TASK_HUB_NAME`, URLs) restent
+> en app settings ; seules les vraies clés sont en Key Vault.
 
 ## Backend Durable Functions — DÉPLOYÉ ET VÉRIFIÉ EN LIGNE
 
