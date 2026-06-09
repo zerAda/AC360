@@ -75,6 +75,9 @@ release/
 # Sorties de démo générées (les fixtures demo/*.json restent versionnées)
 demo/out/
 
+# Build de déploiement Function (généré)
+azure_functions/.build/
+
 # Export Copilot sensible (régénérable depuis src/copilot/AC360/**)
 .mcs/botdefinition.json
 
