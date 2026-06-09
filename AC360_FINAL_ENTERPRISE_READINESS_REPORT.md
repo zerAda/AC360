@@ -44,9 +44,31 @@ le code est prêt et testé, l'activation dépend du provisioning côté GEREP.
 Gates : **`pytest` 100 passed / 1 skipped** (départ : 1 erreur de collection + 8
 échecs) ; `validate_copilot_yaml` 39/0 ; package dry-run clean.
 
+## Itération 3 — Durcissement « anti-hater » (code only)
+
+- **Backend** : téléchargement SharePoint réel et testé (`shared/sharepoint.py` :
+  allowlist extensions, plafond taille, anti-traversal) ; adaptateur FIC corrigé
+  (type) ; endpoint statut *fail-closed* (plus de `TestHubName` par défaut) +
+  correction d'un bug qui transformait un 404 en 500.
+- **Sécurité** : en-têtes HTTP (`X-Content-Type-Options`, `X-Frame-Options`,
+  `Referrer-Policy`, `Cache-Control`, HSTS) ; `.gitleaks.toml` `useDefault=true`
+  (100+ détecteurs natifs réactivés) ; `/health` ne ment plus (« Enterprise_Grade »
+  retiré).
+- **Qualité** : **flake8 = 0** sur tout le dépôt (157 → 0), gate CI **bloquant**
+  (scripts + azure_functions + tests, version épinglée) ; imports/threads morts
+  supprimés ; bug `__line__` corrigé ; deps inutilisées (celery/redis) retirées.
+- **Honnêteté docs** : suppression du `MASTER_AUDIT_VERDICT.md` mensonger
+  (95/100 READY) et des fichiers brouillons ; claims « Enterprise-Ready » adoucis.
+
+Gates : **`pytest` 112 passed / 1 skipped** ; `flake8` 0 ; `validate_copilot_yaml`
+39/0 ; package dry-run clean.
+
 ## Score global
 
-**~77/100** (estimation honnête, justifiée ci-dessous). **Toujours pas 90.**
+**~80/100** (estimation honnête). **Toujours pas 90 — et ce n'est plus une
+question de code.** Le plafond restant est **structurel** : déploiement +
+validation en environnement réel (OCR à provisionner, Function à déployer,
+Fabric/Copilot/red-team/DLP à valider). Le code, lui, est robuste et testé.
 
 Les plafonds de la mission qui étaient déclenchés ont été **levés** (secrets,
 package, collection pytest, topic silencieux, simulation vendue réelle). Ce qui
