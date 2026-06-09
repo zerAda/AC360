@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ac360/schemas/audit_result.schema.json",
+  "title": "AC360 Audit Result",
+  "description": "Résultat typé du moteur d'audit : statut par champ + score de confiance + verdict global.",
+  "type": "object",
+  "required": ["client_document", "score_correspondance_nom", "fields", "verdict"],
+  "additionalProperties": true,
+  "properties": {
+    "client_document": { "type": ["string", "null"] },
+    "meilleur_match_fabric": { "type": ["string", "null"] },
+    "score_correspondance_nom": { "type": "number", "minimum": 0, "maximum": 100 },
+    "motif_operation": { "type": ["string", "null"] },
+    "motif_source": { "type": "string", "enum": ["ocr", "absent"] },
+    "verdict": {
+      "type": "string",
+      "enum": ["CONFORME", "ECART", "INCERTAIN", "CLIENT_NON_TROUVE"]
+    },
+    "fields": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["champ", "statut", "confiance"],
+        "additionalProperties": true,
+        "properties": {
+          "champ": { "type": "string" },
+          "valeur_document": { "type": ["string", "number", "null"] },
+          "valeur_reference": { "type": ["string", "number", "null"] },
+          "statut": {
+            "type": "string",
+            "enum": ["MATCH", "MISMATCH", "UNCERTAIN", "MISSING"]
+          },
+          "confiance": { "type": "number", "minimum": 0, "maximum": 1 },
+          "commentaire": { "type": "string" }
+        }
+      }
+    }
+  }
+}

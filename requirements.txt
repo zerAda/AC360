@@ -18,6 +18,7 @@ pyodbc>=5.1.0
 pandas>=2.2.0
 thefuzz>=0.22.0
 python-Levenshtein>=0.25.0
+jsonschema>=4.21.0
 
 # Utilities
 requests>=2.31.0

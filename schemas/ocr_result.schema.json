@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ac360/schemas/ocr_result.schema.json",
+  "title": "AC360 OCR Result",
+  "description": "Sortie normalisée de l'extraction OCR (Azure Document Intelligence prebuilt-document).",
+  "type": "object",
+  "required": ["metadata", "fields", "tables"],
+  "additionalProperties": true,
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "required": ["source_file", "extraction_mode"],
+      "properties": {
+        "source_file": { "type": "string", "minLength": 1 },
+        "extraction_mode": { "type": "string", "minLength": 1 },
+        "pages": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "fields": {
+      "type": "object",
+      "description": "Paires clé/valeur extraites. La clé est le libellé brut OCR ; la valeur porte le texte et une confiance [0,1].",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["value"],
+        "properties": {
+          "value": { "type": "string" },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    },
+    "tables": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["cells"],
+        "properties": {
+          "row_count": { "type": "integer", "minimum": 0 },
+          "column_count": { "type": "integer", "minimum": 0 },
+          "cells": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["content"],
+              "properties": {
+                "row_index": { "type": "integer", "minimum": 0 },
+                "column_index": { "type": "integer", "minimum": 0 },
+                "content": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

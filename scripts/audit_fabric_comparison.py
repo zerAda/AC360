@@ -152,7 +152,17 @@ def perform_audit(ocr_data, artus_df):
             if "nom" in key_str and ("client" in key_str or "société" in key_str or "raison sociale" in key_str):
                 doc_client_name = str(kv.get("value", {}).get("content", "")).strip()
                 break
-    
+
+    # [ROBUSTESSE] Dernier recours : aliasing des libellés OCR réels. Azure
+    # Document Intelligence renvoie des libellés arbitraires ("Raison sociale"...),
+    # pas la clé littérale 'nom_client'. extract_canonical_fields les mappe.
+    if not doc_client_name:
+        try:
+            from fabric_audit_engine import extract_canonical_fields
+            doc_client_name = extract_canonical_fields(ocr_data).get("nom_client", "")
+        except Exception:
+            pass
+
     print(f"-> Nom client détecté sur le document : {doc_client_name}")
     
     # 2. Règle d'audit : Fuzzy Matching sur le nom du client
