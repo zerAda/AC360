@@ -92,3 +92,24 @@ def test_run_audit_missing_document_id():
     out = run_audit("", None, deps)
     assert out["status"] == "Failed"
     assert "document_id" in out["error"]
+
+
+def test_run_audit_rejects_malformed_ocr():
+    import pytest
+    pytest.importorskip("jsonschema")
+    # OCR sans le champ requis 'fields' -> rejet au stade ocr_schema.
+    bad_ocr = {"metadata": {"source_file": "d", "extraction_mode": "t"}}  # pas de 'fields'/'tables'
+    deps = _deps(ocr=bad_ocr, reference={"nom_client": "X"})
+    out = run_audit("66666666-6666-6666-6666-666666666666", None, deps)
+    assert out["status"] == "Failed"
+    assert "schéma" in out["error"]
+    assert any(s["name"] == "ocr_schema" and not s["ok"] for s in out["stages"])
+
+
+def test_run_audit_result_conforms_to_schema():
+    import pytest
+    pytest.importorskip("jsonschema")
+    deps = _deps(reference={"nom_client": "GEREP SA", "plafond_hospitalisation": "1000"})
+    out = run_audit("77777777-7777-7777-7777-777777777777", None, deps)
+    # Le stage de validation du résultat doit être OK.
+    assert any(s["name"] == "result_schema" and s["ok"] for s in out["stages"])

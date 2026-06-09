@@ -11,11 +11,39 @@ brancher les vraies implémentations sur ces points d'injection.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import sys
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
+
+_SCHEMAS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "schemas"))
+
+
+def _validate_schema(schema_file: str, instance: Any) -> Optional[str]:
+    """Valide `instance` contre un schéma JSON si jsonschema est disponible.
+
+    Retourne None si conforme (ou validation indisponible/schéma absent), sinon
+    un message d'erreur borné. Ne lève jamais.
+    """
+    try:
+        import jsonschema
+    except Exception:  # pragma: no cover - validation optionnelle
+        return None
+    path = os.path.join(_SCHEMAS_DIR, schema_file)
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            schema = json.load(f)
+        jsonschema.validate(instance=instance, schema=schema)
+        return None
+    except jsonschema.ValidationError as exc:
+        return f"{schema_file}: {str(exc.message)[:200]}"
+    except Exception:  # pragma: no cover - robustesse
+        return None
+
 
 # Masque les affectations de type SECRET/KEY/TOKEN=... même non quotées, en
 # complément de safe_logger.redact (défense en profondeur sur les messages
@@ -118,6 +146,15 @@ def run_audit(
         ocr_result = deps.ocr(path)
         _stage("ocr", True)
 
+        # Validation défensive : une sortie OCR malformée est rejetée tôt.
+        schema_err = _validate_schema("ocr_result.schema.json", ocr_result)
+        if schema_err:
+            _stage("ocr_schema", False, schema_err)
+            out["error"] = f"Sortie OCR non conforme au schéma : {schema_err}"
+            _log("ERROR", out["error"])
+            return out
+        _stage("ocr_schema", True)
+
         canonical = extract_canonical_fields(ocr_result)
         client_name = canonical.get("nom_client") or client_context
         _stage("extract", True, f"client={'<set>' if client_name else '<none>'}")
@@ -142,6 +179,11 @@ def run_audit(
         audit_input = {"document": canonical, "reference": reference}
         result = deps.compare(audit_input)
         _stage("compare", True, f"verdict={result.get('verdict')}")
+
+        # Vérifie que le verdict produit respecte le contrat (non bloquant : on
+        # journalise l'écart de schéma mais on ne perd pas le résultat).
+        result_err = _validate_schema("audit_result.schema.json", result)
+        _stage("result_schema", result_err is None, result_err or "")
 
         fic_path = None
         if deps.make_fic and result.get("verdict") in _FIC_VERDICTS:
