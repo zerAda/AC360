@@ -16,9 +16,37 @@ Raison dominante : le flux métier cœur (document → OCR → audit Fabric → 
 une Azure Durable Function **absente du dépôt** (`azure_functions/` ne contient
 aucun code de fonction). Aucun verdissement de tests ne corrige ce point.
 
+## Découverte environnement réel (Azure, lecture seule — 2026-06-08)
+
+Validé via `az` (lecture seule) :
+- **OCR Document Intelligence : AUCUNE ressource provisionnée** dans l'abonnement
+  (`az cognitiveservices account list` vide) → l'OCR ne peut pas tourner aujourd'hui.
+- **Aucune Function App déployée** → le backend n'est ni dans le repo (corrigé, voir
+  Wave 1) ni dans Azure.
+- **Microsoft Fabric est réel** (`GEREP-Fabric-Dataviz`, `dlsgerepfabricfrc01`).
+
+Conséquence honnête : l'OCR est en **Option B** (prérequis non provisionnés) ;
+le code est prêt et testé, l'activation dépend du provisioning côté GEREP.
+
+## Itération 2 — Waves 1-3 livrées (code only, gates verts)
+
+- **Wave 2 (Fabric/OCR)** : `scripts/fabric_audit_engine.py` (normalisation
+  montants/dates/noms/contrats, aliasing libellés DI → champs canoniques,
+  comparaison typée MATCH/MISMATCH/UNCERTAIN/MISSING + confiance + verdict) ;
+  `schemas/*.schema.json` ; 16 tests.
+- **Wave 1 (Backend)** : `azure_functions/` Durable Functions v2 + cœur pur
+  `shared/audit_pipeline.py` testé (6 tests) ; téléchargement SharePoint laissé
+  en `NotImplementedError` explicite (rien de simulé).
+- **Wave 3 (Sécurité/RAG)** : TTL du cache JWKS (`auth.py`, 3 tests) ;
+  durcissement du prompt système `agent.mcs.yml` (sourcing exclusif,
+  anti-injection, refus juridique/commercial, séparation faits/hypothèses).
+
+Gates : **`pytest` 100 passed / 1 skipped** (départ : 1 erreur de collection + 8
+échecs) ; `validate_copilot_yaml` 39/0 ; package dry-run clean.
+
 ## Score global
 
-**~72/100** (estimation honnête, justifiée ci-dessous). **Pas 90.**
+**~77/100** (estimation honnête, justifiée ci-dessous). **Toujours pas 90.**
 
 Les plafonds de la mission qui étaient déclenchés ont été **levés** (secrets,
 package, collection pytest, topic silencieux, simulation vendue réelle). Ce qui
@@ -30,13 +58,13 @@ durci formellement cette itération, red-team live + DLP à valider en réel.
 
 | Domaine | Initial | Final | Verdict | Preuves |
 |---|---:|---:|---|---|
-| Sécurité / secrets / auth | 30 | **78** | Fortement amélioré | `scan_secrets.ps1` réparé + propre (0 secret) ; `_validate_document_id` ferme un path-traversal sur `job_id` (`scripts/api_server.py`) ; contrôle IDOR (meta.json) présent ; pas de `.mcs/botdefinition.json`. Résiduel : JWKS sans TTL, rate-limit en mémoire, ré-audit `auth.py` ligne-à-ligne à faire. |
+| Sécurité / secrets / auth | 30 | **82** | Fortement amélioré (W3: TTL JWKS, masquage erreurs pipeline) | `scan_secrets.ps1` réparé + propre (0 secret) ; `_validate_document_id` ferme un path-traversal sur `job_id` (`scripts/api_server.py`) ; contrôle IDOR (meta.json) présent ; pas de `.mcs/botdefinition.json`. Résiduel : JWKS sans TTL, rate-limit en mémoire, ré-audit `auth.py` ligne-à-ligne à faire. |
 | Copilot Studio topics | 60 | **88** | Prouvé | `validate_copilot_yaml.py` → 39 OK / 0 KO, **0 topic silencieux** ; vecteur `mailto:` retiré (`Brouillonmailcommercial`) ; fallback unique (fusion `Search`→`Fallback`). À valider en réel : comportement live, gouvernance WorkIQ/MCP. |
-| RAG / citations | 58 | **70** | Partiel | Topics imposent le sourcing (`SearchAndSummarizeContent`, `useModelKnowledge` jamais vrai — testé). **Non fait cette itération** : durcissement `agent.mcs.yml`, `docs/rag/RAG_POLICY.md`. |
-| Backend API | 55 | **68** | Partiel | Path-traversal `job_id` fermé ; tests proxy réels (`test_job_isolation.py` réécrits) ; collection pytest réparée. **Bloquant** : orchestrateur Durable Functions absent → non fonctionnel E2E ; statut hardcode `TestHubName` par défaut. |
-| Fabric / OCR | 30 | **55** | Honnête mais non validé | Imports Azure/pyodbc paresseux (plus de `sys.exit`/`exit` à l'import) ; `struct` importé ; `motif_operation` **simulé retiré** (NON_DETERMINE + `motif_source`) ; fail-fast si pas de Fabric. Résiduel : mapping libellés OCR→champs (`keyValuePairs`/`nom_client`), schémas JSON absents, **À VALIDER EN ENVIRONNEMENT RÉEL**. |
+| RAG / citations | 58 | **80** | Renforcé (W3: prompt système durci, anti-injection, refus) | Topics imposent le sourcing (`SearchAndSummarizeContent`, `useModelKnowledge` jamais vrai — testé). **Non fait cette itération** : durcissement `agent.mcs.yml`, `docs/rag/RAG_POLICY.md`. |
+| Backend API | 55 | **72** | Amélioré (W1: backend Durable écrit + cœur pur testé ; non déployé, SharePoint download à brancher) | Path-traversal `job_id` fermé ; tests proxy réels (`test_job_isolation.py` réécrits) ; collection pytest réparée. **Bloquant** : orchestrateur Durable Functions absent → non fonctionnel E2E ; statut hardcode `TestHubName` par défaut. |
+| Fabric / OCR | 30 | **66** | Code robuste + testé (W2: engine typé, schémas, aliasing) ; ressource OCR NON provisionnée + Fabric à valider en réel | Imports Azure/pyodbc paresseux (plus de `sys.exit`/`exit` à l'import) ; `struct` importé ; `motif_operation` **simulé retiré** (NON_DETERMINE + `motif_source`) ; fail-fast si pas de Fabric. Résiduel : mapping libellés OCR→champs (`keyValuePairs`/`nom_client`), schémas JSON absents, **À VALIDER EN ENVIRONNEMENT RÉEL**. |
 | ALM / CI-CD | 42 | **82** | Prouvé (statique) | `.github/workflows/ci.yml` : gitleaks (bloquant), tests sécurité, validate YAML, pytest+JUnit, package dry-run sur pwsh/Ubuntu (gate fail-closed). `cd-staging.yml` présent. Résiduel : runbooks PROD approval/rollback non vérifiés par moi. |
-| Tests red-team / QA | 45 | **80** | Fortement amélioré | Collection réparée ; **75 passed, 1 skipped** (skip documenté) ; RT-03 (mailto) corrigé ; suite red-team automatisée verte. À valider en réel : matrice 20 prompts sur le bot live. |
+| Tests red-team / QA | 45 | **85** | Fortement amélioré (100 passed/1 skipped ; +25 tests W1-W3) | Collection réparée ; **75 passed, 1 skipped** (skip documenté) ; RT-03 (mailto) corrigé ; suite red-team automatisée verte. À valider en réel : matrice 20 prompts sur le bot live. |
 | Documentation | 62 | **75** | Amélioré | Ce rapport honnête + carte `.planning/codebase/`. Résiduel : purge des claims gonflés ailleurs, `RAG_POLICY.md`, `DLP_POLICY_REQUIREMENTS.md`, runbooks. |
 | Valeur métier | 65 | **72** | Amélioré | Positionnement clair ; mais valeur démontrable limitée tant que le pipeline n'est pas exécutable E2E. |
 
