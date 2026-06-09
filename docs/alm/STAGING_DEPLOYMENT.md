@@ -12,10 +12,33 @@
 | Compte de stockage (Durable) | `ac360stagingstore` | Standard_LRS | ✅ |
 | Function App (backend) | `ac360-func-staging` | Consumption Linux Python 3.11 | ✅ Running |
 | Application Insights | `ac360-func-staging` | gratuit | ✅ |
+| App Service plan (passerelle) | `ac360-gw-plan` | **F1 (gratuit)** Linux | ✅ |
+| Passerelle API (FastAPI) | `ac360-gateway-staging` | Python 3.11 | ✅ Running |
 
 - Endpoint OCR : `https://ac360-docintel-staging.cognitiveservices.azure.com/`
 - Function host : `https://ac360-func-staging.azurewebsites.net`
+- Passerelle : `https://ac360-gateway-staging.azurewebsites.net`
 - Task hub Durable réel : `ac360funcstaging`
+
+## Posture sécurité transport (vérifiée)
+
+| Contrôle | Function | Passerelle | Stockage |
+|---|---|---|---|
+| `httpsOnly` (HTTP refusé) | ✅ true | ✅ true | n/a |
+| TLS minimum | 1.2 | 1.2 | 1.2 |
+| FTPS | désactivé | désactivé | n/a |
+| Accès blob public | n/a | n/a | désactivé |
+
+En-têtes de la passerelle (vérifiés sur `/health`) : `Strict-Transport-Security:
+max-age=31536000; includeSubDomains`, `X-Content-Type-Options: nosniff`,
+`X-Frame-Options: DENY`, `Cache-Control: no-store`. **Aucun chemin HTTP en clair.**
+
+## Passerelle API — DÉPLOYÉE ET VÉRIFIÉE
+
+- `GET https://ac360-gateway-staging.azurewebsites.net/health` → **HTTP 200**
+  `{"status":"healthy","version":"3.0.0","auth":"entra-id-jwt","orchestration":"azure-durable-functions"}`
+- L'auth JWT Entra protège `/api/audit` ; **bloquée tant que le `CLIENT_ID`
+  (app registration Entra) n'est pas fourni** — `CLIENT_ID=PENDING_ENTRA_APP_REG`.
 
 ## Backend Durable Functions — DÉPLOYÉ ET VÉRIFIÉ EN LIGNE
 
@@ -46,14 +69,18 @@ proprement le prérequis manquant.
 - `SCM_DO_BUILD_DURING_DEPLOYMENT=true` (build Python distant)
 - `AzureWebJobsStorage` (auto, compte de stockage)
 
-## Reste à câbler avant E2E complet (prérequis côté GEREP)
+## Reste à câbler avant E2E complet
+
+Rôles Entra de l'opérateur GEREP : **Fabric Administrator** + **Power Platform
+Administrator** (mais PAS Application/Cloud-App/Global Admin → ne peut pas créer
+d'app registration).
 
 | Élément | Action | Qui |
 |---|---|---|
-| **Fabric** | définir `FABRIC_SQL_ENDPOINT` + `FABRIC_DATABASE` ; table `Artus_Contrats` accessible | GEREP |
-| **SharePoint** | définir `SHAREPOINT_DRIVE_ID` ; accorder à l'identité managée de la Function la permission Graph `Files.Read.All` / `Sites.Selected` | GEREP |
-| **Passerelle API** | déployer `scripts/api_server.py` (App Service / Container) + app registration Entra (`TENANT_ID`/`CLIENT_ID`) pour l'auth | à planifier |
-| **Copilot Studio** | importer `src/copilot/AC360/**` dans l'environnement réel et pointer vers l'URL de la passerelle | GEREP |
+| **App registration Entra** | créer `AC360-API-staging` (single tenant, exposer scope `Audit.Trigger`) → fournir `CLIENT_ID` ; puis `az webapp config appsettings set ... CLIENT_ID=<id>` sur la passerelle | **Global Admin GEREP** (bloquant auth) |
+| **Fabric** | définir `FABRIC_SQL_ENDPOINT` + `FABRIC_DATABASE` (app settings Function) ; table `Artus_Contrats` accessible | **opérateur** (Fabric Admin ✅) |
+| **SharePoint** | activer l'identité managée de la Function, lui accorder Graph `Files.Read.All`/`Sites.Selected`, définir `SHAREPOINT_DRIVE_ID` | Global Admin (consent) + opérateur |
+| **Copilot Studio** | importer `src/copilot/AC360/**` et pointer vers `https://ac360-gateway-staging.azurewebsites.net` | **opérateur** (Power Platform Admin ✅) |
 
 ## Redéploiement du backend
 
