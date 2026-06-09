@@ -127,6 +127,36 @@ _DEPS = AuditDeps(
 
 
 # ---------------------------------------------------------------------------
+# Logique testable (sans le SDK Durable). Les triggers ci-dessous délèguent ici.
+# ---------------------------------------------------------------------------
+def _activity_logger():
+    return lambda lvl, msg: logging.log(getattr(logging, lvl, logging.INFO), msg)
+
+
+def _run_activity(payload: dict) -> dict:
+    """Corps de l'activité Durable : exécute l'orchestration pure avec _DEPS.
+    Testable sans le runtime Azure."""
+    payload = payload or {}
+    return run_audit(
+        payload.get("document_id"),
+        payload.get("client_context"),
+        _DEPS,
+        logger=_activity_logger(),
+    )
+
+
+def _audit_orchestration(context):
+    """Générateur d'orchestration : appelle l'activité d'audit. Testable avec un
+    contexte factice exposant get_input() et call_activity()."""
+    payload = context.get_input() or {}
+    result = yield context.call_activity(
+        "activity_run_audit",
+        {"document_id": payload.get("document_id"), "client_context": payload.get("client_context")},
+    )
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Enregistrement Durable Functions (uniquement si le SDK est disponible)
 # ---------------------------------------------------------------------------
 if _DURABLE_AVAILABLE:
@@ -149,20 +179,9 @@ if _DURABLE_AVAILABLE:
 
     @app.orchestration_trigger(context_name="context")
     def audit_orchestrator(context):
-        payload = context.get_input() or {}
-        document_id = payload.get("document_id")
-        client_context = payload.get("client_context")
-        result = yield context.call_activity(
-            "activity_run_audit", {"document_id": document_id, "client_context": client_context}
-        )
+        result = yield from _audit_orchestration(context)
         return result
 
     @app.activity_trigger(input_name="payload")
     def activity_run_audit(payload: dict) -> dict:
-        out = run_audit(
-            payload.get("document_id"),
-            payload.get("client_context"),
-            _DEPS,
-            logger=lambda lvl, msg: logging.log(getattr(logging, lvl, logging.INFO), msg),
-        )
-        return out
+        return _run_activity(payload)
