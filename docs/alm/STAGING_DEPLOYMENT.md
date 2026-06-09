@@ -136,3 +136,11 @@ orchestration runtimeStatus=Completed, error=null.
   moindre privilège.
 - Évolution scalable : exposer la table via l'**API GraphQL Fabric** (requête
   filtrée côté serveur, déjà utilisée dans le workspace).
+
+### Durcissement appliqué (2026-06-09) — moindre privilège Fabric
+L'identité managée de la Function n'est plus **Contributor**. Elle a désormais :
+- rôle workspace **Viewer** (minimal) ;
+- rôle d'accès aux données OneLake **DefaultReader (lecture seule, ReadAll)** sur
+  Lakehouse_Gold.
+→ Lecture des données réelles confirmée (E2E Completed), **aucun accès en
+écriture**. OCR maintenu en **F0 (gratuit)** — pas de S0.
