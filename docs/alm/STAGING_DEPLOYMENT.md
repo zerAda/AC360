@@ -137,6 +137,47 @@ orchestration runtimeStatus=Completed, error=null.
 - Évolution scalable : exposer la table via l'**API GraphQL Fabric** (requête
   filtrée côté serveur, déjà utilisée dans le workspace).
 
+## Test E2E hostile (2026-06-10) — chaîne complète via la passerelle
+
+Test adversarial de bout en bout **avec un vrai jeton JWT Entra** (client az CLI
+pré-autorisé sur le scope `Audit.Trigger` pour le test), après tout le
+durcissement réseau :
+
+| Vérification | Résultat |
+|---|---|
+| `GET /health` | ✅ 200 |
+| `POST /api/audit` sans / mauvais jeton | ✅ 401 |
+| `POST /api/audit` avec jeton valide | ✅ 200 + `job_id` + identité décodée (`requested_by`) |
+| **Passerelle → Function (ingress IP-restreint)** | ✅ atteinte (trigger ET statut) — le durcissement n'a PAS cassé la chaîne |
+| Accès direct Function depuis IP non-passerelle | ✅ 403 (defense-in-depth) |
+| `GET /api/audit/{job}/status` | ✅ 200 + résultat complet d'orchestration |
+| Pipeline sur doc inexistant | ✅ fail-closed (`Failed`, erreur Graph 404, **PII masquée `[PII_MASQUÉE]`**) |
+
+### Bug trouvé ET corrigé par le test hostile — endpoint statut
+Le `GET /api/audit/{job}/status` renvoyait **404 systématique** (jamais exercé
+avant). Deux causes dans `api_server.get_job_status` :
+1. `AZURE_FUNCTION_URL` finit par `/api` → l'URL devenait `…/api/runtime/webhooks/…`
+   alors que le webhook Durable est sous `…/runtime/webhooks/…` (pas de `/api`).
+2. Utilisait la **clé de fonction par défaut** au lieu de la **clé système Durable**
+   (`durabletask_extension`).
+
+Corrections : racine d'hôte sans `/api` (`AZURE_FUNCTION_HOST`) + nouvelle
+`AZURE_DURABLE_KEY` (KV ref). Vérifié : statut **200 + résultat** après fix.
+
+### Durcissement supplémentaire issu du test
+- **Validation au bord** du `document_id` (`POST /api/audit`) : rejet `400`
+  des injections / path-traversal / valeurs surdimensionnées / backticks AVANT
+  de démarrer une orchestration. Jeton valide + id légitime → toujours 200.
+- **Passerelle slim** : redéployée avec uniquement les 6 modules réellement
+  importés (`api_server`, `auth`, `config`, `safe_logger`, `planner_integration`,
+  `generate_fiche_rdv`) + requirements minimal (sans pyodbc/pandas/azure-ai) →
+  surface réduite + build fiable. Voir `scripts/build_gateway.ps1`.
+
+> ⚠️ Leçon : déployer la passerelle en **.zip** (Oryx), JAMAIS un fichier unique
+> (`--type static`) — cela laisse le déploiement incohérent et le site ne
+> redémarre pas. Le poller `az` peut afficher un faux timeout sur F1 alors que
+> `/health` répond déjà 200.
+
 ### Durcissement appliqué (2026-06-09) — moindre privilège Fabric
 L'identité managée de la Function n'est plus **Contributor**. Elle a désormais :
 - rôle workspace **Viewer** (minimal) ;

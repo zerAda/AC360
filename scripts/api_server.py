@@ -5,6 +5,7 @@ from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from typing import Optional
 import os
+import re
 import uuid
 import time
 import httpx
@@ -15,6 +16,23 @@ from generate_fiche_rdv import generate_fiche_rdv
 from auth import verify_azure_ad_token
 from safe_logger import log_security
 
+# Caractères/motifs interdits dans un document_id SharePoint (defense-in-depth :
+# rejet au bord avant de démarrer une orchestration). Un drive-item id Graph
+# n'a jamais d'espace, de séparateur de chemin, de guillemet, de ";" ni de "..".
+_DOCID_FORBIDDEN = re.compile(r"[/\\\s;'\"<>`]|\.\.|\x00")
+_DOCID_MAX_LEN = 512
+
+
+def _validate_sharepoint_doc_id(document_id: str) -> str:
+    if not document_id or not isinstance(document_id, str):
+        raise HTTPException(status_code=400, detail="document_id manquant.")
+    if len(document_id) > _DOCID_MAX_LEN:
+        raise HTTPException(status_code=400, detail="document_id invalide (trop long).")
+    if _DOCID_FORBIDDEN.search(document_id):
+        raise HTTPException(status_code=400, detail="document_id invalide (caractères interdits).")
+    return document_id
+
+
 app = FastAPI(
     title="AC360 Audit Engine API",
     description="API Enterprise Grade - Passerelle vers Azure Durable Functions",
@@ -24,6 +42,16 @@ app = FastAPI(
 # Configuration de l'Azure Function Backend
 AZURE_FUNCTION_URL = os.environ.get("AZURE_FUNCTION_URL", "http://localhost:7071/api")
 AZURE_FUNCTION_KEY = os.environ.get("AZURE_FUNCTION_KEY", "")
+# Racine de l'hôte Function (sans le suffixe "/api") : les webhooks Durable
+# (/runtime/webhooks/durabletask/...) NE sont PAS sous /api, contrairement à
+# http_start. On retire donc un éventuel "/api" final.
+AZURE_FUNCTION_HOST = AZURE_FUNCTION_URL.rstrip("/")
+if AZURE_FUNCTION_HOST.endswith("/api"):
+    AZURE_FUNCTION_HOST = AZURE_FUNCTION_HOST[: -len("/api")]
+# Clé système Durable (durabletask_extension) : requise par les webhooks de
+# gestion Durable. La clé de fonction par défaut N'EST PAS acceptée. Fallback
+# sur AZURE_FUNCTION_KEY pour rétro-compat / dev local.
+AZURE_DURABLE_KEY = os.environ.get("AZURE_DURABLE_KEY", "") or AZURE_FUNCTION_KEY
 
 # Global HTTP Client pour éviter le Socket Exhaustion
 http_client = httpx.AsyncClient(limits=httpx.Limits(max_keepalive_connections=50, max_connections=200))
@@ -172,8 +200,9 @@ async def trigger_audit(
 ):
     await _check_rate_limit(user_upn)
 
-    if not request.document_id:
-        raise HTTPException(status_code=400, detail="document_id manquant.")
+    # Validation au bord : rejette injection/traversal/oversized avant de
+    # déclencher une orchestration (defense-in-depth).
+    _validate_sharepoint_doc_id(request.document_id)
 
     # [PATCH HATER OPTION A] Plus de fausse validation locale.
     # On transmet l'ID du document à l'Azure Durable Function qui s'occupera
@@ -333,7 +362,9 @@ async def get_job_status(
         # GET /runtime/webhooks/durabletask/instances/{instanceId}
         # Le task hub DOIT être configuré explicitement (pas de valeur de test
         # par défaut) afin de ne jamais interroger un hub de test en production.
-        auth_param = f"&code={AZURE_FUNCTION_KEY}" if AZURE_FUNCTION_KEY else ""
+        # Webhook Durable : clé système durabletask_extension (pas la clé de
+        # fonction par défaut) + racine d'hôte SANS "/api".
+        auth_param = f"&code={AZURE_DURABLE_KEY}" if AZURE_DURABLE_KEY else ""
         task_hub = os.environ.get("TASK_HUB_NAME")
         if not task_hub:
             log_security("ERROR", "TASK_HUB_NAME non configuré — statut d'audit indisponible")
@@ -343,7 +374,7 @@ async def get_job_status(
         safe_job_id = urllib.parse.quote(job_id)
 
         resp = await http_client.get(
-            f"{AZURE_FUNCTION_URL}/runtime/webhooks/durabletask/instances/{safe_job_id}"
+            f"{AZURE_FUNCTION_HOST}/runtime/webhooks/durabletask/instances/{safe_job_id}"
             f"?taskHub={task_hub}&connection=Storage{auth_param}",
             timeout=5.0
         )
