@@ -1,5 +1,12 @@
 title = "AC360 Gitleaks Configuration"
 
+# IMPORTANT : on ÉTEND le jeu de règles par défaut de gitleaks (100+ détecteurs :
+# AWS, GitHub, GCP, clés privées, etc.) au lieu de le remplacer. Les règles
+# personnalisées ci-dessous viennent EN PLUS, ciblant les secrets spécifiques à
+# l'écosystème Azure/Power Platform d'AC360.
+[extend]
+useDefault = true
+
 [[rules]]
 id = "azure-client-secret"
 description = "Azure Client Secret"

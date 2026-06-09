@@ -53,6 +53,12 @@ class AppInsightsMiddleware(BaseHTTPMiddleware):
             })
 
         response.headers["X-Process-Time"] = str(round(process_time, 4))
+        # En-têtes de sécurité standard (défense en profondeur API).
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         return response
 
 
@@ -308,8 +314,8 @@ def health_check():
     return {
         "status": "healthy",
         "version": "3.0.0",
-        "security": "Enterprise_Grade",
-        "orchestration": "Azure_Durable_Functions"
+        "auth": "entra-id-jwt",
+        "orchestration": "azure-durable-functions"
     }
 
 
