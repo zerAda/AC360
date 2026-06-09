@@ -38,13 +38,30 @@ from audit_pipeline import AuditDeps, run_audit  # noqa: E402
 # Implémentations réelles des I/O (exécutées côté activités Durable uniquement)
 # ---------------------------------------------------------------------------
 def _download(document_id: str) -> str:
-    """Télécharge le document depuis SharePoint via Graph API.
+    """Télécharge le document depuis SharePoint via Microsoft Graph.
 
-    À IMPLÉMENTER au branchement réel (Graph /drives/{id}/items/{document_id}).
-    Laissé explicite pour ne rien simuler.
+    Prérequis (variables d'app) :
+      * SHAREPOINT_DRIVE_ID : drive SharePoint contenant les dossiers clients ;
+      * un accès Entra ID (Managed Identity recommandée) avec scope Graph
+        `Files.Read.All` ou `Sites.Selected`.
+    `document_id` est l'item id Graph. Le binaire est écrit dans JOBS_BASE_DIR.
     """
-    raise NotImplementedError(
-        "Téléchargement SharePoint non branché — fournir l'implémentation Graph API."
+    from sharepoint import download_document
+    from azure.identity import DefaultAzureCredential
+
+    drive_id = os.environ.get("SHAREPOINT_DRIVE_ID")
+    if not drive_id:
+        raise RuntimeError("SHAREPOINT_DRIVE_ID manquant (configuration requise).")
+
+    credential = DefaultAzureCredential()
+    token = credential.get_token("https://graph.microsoft.com/.default").token
+
+    dest_dir = os.path.join(os.environ.get("JOBS_BASE_DIR", "jobs"), str(document_id))
+    return download_document(
+        item_id=document_id,
+        drive_id=drive_id,
+        dest_dir=dest_dir,
+        access_token=token,
     )
 
 

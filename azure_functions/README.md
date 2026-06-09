@@ -16,7 +16,7 @@ document_id → download (SharePoint/Graph) → OCR (Document Intelligence)
 | Orchestration pure (`shared/audit_pipeline.py`) | **PROUVÉ** — testée en CI (`tests/azure_functions/`) |
 | Moteur de comparaison (`scripts/fabric_audit_engine.py`) | **PROUVÉ** — testé |
 | Wrapper Durable (`function_app.py`) | **CODE ÉCRIT — À VALIDER AU DÉPLOIEMENT** (nécessite le runtime) |
-| Téléchargement SharePoint (`_download`) | **NON BRANCHÉ** — `NotImplementedError` explicite (rien de simulé) |
+| Téléchargement SharePoint (`shared/sharepoint.py`) | **CODE ÉCRIT + TESTÉ** (Graph injecté ; allowlist ext, plafond taille, anti-traversal). Validation tenant réel : À VALIDER |
 | OCR Document Intelligence | **RESSOURCE NON PROVISIONNÉE** (cf. README racine) |
 | Accès Fabric (Entra ID) | **À VALIDER EN ENVIRONNEMENT RÉEL** |
 
