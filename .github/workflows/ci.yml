@@ -133,14 +133,17 @@ jobs:
           python -m pytest tests/ \
             -v \
             --tb=short \
-            --junitxml=test-results/results.xml
+            --junitxml=test-results/results.xml \
+            --cov=scripts --cov=azure_functions \
+            --cov-report=term-missing \
+            --cov-report=xml:test-results/coverage.xml
 
       - name: Uploader les résultats de tests (JUnit XML)
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: test-results-${{ github.run_number }}
-          path: test-results/results.xml
+          path: test-results/
           retention-days: 30
 
   # ============================================================

@@ -64,6 +64,10 @@ docs_content.txt
 # Tests / cache / outillage
 .pytest_cache/
 .mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+test-results/
 
 # Release packages
 release/

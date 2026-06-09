@@ -24,7 +24,6 @@ _TEST_ENV_DEFAULTS = {
     "AZURE_OCR_ENDPOINT": os.getenv("AZURE_OCR_ENDPOINT", "https://test.cognitiveservices.azure.com/"),
     "FABRIC_SQL_ENDPOINT": os.getenv("FABRIC_SQL_ENDPOINT", "test-fabric-endpoint"),
     "FABRIC_DATABASE": os.getenv("FABRIC_DATABASE", "test-fabric-db"),
-    "REDIS_URL": os.getenv("REDIS_URL", "redis://localhost:6379/0"),
 }
 for _key, _val in _TEST_ENV_DEFAULTS.items():
     os.environ.setdefault(_key, _val)
