@@ -1,8 +1,5 @@
 import pytest
-import os
-import json
 from unittest.mock import patch, MagicMock
-import sys
 
 from process_document_ocr import extract_document_azure
 from audit_fabric_comparison import fetch_artus_data, match_client_name, perform_audit
@@ -11,6 +8,7 @@ import pandas as pd
 # ==========================================
 # Tests OCR (process_document_ocr.py)
 # ==========================================
+
 
 @patch("process_document_ocr.AzureKeyCredential")
 @patch("process_document_ocr.DocumentAnalysisClient")
@@ -44,6 +42,7 @@ def test_extract_document_azure_success(mock_client, mock_cred, tmp_path):
 # Tests Fabric / Audit (audit_fabric_comparison.py)
 # ==========================================
 
+
 @patch("audit_fabric_comparison.get_fabric_connection")
 def test_fetch_artus_data_fail_fast_on_missing_db(mock_conn):
     # En production, on veut une erreur si pas de DB, pas de fallback silencieux
@@ -52,6 +51,7 @@ def test_fetch_artus_data_fail_fast_on_missing_db(mock_conn):
         fetch_artus_data()
     assert "ERREUR CRITIQUE" in str(exc.value)
 
+
 def test_match_client_name_strictness():
     # Création d'un dataframe mock
     df = pd.DataFrame({
@@ -59,16 +59,17 @@ def test_match_client_name_strictness():
         "nom_client": ["GEREP SA", "BETA Corp"],
         "plafond_hospitalisation": ["1000", "500"]
     })
-    
+
     # Matching réussi (Score > 85%)
     match, score = match_client_name("GEREP SA", df)
     assert match is not None
     assert score >= 85
-    
+
     # Matching échoué (Penalité stricte avec mot rejet)
     match_reject, score_reject = match_client_name("Groupe GEREP SA", df)
     assert match_reject is None
     assert score_reject < 85
+
 
 def test_perform_audit_logic():
     ocr_data = {
@@ -84,10 +85,10 @@ def test_perform_audit_logic():
         "nom_client": ["GEREP SA"],
         "plafond_hospitalisation": ["1000"]
     })
-    
+
     result = perform_audit(ocr_data, artus_df)
     assert result["meilleur_match_fabric"] == "GEREP SA"
-    
+
     # Vérifie qu'il n'y a pas d'écart
     details = result["details_ecarts"]
     assert len(details) == 1

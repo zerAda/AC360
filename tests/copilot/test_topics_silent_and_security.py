@@ -58,8 +58,9 @@ def test_topic_is_not_silent(topic_file):
     topic_path = os.path.join(TOPICS_DIR, topic_file)
     assert os.path.exists(topic_path), f"Topic introuvable : {topic_file}"
 
+    # Validation que le YAML est parsable.
     with open(topic_path, "r", encoding="utf-8") as f:
-        content = yaml.safe_load(f)
+        yaml.safe_load(f)
 
     # Recherche brute dans le YAML texte (plus fiable que le parsing pour les templates)
     with open(topic_path, "r", encoding="utf-8") as f:
@@ -68,9 +69,11 @@ def test_topic_is_not_silent(topic_file):
     assert "Topic.Answer" in raw, f"[SILENT] {topic_file} ne contient pas Topic.Answer du tout."
 
     # Vérifier qu'il y a un SendActivity qui affiche Topic.Answer (pas juste stocké)
-    has_display = ('activity: "{Topic.Answer}"' in raw or
-                   "activity: '{Topic.Answer}'" in raw or
-                   "activity: \"{Topic.Answer}\"" in raw)
+    has_display = (
+        'activity: "{Topic.Answer}"' in raw
+        or "activity: '{Topic.Answer}'" in raw
+        or 'activity: "{Topic.Answer}"' in raw
+    )  # noqa: W504
     assert has_display, (
         f"[SILENT] {topic_file} stocke Topic.Answer mais ne l'AFFICHE JAMAIS via SendActivity. "
         f"L'utilisateur ne voit pas la réponse."

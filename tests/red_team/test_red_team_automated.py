@@ -3,7 +3,6 @@ Tests Red-Team AC360 — 20 vecteurs d'attaque
 Vérifie statiquement que les topics et settings résistent aux principaux vecteurs.
 """
 import os
-import pytest
 
 TOPICS_DIR = os.path.join(
     os.path.dirname(__file__), "..", "..", "src", "copilot", "AC360", "topics"
@@ -212,9 +211,7 @@ def test_RT14_no_invoke_expression_in_powershell():
 
 def test_RT15_no_execution_policy_bypass_hardcoded():
     """RT-15 : Les scripts PowerShell ne doivent pas contenir ExecutionPolicy Bypass en dur dans les pipelines."""
-    package_script = os.path.join(os.path.dirname(__file__), "..", "..", "scripts", "package_release.ps1")
-    # Ce pattern est acceptable dans run_audit_pipeline (appelé par le worker de façon contrôlée)
-    # mais ne doit pas être dans le code Python lui-même
+    # Le code Python de l'API ne doit jamais invoquer PowerShell avec ExecutionPolicy.
     api_file = os.path.join(os.path.dirname(__file__), "..", "..", "scripts", "api_server.py")
     if os.path.exists(api_file):
         with open(api_file, "r", encoding="utf-8") as f:

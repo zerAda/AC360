@@ -2,7 +2,6 @@
 Tests de sécurité P0-05 : Path Traversal dans generate_fiche_rdv.py
 Prouve que safe_filename() est robuste contre les attaques.
 """
-import pytest
 import sys
 import os
 
