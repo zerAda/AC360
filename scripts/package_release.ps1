@@ -17,7 +17,7 @@ $ErrorActionPreference = "Stop"
 
 # Motifs exclus de la copie (préfixe de chemin relatif OU nom de fichier).
 $ExcludePatterns = @(
-    ".git", ".github", ".claude", ".planning", ".pytest_cache",
+    ".git", ".github", ".claude", ".planning", ".pytest_cache", ".mypy_cache",
     "__pycache__", "*.pyc", "*.pyo", "*.pyd",
     "*.db", "*.sqlite", "*.sqlite3",
     ".env", "logs", "*.log",

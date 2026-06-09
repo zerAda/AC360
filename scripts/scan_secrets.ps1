@@ -21,7 +21,7 @@ $Patterns = @(
 # des FAUX secrets volontaires). Les fichiers de test/exemple sont exclus
 # uniquement du scan haute-entropie pour éviter les faux positifs.
 $ExcludeFragments = @("\.git\", "__pycache__", "\jobs\", "Archives_Documentaires",
-                      "\.pytest_cache\", "\.planning\", "\.claude\", "\release\")
+                      "\.pytest_cache\", "\.mypy_cache\", "\.planning\", "\.claude\", "\release\")
 
 Write-Host "--- Lancement du scan de secrets ---" -ForegroundColor Cyan
 

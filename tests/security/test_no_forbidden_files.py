@@ -20,6 +20,14 @@ FORBIDDEN_DIRS = [
 ]
 
 
+# Répertoires de cache / outillage local (gitignorés) : jamais packagés, donc
+# exclus de la détection (sinon les .db de cache mypy/pytest faussent le test).
+PRUNED_DIRS = {
+    ".git", ".mypy_cache", ".pytest_cache", "__pycache__",
+    ".venv", "venv", "node_modules", "release", ".planning", ".claude",
+}
+
+
 def get_project_root():
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
@@ -29,9 +37,8 @@ def test_no_forbidden_files_in_repo():
     found_forbidden = []
 
     for dirpath, dirnames, filenames in os.walk(root):
-        # Ignore .git explicitly
-        if ".git" in dirnames:
-            dirnames.remove(".git")
+        # Élaguer les répertoires de cache/outillage (modifie dirnames in-place).
+        dirnames[:] = [d for d in dirnames if d not in PRUNED_DIRS]
 
         rel_path = os.path.relpath(dirpath, root)
 

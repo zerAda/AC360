@@ -21,7 +21,7 @@ DEFAULT_ALLOWED_EXT = frozenset({".pdf", ".docx", ".png", ".jpg", ".jpeg", ".tif
 DEFAULT_MAX_BYTES = 25 * 1024 * 1024  # 25 Mo
 
 
-def _safe_filename(name: str, fallback: str) -> str:
+def _safe_filename(name: Optional[str], fallback: str) -> str:
     """Réduit à un nom de fichier sûr : basename, sans séparateurs ni '..'."""
     base = os.path.basename(str(name or "")).strip()
     base = base.replace("\x00", "")

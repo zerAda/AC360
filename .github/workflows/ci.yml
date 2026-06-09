@@ -171,6 +171,11 @@ jobs:
             --count \
             --statistics
 
+      - name: Vérification de types (mypy, modules cœur)
+        run: |
+          pip install mypy==1.11.2
+          mypy   # configuration et cibles dans setup.cfg [mypy]
+
   # ============================================================
   # JOB 5 — Dry-run du packaging de release
   # Vérifie que le script PowerShell s'exécute correctement

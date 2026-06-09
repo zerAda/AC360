@@ -161,7 +161,7 @@ def run_audit(
 
         reference = deps.fetch_reference(client_name)
         if not reference:
-            result = {
+            result: Dict[str, Any] = {
                 "client_document": client_name,
                 "meilleur_match_fabric": None,
                 "score_correspondance_nom": 0.0,

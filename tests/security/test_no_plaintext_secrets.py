@@ -10,7 +10,8 @@ SECRET_PATTERNS = [
 ]
 
 ALLOWED_EXTENSIONS = {".py", ".json", ".yml", ".ps1"}
-EXCLUDED_DIRS = {".git", "__pycache__", "jobs", "Archives_Documentaires"}
+EXCLUDED_DIRS = {".git", "__pycache__", "jobs", "Archives_Documentaires",
+                 ".mypy_cache", ".pytest_cache", ".venv", "venv", "node_modules"}
 
 
 def get_project_root():
