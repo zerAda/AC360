@@ -1,191 +1,272 @@
-<!-- refreshed: 2026-06-08 -->
+<!-- refreshed: 2026-06-10 -->
 # Architecture
 
-**Analysis Date:** 2026-06-08
+**Analysis Date:** 2026-06-10
 
 ## System Overview
 
+AC360 is a dual-layer system: **Copilot Studio chatbot** (Microsoft Copilot Studio / Teams) + **backend audit pipeline** (FastAPI + Azure Durable Functions). The backend orchestrates document OCR → audit comparison → FIC document generation, all read-only, federated via Microsoft Entra ID.
+
 ```text
-┌─────────────────────────────────────────────────────────────────────────┐
-│                     CONVERSATIONAL LAYER (Copilot Studio)                 │
-│  Agent + Topics (.mcs.yml)        SharePoint knowledge (read-only RAG)    │
-│  `src/copilot-workspace/AC360/`   `src/copilot/AC360/`                    │
-└──────────────────────────────┬──────────────────────────────────────────┘
-                               │ HttpRequestAction (POST /api/audit)
-                               ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                       API GATEWAY (FastAPI)                               │
-│  `scripts/api_server.py`  — Entra ID JWT auth, rate-limit, App Insights   │
-└──────────────┬──────────────────────────────────────┬─────────────────────┘
-               │ proxy /api/audit                      │ Planner / Fiche RDV
-               ▼                                       ▼
-┌──────────────────────────────────┐   ┌─────────────────────────────────────┐
-│  ORCHESTRATION                   │   │  SYNC HELPERS (threadpool)          │
-│  Azure Durable Functions (Azure) │   │  `generate_fiche_rdv.py`            │
-│  `azure_functions/` (host.json)  │   │  `planner_integration.py`           │
-│  also: `run_audit_pipeline.ps1`  │   └─────────────────────────────────────┘
-└──────────────┬───────────────────┘
-               │ phase chain (3 → 4 → 6 → 5)
-               ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                       AUDIT PIPELINE (Python CLI scripts)                 │
-│  P3 OCR            P4 Fabric audit        P6 FIC          P5 post-audit    │
-│  process_document  audit_fabric_          generate_fic_   post_audit_      │
-│  _ocr.py           comparison.py          draft.py        workflow.py      │
-└──────────────┬─────────────┬──────────────────┬────────────────┬──────────┘
-               ▼             ▼                  ▼                ▼
-        Azure Document  Microsoft Fabric   python-docx      Teams webhook
-        Intelligence    (Artus SQL)        (.docx FIC)      + SQLite tracking
-                                                            `audits.db`
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                        Users (Teams / Copilot Chat)                          │
+│                              (Entra ID Auth)                                 │
+└────────────────────────┬─────────────────────────────────────────────────────┘
+                         │
+         ┌───────────────┴────────────────┐
+         ▼                                ▼
+   ┌──────────────────┐           ┌─────────────────────┐
+   │ Copilot Studio   │           │  FastAPI Backend    │
+   │  (Topics/RAG)    │───────────▶  (`api_server.py`)  │
+   │ SharePoint RAG   │           │  Port 8000          │
+   └──────────────────┘           └────────┬────────────┘
+         │                                 │
+         │                    ┌────────────┴─────────────┐
+         │                    ▼                          ▼
+         │          ┌──────────────────────┐   ┌────────────────────┐
+         │          │ Azure Functions      │   │ Rate Limiting,     │
+         │          │ (Durable Functions)  │   │ JWT Auth, JWKS     │
+         │          │ `function_app.py`    │   │ Cache, Path Sec.   │
+         │          └──────┬──┬──┬─────────┘   └────────────────────┘
+         │                 │  │  │
+         │    ┌────────────┘  │  └──────────────┐
+         │    │               │                 │
+         │    ▼               ▼                 ▼
+         │  Download        OCR             Fetch Reference
+         │  SharePoint   (Doc Intelligence)  (Fabric OneLake)
+         │  via Graph       via Azure         Delta Lake
+         │  API
+         │
+         └──────────────► Audit Comparison Engine
+                          (`fabric_audit_engine.py`)
+                          ▼
+                    ┌──────────────────┐
+                    │  FIC Generation  │
+                    │  (Word Document) │
+                    │ `generate_fic..` │
+                    └──────────────────┘
 ```
 
 ## Component Responsibilities
 
 | Component | Responsibility | File |
 |-----------|----------------|------|
-| Copilot agent | Read-only commercial assistant, SharePoint RAG, citation rules | `src/copilot-workspace/AC360/agent.mcs.yml` |
-| Audit trigger topic | Collects document ID, POSTs to API gateway | `src/copilot-workspace/AC360/topics/LancerAudit.mcs.yml` |
-| API gateway | Auth, rate-limit, proxy to Azure Functions, file download | `scripts/api_server.py` |
-| JWT verifier | Entra ID token validation (JWKS, issuer, scope, role) | `scripts/auth.py` |
-| OCR extractor (P3) | Azure Document Intelligence → structured JSON | `scripts/process_document_ocr.py` |
-| Fabric audit (P4) | Fuzzy client match + field comparison vs Artus | `scripts/audit_fabric_comparison.py` |
-| FIC generator (P6) | Business-rule gate + Word FIC draft | `scripts/generate_fic_draft.py` |
-| Post-audit (P5) | Teams alerts, archival, RGPD cleanup | `scripts/post_audit_workflow.py` |
-| Pipeline orchestrator | Chains P3→P4→P6→P5 with isolated job dir | `scripts/run_audit_pipeline.ps1` |
-| Standalone desktop audit | Tkinter PDF/Excel reconciliation app | `src/main.py`, `src/core.py` |
-| Persistence | SQLite tracking of audits / FIC generation | `scripts/db_manager.py`, `core.py:AuditHistory` |
+| **Copilot Studio Agent** | Multi-topic conversational AI, SharePoint RAG, moderation | `src/copilot/AC360/agent.mcs.yml` |
+| **FastAPI API Server** | HTTP gateway, JWT/JWKS auth, rate limiting, job orchestration | `scripts/api_server.py` |
+| **Azure Durable Functions** | Orchestrates async audit pipeline (download → OCR → compare → FIC) | `azure_functions/function_app.py` |
+| **Audit Pipeline (Pure Logic)** | Testable orchestration (no I/O, deps injected) | `azure_functions/shared/audit_pipeline.py` |
+| **SharePoint Integration** | Secure document download via Graph API | `azure_functions/shared/sharepoint.py` |
+| **OCR Extraction** | Azure Document Intelligence bridge | `scripts/process_document_ocr.py` |
+| **Audit Comparison Engine** | Typified field matching, normalization, verdict logic | `scripts/fabric_audit_engine.py` |
+| **Fabric OneLake Reference** | Client reference lookup (SIRET-first, then name match) | `scripts/fabric_onelake.py` |
+| **FIC Document Generation** | Word document template + OCR/Fabric data → signed FIC | `scripts/generate_fic_draft.py` |
+| **Config & Auth** | Centralized config (fail-fast), JWT verification, JWKS cache | `scripts/config.py`, `scripts/auth.py` |
+| **Tkinter Desktop UI** | Local audit (PDF/Excel matching, batch mode, export) | `src/main.py`, `src/core.py` |
 
 ## Pattern Overview
 
-**Overall:** Layered pipeline with a conversational front-end. A thin FastAPI gateway fronts an Azure Durable Functions orchestration; the orchestration (and the equivalent PowerShell orchestrator) drives a chain of single-purpose Python CLI scripts that pass JSON artifacts file-to-file.
+**Overall:** **Layered (3-tier) + Async Pipeline** with dependency injection for testability.
 
 **Key Characteristics:**
-- Stateless CLI stages communicating via JSON files in an isolated per-job directory (UUID).
-- Fail-fast / fail-closed posture (no fake fallback data when Fabric is unreachable).
-- Security-first: JWT auth, path-traversal guards, dangerous-char rejection, RGPD cleanup of generated drafts.
-- Two parallel orchestrators exist: Azure Durable Functions (production proxy target) and `run_audit_pipeline.ps1` (local/full chain).
+- **Read-only guardrails** - No document modification, deletion, or creation (except FIC draft for review)
+- **Injection-based testing** - Core pipeline (`audit_pipeline.py`) accepts `AuditDeps` object; all I/O pluggable (fakes in tests, real in prod)
+- **Import-safe modules** - Azure SDK imports protected in try/except; pytest can run without runtime
+- **Schema validation** - OCR, audit input, audit result validated against JSON schemas in `schemas/`
+- **Fail-fast configuration** - Auth env vars (TENANT_ID, CLIENT_ID) verified at API startup, not lazily
 
 ## Layers
 
-**Conversational (Copilot Studio):**
-- Purpose: User entry point; read-only SharePoint RAG and audit triggering.
-- Location: `src/copilot-workspace/AC360/`, `src/copilot/AC360/`
-- Contains: `agent.mcs.yml`, `topics/*.mcs.yml`, `actions/*.mcs.yml`, `knowledge/*.mcs.yml`
-- Depends on: API gateway via `HttpRequestAction`.
-
-**API Gateway (FastAPI):**
-- Purpose: Authenticated entry to backend; proxy + sync helper endpoints.
+**Presentation Layer (UI / Routing):**
+- Purpose: HTTP endpoints, WebSocket management, user auth gateway
 - Location: `scripts/api_server.py`
-- Depends on: `auth.py`, `planner_integration.py`, `generate_fiche_rdv.py`, `safe_logger.py`, `config.py`.
-- Used by: Copilot topics, external callers.
+- Contains: FastAPI routes (@app.post, @app.get), middleware (AppInsights, rate-limit, security headers), JWT validation, job status polling
+- Depends on: `config.py`, `auth.py`, Azure Functions REST client
+- Used by: Copilot Studio (HTTP POST `/api/audit`), Teams (polling `/api/audit/{job_id}/status`), file downloads (`/api/download/{job_id}/{filename}`)
 
-**Orchestration:**
-- Purpose: Sequence the audit phases.
-- Location: `azure_functions/` (Durable Functions, configured via `host.json`), `scripts/run_audit_pipeline.ps1`.
+**Orchestration Layer (Async Pipeline):**
+- Purpose: Coordinate document → OCR → audit → FIC workflow as durable, resilient steps
+- Location: `azure_functions/` (function_app.py, shared/audit_pipeline.py)
+- Contains: Durable Functions orchestrator, activity functions, pure audit logic, dependency injection frame
+- Depends on: Graph API, Document Intelligence, Fabric SDK, file I/O
+- Used by: FastAPI gateway (via Azure Functions HTTP trigger), job status monitoring
 
-**Pipeline Stages (Python CLI):**
-- Purpose: One business phase each, JSON in / JSON out.
-- Location: `scripts/process_document_ocr.py`, `audit_fabric_comparison.py`, `generate_fic_draft.py`, `post_audit_workflow.py`.
+**Business Logic Layer (Typified Audit):**
+- Purpose: Field extraction, normalization, comparison, verdict assignment
+- Location: `scripts/fabric_audit_engine.py`, `scripts/fabric_onelake.py`, `scripts/process_document_ocr.py`
+- Contains: OCR field aliasing, montant/date/name normalization, threshold-based matching (MATCH/MISMATCH/UNCERTAIN), SIRET-first reference lookup
+- Depends on: None (pure Python, no cloud imports); schemas for validation
+- Used by: `audit_pipeline.py` (compare function), tests (direct unit testing)
 
-**Standalone Desktop:**
-- Purpose: Independent Tkinter PDF/Excel reconciliation tool (separate from the cloud pipeline).
-- Location: `src/main.py` (UI), `src/core.py` (parsing, fuzzy match, écart calc, SQLite history).
+**Data Access Layer (Cloud Integrations):**
+- Purpose: Abstract external APIs (SharePoint, Document Intelligence, Fabric, Graph)
+- Location: `azure_functions/shared/sharepoint.py`, `scripts/auth.py`, `scripts/fabric_onelake.py`
+- Contains: Graph API client (document download, item metadata), Entra ID token validation, JWKS fetching, Fabric Delta Lake reads
+- Depends on: httpx, azure-identity, azure.functions (in runtime only)
+- Used by: Orchestration layer (via AuditDeps injection)
+
+**Desktop/Local Audit (Tkinter App):**
+- Purpose: Standalone PDF/Excel audit without cloud dependencies (for demo, testing, or air-gapped environments)
+- Location: `src/main.py`, `src/core.py`
+- Contains: Tkinter GUI, PDF parsing (pdfplumber), Excel parsing (pandas), normalization, fuzzy matching (thefuzz), export (Excel, CSV, PDF via reportlab)
+- Depends on: pdfplumber, pandas, openpyxl, thefuzz, reportlab
+- Used by: Local users (python src/main.py), demo scripts
 
 ## Data Flow
 
-### Primary Request Path (audit pipeline)
+### Primary Request Path (Cloud Audit via Copilot)
 
-1. User triggers audit in Copilot (`LancerAudit.mcs.yml`) → POST `https://ac360-api.azurewebsites.net/api/audit`.
-2. Gateway authenticates and rate-limits, then proxies to Azure Function (`scripts/api_server.py:108` `trigger_audit`).
-3. **P3 OCR** — `process_document_ocr.py:21` `extract_document_azure` → `prebuilt-document` model → `temp_ocr_result.json` (fields + tables).
-4. **P4 Fabric** — `audit_fabric_comparison.py:197` `main` loads OCR JSON, `fetch_artus_data` queries Fabric SQL, `match_client_name` fuzzy-matches (≥85% threshold), `perform_audit` compares plafonds → `final_audit_report.json` + `.csv`.
-5. **P6 FIC** — `generate_fic_draft.py:25` `evaluate_fic_rules` gates on `motif_operation`; if eligible, `generate_fic_document` writes `FIC_Brouillon_*.docx` and emits `FIC_GENERATED_PATH=...`.
-6. **P5 Post-audit** — `post_audit_workflow.py:105` `main` sends Teams alert on écart, archives litigious docs, deletes temp + FIC drafts (RGPD).
-7. Pipeline cleans temp JSON/CSV; status polled via `GET /api/audit/{job_id}/status` (`api_server.py:227`).
-
-### Desktop Reconciliation Flow
-
-1. User selects PDF + Excel (`src/main.py` `select_pdf`/`select_excel`).
-2. `PDFParser.parse_file` (pdfplumber) and `ExcelParser.parse` (pandas) extract records.
-3. `OptimizedMatcher.match_with_index` (indexed + fuzzy, seuil 0.75) → `EcartCalculator.calculer_ecarts` (écart = Excel − PDF).
-4. Results shown in Treeview, saved to `audits.db` via `AuditHistory.save_audit`, exportable to Excel/CSV/PDF.
+1. **User Query in Teams** → Copilot Studio topic routed (e.g., "Lancer Audit")
+2. **Copilot Studio** → HTTP POST to `scripts/api_server.py:/api/audit` with `document_id` (UUID v4 from SharePoint)
+3. **API Gateway** (`api_server.py`) → Validates JWT (RS256 via JWKS), document_id (UUID + confinement), rate limit (10/hour/user)
+4. **Trigger Azure Function** → POST to `azure_functions/function_app.py:http_start` (Durable Functions orchestrator)
+5. **Orchestrator** (`function_app.py:_audit_orchestration`) → Calls activities in sequence:
+   - **Download Activity** → `sharepoint.py:download_document()` → Graph API `/drives/{drive_id}/items/{item_id}/content` → writes `jobs/{uuid}/filename.pdf`
+   - **OCR Activity** → `process_document_ocr.py:extract_document_azure()` → Azure Document Intelligence → JSON dict with fields/tables
+   - **Audit Activity** → `audit_pipeline.py:run_audit()` → Calls deps:
+     - `fetch_reference(identity)` → `fabric_onelake.py` → OneLake Delta Lake (SIRET/name match)
+     - `compare(audit_input)` → `fabric_audit_engine.py:audit()` → verdict (CONFORME/ECART/INCERTAIN/CLIENT_NON_TROUVE)
+     - `make_fic(client_name, audit_result)` → `generate_fic_draft.py` → Word doc (if verdict = ECART or INCERTAIN)
+6. **Return Status** → Client polls `GET /api/audit/{job_id}/status` until orchestration completes
+7. **Download FIC** (if generated) → `GET /api/download/{job_id}/FIC_Brouillon_ClientName.docx`
 
 **State Management:**
-- Per-job isolation via UUID directories created by `run_audit_pipeline.ps1`; JSON artifacts are the inter-stage state.
-- In-process rate-limit store (`_rate_limit_store` dict) in `api_server.py`.
-- Persistent state in SQLite (`audits.db`, FIC tracking via `db_manager.py`).
+- Job metadata (document_id, UPN, timestamps) stored in Durable Functions state store (Azure Storage Queue/Table)
+- Intermediate artifacts (downloaded PDF, OCR JSON, FIC .docx) in `JOBS_BASE_DIR` (default `./jobs`)
+- No persistent DB (by design); job cleanup via `cleanup_local_artifacts.ps1`
+
+### Secondary Flow: Planner Task Creation (Optional)
+
+1. User sends command in Copilot topic (e.g., "CreerRelancePlanner")
+2. POST `/api/planner/task` with `{title, due_date, plan_id, bucket_id}`
+3. API validates JWT, creates Microsoft Planner task (via Power Automate or direct Graph call in `planner_integration.py`)
+
+### Tertiary Flow: Local Desktop Audit (Tkinter)
+
+1. User runs `python src/main.py`
+2. Selects PDF (bank remittance) + Excel (reference data)
+3. Normalizes names (via `Normalizer`), parses montants (regex `[\d\s]+[,\.]\d{2}`)
+4. Fuzzy matches societies (SequenceMatcher ≥ 75%)
+5. Calculates écarts (Excel - PDF) → coloring (OK green, Manque red, Excès yellow)
+6. Exports results (Excel, CSV, PDF via `ResultExporter`)
+7. Stores audit in SQLite history (`test_audits.db`)
 
 ## Key Abstractions
 
-**OCR JSON contract:**
-- Purpose: Canonical document representation passed between stages.
-- Shape: `{ metadata, fields{ name:{value,confidence} }, tables[{cells[]}], keyValuePairs[] }`.
-- Produced: `process_document_ocr.py`; consumed: `audit_fabric_comparison.py:125` `perform_audit`.
+**AuditDeps (Dependency Injection Frame):**
+- Purpose: Makes audit orchestration testable without cloud resources
+- Examples: `azure_functions/shared/audit_pipeline.py` lines 78–94
+- Pattern: `@dataclass` with callables for download, ocr, fetch_reference, make_fic, compare
+  - Tests inject fakes (return hardcoded JSON, no HTTP)
+  - Prod injects real implementations (Azure SDK calls)
 
-**Audit report JSON contract:**
-- Purpose: Output of P4, input to P5/P6.
-- Shape: `{ client_document, meilleur_match_fabric, score_correspondance_nom, motif_operation, details_ecarts[] }`.
+**Normalizer (Field Normalization):**
+- Purpose: Consistent name/value comparison across OCR output + Fabric reference
+- Examples: `scripts/fabric_audit_engine.py:_norm_key()`, `src/core.py:Normalizer.normalize()`
+- Pattern: Accent stripping, case folding, alphanum-only, whitespace collapse
 
-**Copilot topic (`*.mcs.yml`):**
-- Purpose: Declarative dialog unit (intent, actions, HTTP calls).
-- Pattern: `kind: AdaptiveDialog` with `beginDialog` + `actions`.
+**FieldAliasing (_FIELD_ALIASES):**
+- Purpose: Map arbitrary OCR labels ("Raison sociale", "Plafond hospi.") → canonical fields (nom_client, plafond_hospitalisation)
+- Examples: `scripts/fabric_audit_engine.py` lines 30–48
+- Pattern: Dict of canonical → [alias1, alias2, ...]; longest-match-first to avoid "nom" capturing "nom du client"
+
+**RateLimiter (In-Memory Store):**
+- Purpose: Enforce 10 audits/hour/UPN without external cache
+- Examples: `scripts/api_server.py` lines 98–130
+- Pattern: `_rate_limit_store[upn] = [timestamps within window]`; cleanup on overflow; periodic asyncio task
 
 ## Entry Points
 
-**Copilot agent:** `src/copilot-workspace/AC360/agent.mcs.yml` — user conversation entry; triggers topics.
+**FastAPI Server:**
+- Location: `scripts/api_server.py`
+- Triggers: `POST /api/audit`, `GET /api/audit/{job_id}/status`, `GET /api/download/{job_id}/{filename}`, `POST /api/planner/task`, `POST /api/generate-fiche-rdv`, `GET /health`
+- Responsibilities: Request validation, auth, rate-limit, job routing, file serving
+- Environment: Reads TENANT_ID, CLIENT_ID, AZURE_FUNCTION_URL, AZURE_FUNCTION_KEY, JOBS_BASE_DIR, APPINSIGHTS_INSTRUMENTATIONKEY
 
-**API gateway:** `scripts/api_server.py` (`uvicorn api_server:app`, port 8000) — `/api/audit`, `/api/planner/task`, `/api/generate-fiche-rdv`, `/api/download/...`, `/health`.
+**Azure Function Orchestrator:**
+- Location: `azure_functions/function_app.py`
+- Triggers: HTTP POST from FastAPI (via Durable Functions runtime)
+- Responsibilities: Coordinate download → OCR → audit → FIC activities
+- Environment: Reads SHAREPOINT_DRIVE_ID, AZURE_FUNCTION_URL, JOBS_BASE_DIR
 
-**Pipeline orchestrator:** `scripts/run_audit_pipeline.ps1` — full local chain, args `-DocumentPath -Upn -JobDir`.
+**Tkinter Desktop App:**
+- Location: `src/main.py`
+- Entry: `if __name__ == '__main__': main()`
+- Responsibilities: File selection, audit execution (threading), batch processing, export
+- Dependencies: tkinter (stdlib), pdfplumber, pandas, openpyxl, thefuzz, reportlab, Pillow
 
-**Azure Functions:** `azure_functions/` — Durable Functions host (`host.json`); production proxy target of the gateway.
-
-**Desktop app:** `src/main.py` (`python src/main.py`).
-
-**Pipeline stages:** each `scripts/*.py` stage is independently runnable via `argparse`.
+**Copilot Studio Agent:**
+- Location: `src/copilot/AC360/agent.mcs.yml`
+- Topics: ConversationStart, Rsumdossierclient, LancerAudit, Recherchedocumentclient, PreparationRDVRenouvellement, Escalate, etc.
+- Knowledge Source: SharePoint Online (hardened RAG, no general LLM knowledge)
 
 ## Architectural Constraints
 
-- **Threading:** FastAPI gateway is async; synchronous file I/O is offloaded via `run_in_threadpool` (`api_server.py:172`). Desktop app runs audits on a background `threading.Thread`. Pipeline stages are synchronous subprocesses.
-- **Global state:** Module-level singletons — `http_client` (`api_server.py:29`), `_rate_limit_store` (`:62`), `_JWKS_CACHE` (`auth.py:13`). These are per-process and not shared across replicas.
-- **Fail-closed:** `fetch_artus_data` raises `ConnectionError` rather than using fake data when Fabric is unavailable (`audit_fabric_comparison.py:75`).
-- **Two source files only as `.pyc`:** `azure_functions/function_app.py`, `audit_engine.py`, `rdv_engine.py` exist only as compiled `.pyc` in `azure_functions/__pycache__/` — source is absent from the tree.
+- **Threading:** FastAPI runs single-threaded event loop (uvicorn async); desktop app uses threading (background audit thread to avoid UI freeze). Azure Functions are event-driven (single orchestration instance per job_id).
+- **Global state:** Rate-limit store (`_rate_limit_store` in api_server.py) is in-memory, not shared across instances. Durable Functions state stored in Azure Storage, not in-process.
+- **Circular imports:** None detected; modules carefully import conditionally (e.g., azure.* only in function_app.py try/except).
+- **Synchronous OCR/Fabric calls:** All I/O in Azure Function activities is synchronous (blocking httpx/requests calls); orchestrator layer is async but activities run in thread pool.
+- **Document isolation:** Each audit gets `jobs/{uuid}/` directory; no cross-job file access (confinement enforced via os.path.commonpath).
+- **Schema validation:** Optional (depends on jsonschema availability) but strongly encouraged; schemas in `schemas/` (audit_input.schema.json, audit_result.schema.json, ocr_result.schema.json).
 
 ## Anti-Patterns
 
-### Inconsistent fuzzy-match thresholds
+### Hardcoded Secrets in Code
 
-**What happens:** Cloud audit uses an 85% match threshold (`audit_fabric_comparison.py:118`) but the rejection comment and post-audit still reference 75% (`:186`, `post_audit_workflow.py:30`); desktop uses 0.75 (`core.py:310`).
-**Why it's wrong:** Divergent thresholds and stale comments make audit behavior ambiguous and hard to reason about.
-**Do this instead:** Centralize the threshold in config and reference it consistently.
+**What happens:** Env vars like TENANT_ID, CLIENT_ID visible in config module docstrings/comments
+**Why it's wrong:** Risk of leakage in error messages, logs, or stack traces if not carefully redacted
+**Do this instead:** Use `safe_logger.redact()` on all exception messages; mask sensitive assigns in error strings (see `audit_pipeline.py` lines 51–53, _SENSITIVE_ASSIGN regex)
 
-### Duplicated copilot workspace trees
+### Direct Azure SDK Imports at Module Level
 
-**What happens:** `src/copilot/AC360/` and `src/copilot-workspace/AC360/` both hold overlapping `topics/*.mcs.yml`.
-**Why it's wrong:** Two sources of truth for the same agent risk drift between deployed and edited versions.
-**Do this instead:** Treat `src/copilot-workspace/AC360/` as canonical and document `src/copilot/AC360/` as the export/backup.
+**What happens:** Early `import azure.functions` would fail pytest collection outside runtime
+**Why it's wrong:** Breaks local test execution and CI/CD
+**Do this instead:** Wrap in `try/except` with `_DURABLE_AVAILABLE` flag (see `function_app.py` lines 25–32); tests inject fakes via AuditDeps
 
-### Missing backend source under version control
+### Missing Path Confinement in File Operations
 
-**What happens:** Durable Functions logic is only present compiled in `azure_functions/__pycache__/`.
-**Why it's wrong:** The orchestration brain cannot be reviewed, tested, or modified from source.
-**Do this instead:** Commit `function_app.py`, `audit_engine.py`, `rdv_engine.py` source.
+**What happens:** Downloading SharePoint doc with user-supplied filename could write outside job directory
+**Why it's wrong:** Path traversal vulnerability (e.g., filename = "../../../etc/passwd")
+**Do this instead:** Sanitize with `_safe_filename()`, then validate final path with `os.path.commonpath()` (see `sharepoint.py` lines 24–33, 88–93)
+
+### Unvalidated document_id in Job Directory Lookups
+
+**What happens:** API accepts any string for document_id, allows arbitrary dir access
+**Why it's wrong:** Enumeration/disclosure of other users' audit results
+**Do this instead:** Require UUID v4 format, verify directory exists, use commonpath for confinement (see `api_server.py` lines 137–173, _validate_document_id)
+
+### Missing JWKS Caching / TTL
+
+**What happens:** Every API request fetches JWKS from Microsoft, causing rate limits
+**Why it's wrong:** Unavailability if Microsoft's service is slow; performance degradation
+**Do this instead:** Cache JWKS with TTL (default 3600s), validate token signature locally (see `auth.py` with `cachetools.TTLCache`)
 
 ## Error Handling
 
-**Strategy:** Fail-fast at security boundaries (HTTP 4xx/5xx in gateway), fail-closed on data integrity (Fabric), best-effort + WARNING logs for non-critical steps (FIC, Teams).
+**Strategy:** Fail-fast on configuration (startup), graceful degradation on transient errors (retries), audit operation never crashes the API (exceptions caught, returned as status "Failed").
 
 **Patterns:**
-- Gateway wraps backend calls and maps exceptions to `HTTPException` (502/500) with `log_security`.
-- PowerShell orchestrator uses `Set-StrictMode`, `$ErrorActionPreference="Stop"`, structured JSON logging (`Write-JsonLog`) and per-phase exit codes.
-- CLI stages `exit(1)` on missing inputs / missing SDK / missing env vars.
+- **Configuration errors** (missing TENANT_ID): Raised at app startup via `load_config(require_auth=True)`, halts server
+- **Auth errors** (invalid JWT): HTTPException 401 or 403, logged with safe_logger.redact()
+- **Path traversal** (bad document_id): HTTPException 400 (format) or 404 (not found), logged
+- **Rate limit exceeded**: HTTPException 429, no error detail (prevents enumeration)
+- **Audit failures** (OCR crash, Fabric unreachable): Captured in `audit_pipeline.py:run_audit()`, returned as `{"status": "Failed", "error": "...", "stages": [...]}` (never raises)
+- **Transient cloud errors**: Orchestration retries automatically (Durable Functions retry policies); if all retries fail, audit status = "Failed" + error message
 
 ## Cross-Cutting Concerns
 
-**Logging:** `scripts/safe_logger.py` (`log_security`, redaction); structured JSON pipeline log (`pipeline.log.json`); App Insights middleware in gateway.
-**Validation:** Pydantic request models (`AuditRequest`, `PlannerTaskRequest`, `FicheRDVRequest`); path-traversal guards (`api_server.py:198`, `post_audit_workflow.py:76` via `commonpath`); dangerous-char rejection in PowerShell.
-**Authentication:** Entra ID JWT (RS256, JWKS, issuer/scope/role checks) in `scripts/auth.py`; Copilot enforces SharePoint read-only permissions per `agent.mcs.yml`; Fabric uses `DefaultAzureCredential`.
+**Logging:** 
+- Desktop app: `print()` statements with `[PHASE]` prefixes, no PII
+- Backend: `safe_logger.log_security()` for sensitive events (auth, path checks); masks secrets via regex; Application Insights integration via AppInsightsMiddleware
+
+**Validation:**
+- **Input:** JWT signature (RS256 JWKS), document_id (UUID + confinement), montants (regex), dates (ISO 8601), file extensions (allowlist)
+- **Output:** Schema validation (audit_result.schema.json) optional but encouraged; FIC generation validates client name (non-empty, length-bounded)
+
+**Authentication:**
+- **Copilot Studio users:** Entra ID implicit (built-in); JWT issued by Microsoft
+- **API callers:** JWT RS256 validation via JWKS (`/discovery/v2.0/keys`); scopes checked (Audit.Trigger), roles optional
+- **Desktop app:** No auth (local file-based)
 
 ---
 
-*Architecture analysis: 2026-06-08*
+*Architecture analysis: 2026-06-10*
