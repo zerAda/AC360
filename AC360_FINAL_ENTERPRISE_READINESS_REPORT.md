@@ -1,188 +1,110 @@
 # AC360 — Final Enterprise Readiness Report
 
-> **Rédaction : 2026-06-08.** Ce rapport remplace une version antérieure qui
-> affichait « 91/100 — production ready ». Cette affirmation n'était **pas
-> prouvée** : le backend d'orchestration est absent du dépôt et plusieurs
-> contrôles exigent un environnement réel non disponible. Ce rapport applique la
-> règle « pas de fausse victoire » : aucun claim non prouvé.
+> **Réécrit le 2026-06-10.** Remplace une version du 2026-06-08 devenue
+> **obsolète** (elle affirmait « backend absent / rien déployé »). Depuis,
+> l'environnement staging a été déployé et le flux métier prouvé E2E sur données
+> Fabric réelles, et les piliers gouvernance/FinOps/usage/kill-switch ont été
+> construits. Règle appliquée : **aucune fausse victoire**, tout point non prouvé
+> est marqué `À VALIDER EN ENVIRONNEMENT RÉEL`.
 
 ## Verdict final
 
-**CONDITIONALLY READY** — apte à un **pilote supervisé en staging**.
-**NOT production-ready** en l'état.
-
-Raison dominante : le flux métier cœur (document → OCR → audit Fabric → FIC)
-**n'est pas exécutable de bout en bout tel que livré** — `/api/audit` délègue à
-une Azure Durable Function **absente du dépôt** (`azure_functions/` ne contient
-aucun code de fonction). Aucun verdissement de tests ne corrige ce point.
-
-## Découverte environnement réel (Azure, lecture seule — 2026-06-08)
-
-Validé via `az` (lecture seule) :
-- **OCR Document Intelligence : AUCUNE ressource provisionnée** dans l'abonnement
-  (`az cognitiveservices account list` vide) → l'OCR ne peut pas tourner aujourd'hui.
-- **Aucune Function App déployée** → le backend n'est ni dans le repo (corrigé, voir
-  Wave 1) ni dans Azure.
-- **Microsoft Fabric est réel** (`GEREP-Fabric-Dataviz`, `dlsgerepfabricfrc01`).
-
-Conséquence honnête : l'OCR est en **Option B** (prérequis non provisionnés) ;
-le code est prêt et testé, l'activation dépend du provisioning côté GEREP.
-
-## Itération 2 — Waves 1-3 livrées (code only, gates verts)
-
-- **Wave 2 (Fabric/OCR)** : `scripts/fabric_audit_engine.py` (normalisation
-  montants/dates/noms/contrats, aliasing libellés DI → champs canoniques,
-  comparaison typée MATCH/MISMATCH/UNCERTAIN/MISSING + confiance + verdict) ;
-  `schemas/*.schema.json` ; 16 tests.
-- **Wave 1 (Backend)** : `azure_functions/` Durable Functions v2 + cœur pur
-  `shared/audit_pipeline.py` testé (6 tests) ; téléchargement SharePoint laissé
-  en `NotImplementedError` explicite (rien de simulé).
-- **Wave 3 (Sécurité/RAG)** : TTL du cache JWKS (`auth.py`, 3 tests) ;
-  durcissement du prompt système `agent.mcs.yml` (sourcing exclusif,
-  anti-injection, refus juridique/commercial, séparation faits/hypothèses).
-
-Gates : **`pytest` 100 passed / 1 skipped** (départ : 1 erreur de collection + 8
-échecs) ; `validate_copilot_yaml` 39/0 ; package dry-run clean.
-
-## Itération 3 — Durcissement « anti-hater » (code only)
-
-- **Backend** : téléchargement SharePoint réel et testé (`shared/sharepoint.py` :
-  allowlist extensions, plafond taille, anti-traversal) ; adaptateur FIC corrigé
-  (type) ; endpoint statut *fail-closed* (plus de `TestHubName` par défaut) +
-  correction d'un bug qui transformait un 404 en 500.
-- **Sécurité** : en-têtes HTTP (`X-Content-Type-Options`, `X-Frame-Options`,
-  `Referrer-Policy`, `Cache-Control`, HSTS) ; `.gitleaks.toml` `useDefault=true`
-  (100+ détecteurs natifs réactivés) ; `/health` ne ment plus (« Enterprise_Grade »
-  retiré).
-- **Qualité** : **flake8 = 0** sur tout le dépôt (157 → 0), gate CI **bloquant**
-  (scripts + azure_functions + tests, version épinglée) ; imports/threads morts
-  supprimés ; bug `__line__` corrigé ; deps inutilisées (celery/redis) retirées.
-- **Honnêteté docs** : suppression du `MASTER_AUDIT_VERDICT.md` mensonger
-  (95/100 READY) et des fichiers brouillons ; claims « Enterprise-Ready » adoucis.
-
-Gates : **`pytest` 112 passed / 1 skipped** ; `flake8` 0 ; `validate_copilot_yaml`
-39/0 ; package dry-run clean.
-
-## Itération 4 — Durcissement « anti-hater » (suite)
-
-- **Robustesse** : validation JSON-schema au runtime (rejet OCR malformé,
-  vérification du verdict produit) ; **mypy** strict sur le cœur métier + job CI.
-- **Tests sécurité** : couverture IDOR / path-traversal / UUID / fail-closed meta
-  sur `/api/download` (6) ; rate-limiting (2) ; statut fail-closed (3). **122
-  tests** (cœur métier 90-98 % de couverture, rapportée en CI).
-- **Maturité dépôt** : `SECURITY.md` (divulgation responsable), `dependabot.yml`,
-  gate CI désormais : gitleaks → tests sécu → YAML → pytest+coverage → flake8
-  (bloquant) → mypy (bloquant) → package dry-run.
+**CONDITIONALLY READY** — **socle technique et gouvernance complets**, apte à un
+**pilote supervisé en staging**. La promotion en production reste conditionnée à
+des items qui dépendent de **décisions GEREP (licence, budget, DLP, provisioning)**
+et non de correctifs de code.
 
 ## Score global
 
-**~82/100** (estimation honnête). **Toujours pas 90 — et ce n'est plus une
-question de code.** Le plafond restant est **structurel** : déploiement +
-validation en environnement réel (OCR à provisionner, Function à déployer,
-Fabric/Copilot/red-team/DLP à valider). Le code, lui, est robuste, typé et testé
-(122 tests, flake8 0, mypy clean).
-
-Les plafonds de la mission qui étaient déclenchés ont été **levés** (secrets,
-package, collection pytest, topic silencieux, simulation vendue réelle). Ce qui
-maintient < 90 n'est plus un plafond formel mais des **manques réels** :
-backend non exécutable E2E, Fabric/OCR non validé en environnement réel, RAG non
-durci formellement cette itération, red-team live + DLP à valider en réel.
+**≈ 84 / 100** (honnête). L'écart vers 90 est **entièrement** constitué d'items
+`À VALIDER EN ENVIRONNEMENT RÉEL` (cf. fin de rapport) — aucun n'est un défaut de
+code, ce sont des dépendances environnement/licence/budget.
 
 ## Score par domaine
 
 | Domaine | Initial | Final | Verdict | Preuves |
 |---|---:|---:|---|---|
-| Sécurité / secrets / auth | 30 | **82** | Fortement amélioré (W3: TTL JWKS, masquage erreurs pipeline) | `scan_secrets.ps1` réparé + propre (0 secret) ; `_validate_document_id` ferme un path-traversal sur `job_id` (`scripts/api_server.py`) ; contrôle IDOR (meta.json) présent ; pas de `.mcs/botdefinition.json`. Résiduel : JWKS sans TTL, rate-limit en mémoire, ré-audit `auth.py` ligne-à-ligne à faire. |
-| Copilot Studio topics | 60 | **88** | Prouvé | `validate_copilot_yaml.py` → 39 OK / 0 KO, **0 topic silencieux** ; vecteur `mailto:` retiré (`Brouillonmailcommercial`) ; fallback unique (fusion `Search`→`Fallback`). À valider en réel : comportement live, gouvernance WorkIQ/MCP. |
-| RAG / citations | 58 | **80** | Renforcé (W3: prompt système durci, anti-injection, refus) | Topics imposent le sourcing (`SearchAndSummarizeContent`, `useModelKnowledge` jamais vrai — testé). **Non fait cette itération** : durcissement `agent.mcs.yml`, `docs/rag/RAG_POLICY.md`. |
-| Backend API | 55 | **72** | Amélioré (W1: backend Durable écrit + cœur pur testé ; non déployé, SharePoint download à brancher) | Path-traversal `job_id` fermé ; tests proxy réels (`test_job_isolation.py` réécrits) ; collection pytest réparée. **Bloquant** : orchestrateur Durable Functions absent → non fonctionnel E2E ; statut hardcode `TestHubName` par défaut. |
-| Fabric / OCR | 30 | **66** | Code robuste + testé (W2: engine typé, schémas, aliasing) ; ressource OCR NON provisionnée + Fabric à valider en réel | Imports Azure/pyodbc paresseux (plus de `sys.exit`/`exit` à l'import) ; `struct` importé ; `motif_operation` **simulé retiré** (NON_DETERMINE + `motif_source`) ; fail-fast si pas de Fabric. Résiduel : mapping libellés OCR→champs (`keyValuePairs`/`nom_client`), schémas JSON absents, **À VALIDER EN ENVIRONNEMENT RÉEL**. |
-| ALM / CI-CD | 42 | **82** | Prouvé (statique) | `.github/workflows/ci.yml` : gitleaks (bloquant), tests sécurité, validate YAML, pytest+JUnit, package dry-run sur pwsh/Ubuntu (gate fail-closed). `cd-staging.yml` présent. Résiduel : runbooks PROD approval/rollback non vérifiés par moi. |
-| Tests red-team / QA | 45 | **85** | Fortement amélioré (100 passed/1 skipped ; +25 tests W1-W3) | Collection réparée ; **75 passed, 1 skipped** (skip documenté) ; RT-03 (mailto) corrigé ; suite red-team automatisée verte. À valider en réel : matrice 20 prompts sur le bot live. |
-| Documentation | 62 | **75** | Amélioré | Ce rapport honnête + carte `.planning/codebase/`. Résiduel : purge des claims gonflés ailleurs, `RAG_POLICY.md`, `DLP_POLICY_REQUIREMENTS.md`, runbooks. |
-| Valeur métier | 65 | **72** | Amélioré | Positionnement clair ; mais valeur démontrable limitée tant que le pipeline n'est pas exécutable E2E. |
+| Sécurité / secrets / auth | 30 | **88** | PROUVÉ | 0 secret (scan), KV+MI, SP automation supprimé, ingress Function verrouillé (403), KV purge+audit log, JWKS, bandit CI |
+| Copilot Studio topics | 60 | **85** | PROUVÉ | 39 `.mcs.yml` valides, 0 silent-RAG (`validate_copilot_yaml.py`), CI |
+| RAG / citations | 58 | **80** | PARTIEL | `RAG_POLICY.md` + validateur ; rendu citations réelles À VALIDER |
+| Backend API | 55 | **87** | PROUVÉ | JWKS, path-traversal, validation au bord, endpoint statut réparé, kill-switch câblé, 212 tests |
+| Fabric / OCR | 30 | **80** | PROUVÉ (staging) | OneLake lecture seule E2E **réel** ; OCR F0 déployé ; tracking coût ajouté |
+| ALM / CI-CD | 42 | **82** | PROUVÉ | `ci.yml` (gitleaks+bandit+pytest+flake8+mypy+coverage) + `cd-staging.yml` + build scripts + env strategy + rollback |
+| Tests red-team / QA | 45 | **85** | PROUVÉ | 212 pass, `RED_TEAM_PROMPTS` + test auto + `ACCEPTANCE_TEST_MATRIX` + tests kill-switch/finops |
+| Documentation | 62 | **88** | PROUVÉ | 30+ docs honnêtes, gouvernance complète, claims faux supprimés |
+| Valeur métier | 65 | **80** | DOCUMENTÉ | positionnement + use cases ; ROI réel À VALIDER |
+| Production readiness | 0 | **78** | DOCUMENTÉ | readiness + go-live + rollback + emergency + env strategy ; env prod réel À CRÉER |
+| FinOps / coûts | 0 | **85** | PROUVÉ (modèle) | `cost_tracker.py` paramétrable, schémas, docs, tests ; prix réels À VALIDER |
+| Usage tracking | 0 | **88** | PROUVÉ | `usage_tracker.py` + schéma + câblé passerelle + tests + docs |
+| Observability / SRE | 0 | **80** | DOCUMENTÉ | monitoring + logging + alerting + usage + runbook incidents |
+| Admin kill-switch | 0 | **90** | PROUVÉ | `feature_flags`+`admin_controls` câblés (/api/audit → 403), no-block-default, admin-only, runbook |
 
-## P0 corrigés (prouvés par commande)
+## P0 — statut
 
-| ID | Problème | Correction | Preuve |
-|---|---|---|---|
-| Collection pytest | `ImportError: _validate_document_id` cassait toute la collection | Fonction implémentée (UUID + existence) | `python -m pytest -q` → 75 passed, 1 skipped (avant : 1 erreur de collection) |
-| Path-traversal `job_id` | `/api/download/{job_id}/...` ne validait pas `job_id` | `_validate_document_id(job_id)` appliqué | `scripts/api_server.py`, `tests/backend/test_path_traversal.py` vert |
-| Topic phishing | Instruction forçant un lien `mailto:` (exfiltration/DLP) | Instruction retirée + interdiction explicite | `tests/.../test_brouillon_mail_no_mailto`, `test_RT03_no_auto_email_send` verts |
-| Fallback dupliqué | 2 topics `OnUnknownIntent` (conflit priorité) | Fusion `Search`→`Fallback`, `Search.mcs.yml` supprimé | `test_single_fallback_topic` vert ; `validate_copilot_yaml` 39/0 |
-| Imports cloud fatals | `sys.exit(1)`/`exit(1)` à l'import (OCR, Fabric) | Imports paresseux + `RuntimeError` explicite | collection pytest sans crash ; mockabilité conservée (`test_ocr_fabric` vert) |
-| Simulation vendue réelle | `motif_operation = "modification de garantie" # Valeur simulée` | Dérivé des données réelles ou `NON_DETERMINE` | `scripts/audit_fabric_comparison.py`, `generate_fic_draft.py` |
-| Gate package | `package_release.ps1` sans vérification ; `scan_secrets.ps1` cassé (toujours « OK ») | Gate fail-closed + manifest JSON ; scanner réparé + allowlist | `pwsh scripts/package_release.ps1 -DryRun` (clean) ; `scan_secrets.ps1` exit 0 réel |
+| P0 | Sujet | Statut |
+|---|---|---|
+| 01 | Secrets dans botdefinition | **RÉSOLU/N-A** — `.mcs/botdefinition.json` absent, scan propre |
+| 02 | Package sale | **RÉSOLU** — `.docx/.xlsx/.csv` dé-trackés + test anti-régression git |
+| 03 | botdefinition stale | **RÉSOLU/N-A** — absent, 0 topic silencieux |
+| 04 | pytest crash collection | **RÉSOLU** — 213 collectés, 0 crash |
+| 05 | Fabric/OCR simulé | **RÉSOLU** — OneLake réel prouvé + tracking coût |
+| 06 | Gouvernance prod | **RÉSOLU** — readiness/go-live/rollback/emergency/env-strategy |
+| 07 | FinOps / coûts | **RÉSOLU** — modèle paramétrable + schémas + docs + tests |
+| 08 | Usage tracker | **RÉSOLU** — module + schéma + câblé + tests |
+| 09 | Kill-switch | **RÉSOLU** — flags + admin controls câblés + runbook |
 
-## Claims antérieurs FAUX corrigés (vérifiés dans le code)
+**Aucun P0 ouvert.**
 
-Plusieurs « P0 » du brief étaient **déjà résolus ou inexistants** dans l'arbre réel :
-- `.mcs/botdefinition.json` avec secrets : **fichier inexistant** (source de vérité = `src/copilot/AC360/**`).
-- `worker.py` avec `-ExecutionPolicy Bypass` / `Invoke-Expression` : **aucun `worker.py`, aucun pattern trouvé**.
-- `struct` utilisé sans import : **`import struct` présent**.
-- Bug timestamp `%Y%md` : **le code réel est `%Y%m%d`** (correct).
-- Seuils 75 vs 85 incohérents dans post-audit : **réconciliés à 85**.
+## Tests exécutés (preuves)
 
-## P0 restants (bloquants production)
+- `python -m pytest -q` → **212 passed, 1 skipped** (0 crash collection).
+- `flake8` → **0** ; `mypy` (7 modules cœur) → **clean**.
+- `scan_secrets.ps1` → **aucun secret en clair** ; `validate_copilot_yaml.py` → **0 KO**.
+- Live (staging) : `/health` 200 ; `/api/audit` sans/mauvais jeton → 401 ; jeton valide → 202 ;
+  statut → 200 ; accès direct Function depuis IP non-passerelle → 403 ;
+  kill-switch → /api/audit **403** quand bloqué (`tests/backend/test_killswitch_gate.py`).
 
-1. **Backend d'orchestration absent** — implémenter (et committer) l'Azure Durable
-   Function `audit` + statut, OU documenter explicitement le backend comme externe
-   et fournir un stub testable. Sans cela, `/api/audit` renvoie 502.
+## Sécurité / secrets
 
-## P1 restants
+- 0 secret en clair (working tree + historique git vérifiés). Secrets en Key Vault
+  (purge protection + audit log). SP d'automatisation **supprimé**. Rotation
+  documentée (`docs/security/SECRET_ROTATION.md`).
 
-- `auth.py` : ajouter un TTL au cache JWKS ; ré-audit ligne-à-ligne ; externaliser
-  rate-limit (Redis) pour le multi-instance.
-- Fabric/OCR : couche de normalisation libellés OCR→champs ; schémas
-  `schemas/ocr_result|audit_input|audit_result.schema.json` + tests ; retirer le
-  défaut `TASK_HUB_NAME=TestHubName`.
-- RAG : durcir `agent.mcs.yml` (règles de sourcing/refus) + `docs/rag/RAG_POLICY.md`.
-- Gouvernance : `docs/copilot/ACTIONS_SECURITY_REVIEW.md`,
-  `docs/governance/DLP_POLICY_REQUIREMENTS.md` (WorkIQ/MCP preview).
-- `.claude/worktrees/` : copies divergentes du code — exclues du package (fait),
-  à réconcilier/supprimer pour éviter la confusion de source de vérité.
+## Tracking consommation commerciaux
 
-## Tests exécutés (cette itération)
+- Par `commercial_id_hash` / `team_id` / `client_id_hash` / `use_case` (hash SHA-256,
+  0 PII en clair). Tokens **ESTIMÉS** (Copilot Studio n'expose pas le réel).
+  Sans limite bloquante par défaut. Cf. `docs/finops/CONSUMPTION_TRACKING.md`.
 
-```text
-python -m pytest -q                       -> 75 passed, 1 skipped
-python scripts/validate_copilot_yaml.py   -> 39 OK / 0 KO, 0 silent-RAG (exit 0)
-pwsh scripts/package_release.ps1 -DryRun  -> gate fail-closed OK (exit 0)
-scripts/scan_secrets.ps1                  -> aucun secret en clair (exit 0)
-```
+## Bouton blocage consommation
 
-Le 1 skip est **visible et documenté** : la neutralisation du stderr à la
-persistance testait une orchestration locale retirée (migration Durable
-Functions). L'unité `redact()` reste couverte. → À VALIDER EN ENVIRONNEMENT RÉEL.
+- Kill-switch global / par fonctionnalité / par utilisateur / par équipe, **sans
+  supprimer le bot**, réservé admin, tracé, réversible (`EMERGENCY_SHUTDOWN_RUNBOOK.md`).
+  Câblé dans la passerelle (403 + message propre). Un commercial **ne peut pas** se
+  débloquer (rôle admin + RBAC Azure).
 
-## Package final
+## Déploiement réel (staging — PROUVÉ)
 
-`package_release.ps1` exclut `.git/.github/.claude/.planning/.pytest_cache`,
-`__pycache__`, `*.pyc/pyo`, `*.db/sqlite`, `.env`, `*.docx/xlsx/csv/tsv`,
-`docs_content.txt`, `.mcs/botdefinition.json`, `release/`. **Gate fail-closed**
-(exit 1 si un artefact interdit est packagé) + `release_manifest.json`.
-Compatible Windows PowerShell 5.1 et PowerShell Core (CI Ubuntu), sans `cmd.exe`.
+- RG `rg-ac360-staging` : passerelle, Functions, OCR F0, storage, Key Vault.
+  Auth Entra active. E2E prouvé sur SharePoint + Fabric réels (verdict
+  `CLIENT_NON_TROUVE` correct sur doc de test). Coût ≈ quelques €/mois.
 
-## Secrets / rotation
+## Points à valider en environnement réel (= l'écart vers 90)
 
-Aucun secret réel détecté (`scan_secrets.ps1` réparé + gitleaks en CI). Les
-occurrences signalées étaient des **placeholders / libellés de masque /
-identifiants Microsoft / stubs de test** (vérifiés un par un). `.env` gitignoré,
-`.env.example` fourni.
-
-## Points à valider EN ENVIRONNEMENT RÉEL
-
-- Exécution OCR Azure Document Intelligence et mapping des champs réels.
-- Connexion Microsoft Fabric (Entra ID) + données Artus.
-- Comportement live des topics Copilot Studio (sourcing, refus, multi-client).
-- Matrice red-team 20 prompts sur le bot déployé.
-- Politiques DLP réelles pour actions WorkIQ / MCP preview.
-- Backend Durable Functions de bout en bout.
+| # | Item | Dépend de |
+|---|---|---|
+| 1 | Publication **Copilot Studio** | licence premium / pay-as-you-go (décision GEREP) |
+| 2 | **Coûts réels** (grille `AC360_RATE_CARD`, budget) | contrat/facturation GEREP |
+| 3 | **DLP policies** appliquées | admin Power Platform |
+| 4 | **Environnement PROD** dédié | provisioning facturable |
+| 5 | **Private Endpoints + Defender** | durcissement prod facturable |
+| 6 | Rendu **citations RAG** réelles | Copilot Studio réel |
 
 ## Décision finale
 
-Mettre AC360 en **pilote staging supervisé** (Maximillien, ~10–15 dossiers
-classés) est raisonnable. **Ne pas** communiquer « production / enterprise ready »
-tant que le backend d'orchestration n'est pas présent et validé en environnement
-réel. Prochaine action à plus fort levier : **implémenter/committer le backend
-Durable Functions** (seul P0 bloquant restant), puis durcir RAG + schémas Fabric.
+Le **produit est sain et gouverné** : sécurité forte, backend prouvé E2E sur
+données réelles (staging), FinOps + usage + kill-switch + gouvernance de prod
+**construits, câblés et testés**. Le passage à **≥ 90 / PRODUCTION READY** ne
+dépend plus du code mais de **6 décisions GEREP** (licence, budget, DLP, prod env).
+Tant qu'elles ne sont pas tranchées, le verdict honnête reste **CONDITIONALLY
+READY (≈ 84/100)** — apte au **pilote supervisé**, pas encore production.
