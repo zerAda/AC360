@@ -89,8 +89,50 @@ local.settings.json
 add_tags.py
 patch_yaml.py
 CLAUDE_HANDOFF.md
+AGENTS.md
 docs/antigravity_*.md
 docs/MASTER_AUDIT_VERDICT.md
+AC360_FINAL_ENTERPRISE_READINESS_REPORT.md
+AUDIT_FINAL_ENTERPRISE_READINESS.md
+matrice_content.md
+scripts/ralphe_loop_tester.py
+
+# Demo sample data (company-branded fixtures)
+demo/sample_ocr_gerep.json
+demo/sample_reference.json
+
+# Old Tkinter app (superseded by Azure backend)
+src/core.py
+src/main.py
+src/requirements.txt
+
+# Trimmed docs (moved to wiki)
+docs/alm/
+docs/finops/
+docs/governance/DLP_POLICY_REQUIREMENTS.md
+docs/governance/ENVIRONMENT_STRATEGY.md
+docs/governance/RACI.md
+docs/observability/
+docs/product/CHEAT_SHEET_AC360.md
+docs/product/DEMO_SCRIPT.md
+docs/product/KPI_FRAMEWORK.md
+docs/product/PRODUCT_POSITIONING.md
+docs/product/USER_PERSONAS.md
+docs/production/GO_LIVE_CHECKLIST.md
+docs/production/PRODUCTION_READINESS.md
+docs/production/ROLLBACK_RUNBOOK.md
+docs/rag/
+docs/security/ADMIN_CONTROLS.md
+docs/security/SECRET_ROTATION.md
+docs/security/SECURITY_BASELINE.md
+docs/security/SECURITY_GATE.md
+docs/support/
+docs/00_PROJECT_INVENTORY.md
+docs/architecture/ARCHITECTURE_TARGET.md
+docs/copilot/ACTIONS_SECURITY_REVIEW.md
+docs/copilot/COPILOT_SETTINGS_DECISIONS.md
+tests/acceptance/ACCEPTANCE_TEST_MATRIX.md
+tests/red_team/RED_TEAM_PROMPTS.md
 
 # Project Specific
 .planning/STATE.md.tmp
