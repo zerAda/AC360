@@ -1,0 +1,68 @@
+mcs.metadata:
+  componentName: Statut Audit AC360
+  description: Récupère le statut/verdict d'un audit documentaire déjà lancé (orchestration Durable asynchrone), via la passerelle Azure.
+kind: AdaptiveDialog
+beginDialog:
+  kind: OnRecognizedIntent
+  id: main
+  intent:
+    displayName: Statut Audit AC360
+    triggerQueries:
+      - Où en est mon audit ?
+      - Statut de l'audit
+      - Le résultat de l'audit est-il prêt ?
+      - Vérifie l'avancement de l'audit
+      - Donne-moi le verdict de l'audit
+
+  actions:
+    - kind: ConditionGroup
+      id: condition_has_job
+      conditions:
+        - id: has_job_id
+          condition: =!IsBlank(Global.AuditJobId)
+          actions:
+            - kind: SendActivity
+              id: send-checking
+              activity: "🔄 Je vérifie l'audit (référence {Global.AuditJobId})…"
+
+            - kind: HttpRequestAction
+              id: http_status_recheck
+              method: Get
+              url: ="https://ac360-gateway-staging.azurewebsites.net/api/audit/" & Global.AuditJobId & "/status"
+              headers:
+                Authorization: ="Bearer " & System.User.AccessToken
+              responseStringVariable: Topic.StatusResponse
+
+            - kind: ConditionGroup
+              id: condition_recheck
+              conditions:
+                - id: recheck_completed
+                  condition: =Text(ParseJSON(Topic.StatusResponse).status) = "Completed"
+                  actions:
+                    - kind: SendActivity
+                      id: display_recheck_result
+                      activity: |-
+                        ## 🔎 Verdict de l'audit
+
+                        {Topic.StatusResponse}
+
+                        _Comparaison à la référence Microsoft Fabric (lecture seule)._
+              elseActions:
+                - kind: SendActivity
+                  id: msg_recheck_pending
+                  activity: "⏳ L'audit (référence {Global.AuditJobId}) est encore en cours. Réessayez dans quelques instants."
+
+            - kind: EndDialog
+              id: end_recheck
+              clearTopicQueue: true
+
+      elseActions:
+        - kind: SendActivity
+          id: msg_no_job
+          activity: |-
+            Je n'ai aucun audit en cours pour cette conversation.
+
+            Dites « Lance un audit » pour démarrer l'audit documentaire d'un dossier.
+        - kind: EndDialog
+          id: end_no_job
+          clearTopicQueue: true

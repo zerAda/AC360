@@ -16,6 +16,14 @@ COPILOT_ROOT = Path(__file__).parent.parent / "src" / "copilot" / "AC360"
 
 RAG_KIND = "SearchAndSummarizeContent"
 CONDITION_KIND = "ConditionGroup"
+
+# Hôtes de passerelle morts / placeholder : une action HTTP qui les vise échoue
+# à l'exécution (DNS/404). Le seul hôte de passerelle déployé est
+# ac360-gateway-staging. Anti-régression sur des URLs hardcodées erronées.
+KNOWN_BAD_GATEWAY_HOSTS = ("ac360-api.azurewebsites.net",)
+# Marqueurs de « topic stub » : une rubrique métier qui annonce une
+# fonctionnalité « bientôt disponible » au lieu de l'exécuter = non câblée.
+STUB_MARKERS = ("en cours de déploiement", "bientôt disponible", "coming soon")
 # Default variable a SearchAndSummarizeContent node writes to when no explicit
 # `variable:` is declared. Copilot Studio binds the generated answer to
 # Topic.Answer implicitly, so we must reason about it the same way.
@@ -91,9 +99,34 @@ def find_silent_rag(data):
     return issues
 
 
+def find_wiring_issues(data):
+    """Détecte les défauts de câblage end-to-end : action HTTP vers un hôte mort
+    et topic « stub » (annonce au lieu d'exécuter). Liste vide = OK."""
+    issues = []
+    if not isinstance(data, dict):
+        return issues
+    begin = data.get("beginDialog")
+    if not isinstance(begin, dict):
+        return issues
+    for act in _walk_actions(begin.get("actions")):
+        kind = act.get("kind")
+        if kind == "HttpRequestAction":
+            url = str(act.get("url", ""))
+            for bad in KNOWN_BAD_GATEWAY_HOSTS:
+                if bad in url:
+                    issues.append(f"HttpRequestAction vise un hôte mort/placeholder : {bad}")
+        elif kind == "SendActivity":
+            text = str(act.get("activity", "")).lower()
+            for marker in STUB_MARKERS:
+                if marker in text:
+                    issues.append(f"texte de stub détecté (« {marker} ») — fonctionnalité non câblée ?")
+    return issues
+
+
 def validate_all():
     ok, ko = [], []
     rag_ko = []  # (filename, variable, issue)
+    wiring_ko = []  # (filename, issue)
     if not COPILOT_ROOT.exists():
         print(f"[ECHEC] Le répertoire {COPILOT_ROOT} n'existe pas.")
         sys.exit(1)
@@ -108,6 +141,8 @@ def validate_all():
                 ok.append(yml_file.name)
                 for var, issue in find_silent_rag(data):
                     rag_ko.append((yml_file.name, var, issue))
+                for issue in find_wiring_issues(data):
+                    wiring_ko.append((yml_file.name, issue))
         except yaml.YAMLError as e:
             ko.append((yml_file.name, str(e)[:120]))
         except Exception as e:
@@ -133,7 +168,17 @@ def validate_all():
     print("")
     print(f"Résultat RAG : {len(rag_ko)} KO")
 
-    if ko or rag_ko:
+    print("")
+    print("=== Contrôle câblage end-to-end (hôte mort / topic stub) ===")
+    if wiring_ko:
+        for name, issue in wiring_ko:
+            print(f"  [KO]  {name} -> {issue}")
+    else:
+        print("  [OK]  Aucun hôte mort ni topic stub détecté.")
+    print("")
+    print(f"Résultat câblage : {len(wiring_ko)} KO")
+
+    if ko or rag_ko or wiring_ko:
         print("\n[ECHEC] Validation Copilot Studio en échec.")
         sys.exit(1)
     elif not ok:

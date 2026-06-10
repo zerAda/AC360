@@ -34,7 +34,7 @@ beginDialog:
     - kind: HttpRequestAction
       id: http_planner
       method: Post
-      url: https://ac360-api.azurewebsites.net/api/planner/task
+      url: https://ac360-gateway-staging.azurewebsites.net/api/planner/task
       headers:
         Authorization: ="Bearer " & System.User.AccessToken
       body:
