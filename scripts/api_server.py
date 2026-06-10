@@ -35,6 +35,26 @@ def _validate_sharepoint_doc_id(document_id: str) -> str:
     return document_id
 
 
+# --- Planner : résolution des paramètres (anti-POC) -------------------------
+# Le topic envoie des placeholders ("DEFAULT_PLAN"/"DEFAULT_BUCKET") ; Graph les
+# rejette. On résout vers les IDs réels configurés, et on normalise la date au
+# format ISO 8601 attendu par Graph (sinon 400). Échec CLAIR si non configuré.
+_PLANNER_PLACEHOLDER_PLAN = {"", "DEFAULT_PLAN"}
+_PLANNER_PLACEHOLDER_BUCKET = {"", "DEFAULT_BUCKET"}
+_DATE_ONLY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _resolve_planner_params(plan_id, bucket_id, due_date):
+    plan = plan_id if plan_id not in _PLANNER_PLACEHOLDER_PLAN \
+        else os.environ.get("PLANNER_DEFAULT_PLAN_ID", "")
+    bucket = bucket_id if bucket_id not in _PLANNER_PLACEHOLDER_BUCKET \
+        else os.environ.get("PLANNER_DEFAULT_BUCKET_ID", "")
+    due = due_date
+    if due_date and _DATE_ONLY_RE.match(str(due_date).strip()):
+        due = str(due_date).strip() + "T00:00:00Z"  # date -> datetime ISO Graph
+    return plan, bucket, due
+
+
 app = FastAPI(
     title="AC360 Audit Engine API",
     description="API Enterprise Grade - Passerelle vers Azure Durable Functions",
@@ -263,10 +283,19 @@ async def api_create_planner_task(
 ):
     try:
         token = req.headers.get("Authorization", "").replace("Bearer ", "")
+        plan_id, bucket_id, due_date = _resolve_planner_params(
+            request.plan_id, request.bucket_id, request.due_date)
+        if not plan_id or not bucket_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Plan/bucket Planner non configuré "
+                       "(définir PLANNER_DEFAULT_PLAN_ID / PLANNER_DEFAULT_BUCKET_ID).")
         log_security("INFO", f"Création tâche Planner pour {user_upn}: {request.title}")
-        result = await create_planner_task(token, request.plan_id, request.bucket_id, request.title, request.due_date)
+        result = await create_planner_task(token, plan_id, bucket_id, request.title, due_date)
         return {"status": "success", "task_title": request.title,
-                "due_date": request.due_date, "planner_task_id": result.get("id")}
+                "due_date": due_date, "planner_task_id": result.get("id")}
+    except HTTPException:
+        raise
     except httpx.HTTPStatusError as e:
         log_security("ERROR", f"Graph API Error: {e.response.text}")
         raise HTTPException(status_code=502, detail="Erreur Microsoft Graph.")
