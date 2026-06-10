@@ -1,21 +1,4 @@
-"""run_demo.py — Démo AC360 de bout en bout, SANS dépendance cloud obligatoire.
-
-Par défaut, la démo tourne 100 % hors-ligne avec des fixtures locales
-(`demo/sample_ocr_gerep.json` + `demo/sample_reference.json`) : aucun Azure, aucun
-Fabric, aucun coût. Elle montre la VRAIE valeur du produit :
-
-    OCR (réel ou fixture) -> extraction des champs canoniques
-      -> rapprochement client -> comparaison typée (MATCH/MISMATCH/UNCERTAIN/MISSING)
-      -> verdict d'audit -> brouillon de FIC (.docx)
-
-Modes :
-  python scripts/run_demo.py                       # démo hors-ligne (fixtures)
-  python scripts/run_demo.py --ocr mon_ocr.json    # votre JSON OCR
-  python scripts/run_demo.py --pdf contrat.pdf     # OCR réel via Azure F0 (si .env configuré)
-  python scripts/run_demo.py --fic                 # génère aussi le brouillon FIC .docx
-
-Ce module ne lit aucune donnée sensible par défaut ; les fixtures sont synthétiques.
-"""
+"""run_demo.py — Démo AC360 de bout en bout, SANS dépendance cloud obligatoire."""
 from __future__ import annotations
 
 import argparse
@@ -34,8 +17,31 @@ from fabric_audit_engine import (  # noqa: E402
 )
 
 _ROOT = os.path.abspath(os.path.join(_SCRIPTS, ".."))
-_DEFAULT_OCR = os.path.join(_ROOT, "demo", "sample_ocr_gerep.json")
-_DEFAULT_REF = os.path.join(_ROOT, "demo", "sample_reference.json")
+
+# Fixtures synthétiques embarquées — aucun fichier externe requis.
+_DEMO_OCR: Dict[str, Any] = {
+    "metadata": {"source_file": "Contrat_DEMO_2026.pdf",
+                 "extraction_mode": "azure-prebuilt-document", "pages": 2},
+    "fields": {
+        "Raison sociale": {"value": "GEREP SA", "confidence": 0.97},
+        "Date d'effet": {"value": "01/06/2026", "confidence": 0.95},
+        "N° de contrat": {"value": "AB-2026-0142", "confidence": 0.93},
+    },
+    "tables": [{"row_count": 2, "column_count": 2, "cells": [
+        {"row_index": 0, "column_index": 0, "content": "Garantie"},
+        {"row_index": 0, "column_index": 1, "content": "Plafond"},
+        {"row_index": 1, "column_index": 0, "content": "Plafond hospitalisation"},
+        {"row_index": 1, "column_index": 1, "content": "1 500 €"},
+    ]}],
+}
+_DEMO_REF: List[Dict[str, Any]] = [
+    {"client_id": 101, "nom_client": "GEREP SA",
+     "plafond_hospitalisation": "2000", "date_effet": "2026-06-01",
+     "numero_contrat": "AB-2026-0142"},
+    {"client_id": 102, "nom_client": "BETA CORP",
+     "plafond_hospitalisation": "1000", "date_effet": "2025-01-15",
+     "numero_contrat": "BX-2025-0033"},
+]
 
 
 def _load_json(path: str) -> Any:
@@ -89,14 +95,14 @@ def _format_report(result: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def run(ocr_path: str = _DEFAULT_OCR,
-        reference_path: str = _DEFAULT_REF,
+def run(ocr_path: Optional[str] = None,
+        reference_path: Optional[str] = None,
         make_fic: bool = False,
         out_dir: Optional[str] = None,
         printer=print) -> Dict[str, Any]:
     """Exécute la démo et retourne le résultat d'audit. `printer` injectable (tests)."""
-    ocr_data = _load_json(ocr_path)
-    references = _load_json(reference_path)
+    ocr_data = _load_json(ocr_path) if ocr_path else _DEMO_OCR
+    references = _load_json(reference_path) if reference_path else _DEMO_REF
 
     result = audit_from_sources(ocr_data, references)
     printer(_format_report(result))
@@ -134,8 +140,8 @@ def _generate_fic(result: Dict[str, Any], out_dir: str) -> Optional[str]:
 
 def main():
     parser = argparse.ArgumentParser(description="Démo AC360 (audit + FIC), hors-ligne par défaut.")
-    parser.add_argument("--ocr", default=_DEFAULT_OCR, help="Fichier JSON OCR (défaut : fixture démo).")
-    parser.add_argument("--reference", default=_DEFAULT_REF, help="Fichier JSON de référence Artus.")
+    parser.add_argument("--ocr", default=None, help="Fichier JSON OCR (défaut : fixture embarquée).")
+    parser.add_argument("--reference", default=None, help="Fichier JSON de référence Fabric (défaut : fixture embarquée).")
     parser.add_argument("--pdf", default=None, help="PDF à analyser via Azure OCR réel (si .env configuré).")
     parser.add_argument("--fic", action="store_true", help="Générer aussi le brouillon FIC (.docx).")
     args = parser.parse_args()
