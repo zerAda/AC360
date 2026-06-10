@@ -10,10 +10,23 @@ beginDialog:
       id: sendMessage_M0LuhV
       activity:
         text:
-          - Bonjour, je suis {System.Bot.Name}. Comment puis-je vous aider ?
+          - |-
+            👋 Bonjour, je suis **{System.Bot.Name}**, votre assistant commercial Client 360.
+
+            Je m'appuie **uniquement** sur les dossiers clients SharePoint auxquels **vous** avez accès — mes réponses sont **sourcées**, en **lecture seule**, et ne contournent jamais vos permissions.
+
+            Voici ce que je peux faire :
+            - 📊 **Résumer** un dossier client et préparer vos **rendez-vous**
+            - 🔎 **Rechercher** documents, clauses juridiques, points d'attention
+            - 📋 Identifier les **documents manquants** et les **opportunités** (sourcées)
+            - ✉️ Rédiger un **brouillon de mail** (à valider, jamais envoyé automatiquement)
+            - ⚙️ **Lancer un audit documentaire** (OCR + comparaison Fabric) et créer une **relance Planner**
+
+            Par quoi commençons-nous ?
         speak:
-          - Bonjour et merci d’avoir appelé {System.Bot.Name}. Notez que certaines réponses sont générées par l’IA et peuvent nécessiter une vérification pour précision. Comment puis-je vous aider aujourd’hui ?
+          - Bonjour, je suis {System.Bot.Name}, votre assistant commercial Client 360. Mes réponses proviennent uniquement des dossiers SharePoint auxquels vous avez accès et peuvent nécessiter une vérification. Comment puis-je vous aider aujourd'hui ?
       suggestedPrompts:
         - Résume-moi le dossier client
-        - Rédige un mail de suivi
+        - Prépare mon rendez-vous client
         - Quelles informations manquent dans ce dossier ?
+        - Lance un audit du document

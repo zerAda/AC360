@@ -24,6 +24,10 @@ KNOWN_BAD_GATEWAY_HOSTS = ("ac360-api.azurewebsites.net",)
 # Marqueurs de « topic stub » : une rubrique métier qui annonce une
 # fonctionnalité « bientôt disponible » au lieu de l'exécuter = non câblée.
 STUB_MARKERS = ("en cours de déploiement", "bientôt disponible", "coming soon")
+# Artefacts « POC » qui n'ont pas leur place dans un produit premium : le mot
+# « POC » dans un texte utilisateur, et les faux clients de test ALPHA/BETA/GAMMA
+# (polluent le NLU + non professionnels). Vérifié dans les textes et triggers.
+POC_MARKERS = ("dans ce poc", "client alpha", "client beta", "client gamma")
 # Default variable a SearchAndSummarizeContent node writes to when no explicit
 # `variable:` is declared. Copilot Studio binds the generated answer to
 # Topic.Answer implicitly, so we must reason about it the same way.
@@ -108,6 +112,13 @@ def find_wiring_issues(data):
     begin = data.get("beginDialog")
     if not isinstance(begin, dict):
         return issues
+    # Triggers : pas de faux client de test / marqueur POC.
+    intent = begin.get("intent") or {}
+    for tq in intent.get("triggerQueries", []) or []:
+        low = str(tq).lower()
+        for m in POC_MARKERS:
+            if m in low:
+                issues.append(f"trigger contient un artefact POC/test : « {tq} »")
     for act in _walk_actions(begin.get("actions")):
         kind = act.get("kind")
         if kind == "HttpRequestAction":
@@ -120,6 +131,9 @@ def find_wiring_issues(data):
             for marker in STUB_MARKERS:
                 if marker in text:
                     issues.append(f"texte de stub détecté (« {marker} ») — fonctionnalité non câblée ?")
+            for m in POC_MARKERS:
+                if m in text:
+                    issues.append(f"texte utilisateur contient un artefact POC/test : « {m} »")
     return issues
 
 

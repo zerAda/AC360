@@ -13,8 +13,6 @@ beginDialog:
       - Quel est le document le plus récent ?
       - Où est le compte rendu ?
       - Liste les documents disponibles pour ce client
-      - Quel est le dernier contrat disponible pour le Client ALPHA ?
-      - Retrouve la dernière proposition commerciale du Client BETA
 
   actions:
     - kind: SendActivity

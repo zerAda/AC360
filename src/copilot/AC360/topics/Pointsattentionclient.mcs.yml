@@ -13,8 +13,6 @@ beginDialog:
       - Quels sujets dois-je surveiller ?
       - Identifie les risques dans le dossier client
       - Quels sont les points importants à connaître ?
-      - Quels sont les points d’attention pour le Client ALPHA ?
-      - Quels sont les risques pour le Client BETA ?
 
   actions:
     - kind: SendActivity

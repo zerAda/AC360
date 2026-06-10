@@ -19,14 +19,12 @@ beginDialog:
     - kind: SendActivity
       id: msg_clarification_client
       activity: |-
-        Pour éviter de mélanger deux dossiers clients, pouvez-vous préciser le nom exact du client ?
+        Pour éviter de mélanger deux dossiers clients, pouvez-vous préciser le **nom exact du client** ?
 
-        Exemple :
-        - Client ALPHA
-        - Client BETA
-        - Client GAMMA
-
-        Si disponible, vous pouvez aussi indiquer l’identifiant client ou le nom exact du dossier SharePoint.
+        Pour m'aider à cibler le bon dossier, vous pouvez indiquer :
+        - le **nom complet** de la société / du client,
+        - l'**identifiant client** (numéro de compte) si vous le connaissez,
+        - ou le **nom exact du dossier SharePoint**.
 
     - kind: EndDialog
       id: end_clarification_client

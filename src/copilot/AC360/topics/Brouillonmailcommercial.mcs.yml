@@ -12,8 +12,6 @@ beginDialog:
       - Fais-moi un brouillon de mail
       - Écris un message de relance
       - Prépare un mail après rendez-vous
-      - Rédige-moi un brouillon de mail de suivi pour le Client ALPHA
-      - Rédige-moi un brouillon de mail de suivi pour le Client BETA
 
   actions:
     - kind: SendActivity

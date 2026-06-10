@@ -12,8 +12,6 @@ beginDialog:
       - Que dois-je savoir avant mon rendez-vous ?
       - Fais-moi un brief commercial
       - Prépare un briefing client
-      - Prépare-moi une synthèse avant rendez-vous pour le Client ALPHA
-      - Prépare-moi une synthèse avant rendez-vous pour le Client BETA
 
   actions:
     - kind: SendActivity

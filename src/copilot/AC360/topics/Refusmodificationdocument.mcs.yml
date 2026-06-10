@@ -24,14 +24,14 @@ beginDialog:
       activity: |-
         Je ne peux pas modifier, créer, supprimer, déplacer ou renommer des documents SharePoint.
 
-        Dans ce POC, je fonctionne uniquement en lecture seule.
+        Je fonctionne **strictement en lecture seule** — c'est une garantie de sécurité, pas une limitation temporaire.
 
-        Je peux cependant vous aider à préparer un brouillon de texte que vous pourrez copier manuellement dans un document après validation.
+        Je peux en revanche vous aider à préparer un **brouillon de texte** que vous validerez et copierez vous-même dans le document.
 
-        Exemple de demande possible :
-        “Propose-moi une clause à faire valider pour le contrat du Client ALPHA.”
+        Par exemple :
+        « Propose-moi une clause à faire valider pour le contrat de ce client. »
         ou
-        “Rédige un brouillon de mail de suivi pour le Client BETA.”
+        « Rédige un brouillon de mail de suivi pour ce client. »
 
     - kind: EndDialog
       id: end_refus_modification

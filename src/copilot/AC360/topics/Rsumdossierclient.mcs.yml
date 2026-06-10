@@ -12,9 +12,6 @@ beginDialog:
       - Donne-moi les informations clés sur ce client
       - Que sait-on sur ce client ?
       - Prépare un résumé du dossier client
-      - Résume-moi le dossier du Client ALPHA
-      - Résume-moi le dossier du Client BETA
-      - Résume-moi le dossier du Client GAMMA
 
   actions:
     - kind: SendActivity
