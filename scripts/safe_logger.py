@@ -26,7 +26,7 @@ Les motifs de secrets s'alignent sur ceux de .gitleaks.toml.
 import re
 import logging
 
-# [PATCH HATER] Implémentation du Logger fantôme qui faisait crasher l'API Server
+
 logger = logging.getLogger("AC360")
 logger.setLevel(logging.INFO)
 
@@ -54,7 +54,6 @@ __all__ = ["redact", "MAX_LEN", "logger", "log_security"]
 # Longueur maximale conservée pour un message journalisé (extrait borné).
 MAX_LEN = 800
 
-# Marqueurs de masquage (caractères compatibles cp1252 pour l'affichage console).
 _MASK_SECRET = "[SECRET_MASQUÉ]"
 _MASK_EMAIL = "[EMAIL_MASQUÉ]"
 _MASK_PII = "[PII_MASQUÉE]"
@@ -62,16 +61,9 @@ _MASK_PII = "[PII_MASQUÉE]"
 # Séquences d'échappement ANSI (couleurs, déplacements de curseur...).
 _ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 
-# --- Secrets ----------------------------------------------------------------
-# JWT (cf. .gitleaks.toml : rule "jwt-token").
 _JWT_RE = re.compile(r"eyJ[A-Za-z0-9_\-]+\.eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+")
-# Jeton porté par un en-tête Authorization: Bearer <token>.
 _BEARER_RE = re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/\-]{12,}=*")
-# URL de webhook Teams (cf. .gitleaks.toml : rule "teams-webhook").
 _WEBHOOK_RE = re.compile(r"https://[^\s/]*\.webhook\.office\.com/\S+")
-# Couples clé=valeur sensibles (mot de passe, secret, clé d'API, jeton,
-# chaîne de connexion, clé OCR Azure...). La clé et le séparateur sont
-# conservés, seule la valeur est masquée.
 _KV_SECRET_RE = re.compile(
     r"(?i)\b(password|passwd|pwd|secret|client[_\-]?secret|api[_\-]?key|apikey|"
     r"access[_\-]?token|token|account[_\-]?key|accountkey|"
@@ -80,12 +72,8 @@ _KV_SECRET_RE = re.compile(
     r"['\"]?[^\s'\";,]{4,}"
 )
 
-# --- PII --------------------------------------------------------------------
 _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
-# IBAN (FR et international) : 2 lettres pays + 2 clés + 10 à 30 alphanumériques.
 _IBAN_RE = re.compile(r"\b[A-Z]{2}\d{2}[A-Z0-9]{10,30}\b")
-# Longue séquence de chiffres (>= 13), éventuellement groupée par espaces ou
-# tirets : couvre NIR (15), carte bancaire (16), numéros de compte...
 _LONG_DIGITS_RE = re.compile(r"\b\d(?:[ \-]?\d){12,}\b")
 
 # Caractères de contrôle C0/C1 + DEL (dont \t, \r, \n) -> remplacés par espace.
@@ -94,13 +82,6 @@ _MULTISPACE_RE = re.compile(r"\s{2,}")
 
 
 def redact(message, max_len=MAX_LEN):
-    """
-    Neutralise une chaîne avant journalisation : masque secrets et PII, retire
-    les caractères de contrôle (anti log-injection) et tronque à `max_len`.
-
-    Robuste aux entrées None / non-str. Renvoie toujours une chaîne sûre à
-    persister (audit_logs.details) ou à afficher en console.
-    """
     if message is None:
         return ""
     if not isinstance(message, str):

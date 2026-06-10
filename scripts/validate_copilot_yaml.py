@@ -1,13 +1,5 @@
 #!/usr/bin/env python3
-"""validate_copilot_yaml.py — Validates all Copilot Studio YAML files in AC360.
-
-Two checks are performed for every ``*.yml`` under ``src/copilot/AC360`` :
-  1. YAML well-formedness (the file parses and is not empty).
-  2. Anti-"silent RAG" — every ``SearchAndSummarizeContent`` node must guard its
-     generated answer with an ``IsBlank()`` ``ConditionGroup`` that has an
-     ``elseActions`` fallback, otherwise a blank search result is never surfaced
-     to the user (silent failure / missing display).
-"""
+"""validate_copilot_yaml.py — Validates Copilot Studio YAML files for AC360."""
 import sys
 import yaml
 from pathlib import Path
@@ -17,26 +9,13 @@ COPILOT_ROOT = Path(__file__).parent.parent / "src" / "copilot" / "AC360"
 RAG_KIND = "SearchAndSummarizeContent"
 CONDITION_KIND = "ConditionGroup"
 
-# Hôtes de passerelle morts / placeholder : une action HTTP qui les vise échoue
-# à l'exécution (DNS/404). Le seul hôte de passerelle déployé est
-# ac360-gateway-staging. Anti-régression sur des URLs hardcodées erronées.
 KNOWN_BAD_GATEWAY_HOSTS = ("ac360-api.azurewebsites.net",)
-# Marqueurs de « topic stub » : une rubrique métier qui annonce une
-# fonctionnalité « bientôt disponible » au lieu de l'exécuter = non câblée.
 STUB_MARKERS = ("en cours de déploiement", "bientôt disponible", "coming soon")
-# Artefacts « POC » qui n'ont pas leur place dans un produit premium : le mot
-# « POC » dans un texte utilisateur, et les faux clients de test ALPHA/BETA/GAMMA
-# (polluent le NLU + non professionnels). Vérifié dans les textes et triggers.
 POC_MARKERS = ("dans ce poc", "client alpha", "client beta", "client gamma")
-# Default variable a SearchAndSummarizeContent node writes to when no explicit
-# `variable:` is declared. Copilot Studio binds the generated answer to
-# Topic.Answer implicitly, so we must reason about it the same way.
 DEFAULT_RAG_VARIABLE = "Topic.Answer"
 
 
 def _walk_actions(actions):
-    """Recursively yield every action dict within an AdaptiveDialog action list,
-    descending into ConditionGroup ``conditions[].actions`` and ``elseActions``."""
     for act in actions or []:
         if not isinstance(act, dict):
             continue
@@ -51,15 +30,6 @@ def _walk_actions(actions):
 
 
 def find_silent_rag(data):
-    """Return a list of (variable, issue) tuples describing silent-RAG problems.
-
-    A ``SearchAndSummarizeContent`` node produces an answer variable — either its
-    explicit ``variable:`` or, when that key is absent, the implicit
-    ``Topic.Answer``. The answer is considered safely surfaced only when a
-    ``ConditionGroup`` tests ``IsBlank(<variable>)`` AND provides an
-    ``elseActions`` branch (so the blank case still sends a message). Anything
-    else is a silent failure / missing display. An empty list means OK.
-    """
     issues = []
     if not isinstance(data, dict):
         return issues
@@ -104,15 +74,12 @@ def find_silent_rag(data):
 
 
 def find_wiring_issues(data):
-    """Détecte les défauts de câblage end-to-end : action HTTP vers un hôte mort
-    et topic « stub » (annonce au lieu d'exécuter). Liste vide = OK."""
     issues = []
     if not isinstance(data, dict):
         return issues
     begin = data.get("beginDialog")
     if not isinstance(begin, dict):
         return issues
-    # Triggers : pas de faux client de test / marqueur POC.
     intent = begin.get("intent") or {}
     for tq in intent.get("triggerQueries", []) or []:
         low = str(tq).lower()

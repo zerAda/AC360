@@ -1,20 +1,3 @@
-"""
-cost_tracker.py — Modèle de coût paramétrable AC360 (P0-07).
-
-RÈGLE ABSOLUE (cf. mission) :
-  - Ne jamais inventer de prix.
-  - Ne jamais hardcoder une grille tarifaire non vérifiée.
-  - Les prix réels Microsoft (Copilot Studio, OCR, Fabric...) ne sont PAS dans le
-    repo → la grille par défaut est VIDE (0.0) et marquée « À VALIDER ».
-  - Les tarifs réels sont injectés via l'environnement (AC360_RATE_CARD, JSON),
-    résolvable depuis Key Vault / app settings, sans redéploiement.
-
-Chaque coût produit porte un `cost_source` :
-  REEL_MESURE  — mesuré sur facture réelle (jamais par défaut ici)
-  ESTIME       — estimation à partir d'un tarif fourni
-  PARAMETRABLE — tarif fourni via configuration
-  A_VALIDER    — aucun tarif fourni → montant 0.0, à valider en environnement réel
-"""
 from __future__ import annotations
 
 import json
@@ -25,7 +8,6 @@ from typing import Any, Dict, Optional
 
 from feature_flags import hash_id
 
-# Postes de coût connus. Valeur par défaut 0.0 = AUCUN prix inventé.
 COST_CENTERS = (
     "copilot_studio_message",
     "copilot_studio_action",
@@ -49,11 +31,6 @@ def _now_iso() -> str:
 
 
 def load_rate_card() -> Dict[str, float]:
-    """
-    Grille tarifaire effective = défaut (0.0) surchargée par AC360_RATE_CARD
-    (JSON {cost_center: eur_par_unite}). Une valeur invalide est ignorée
-    proprement (jamais d'inventer un prix).
-    """
     card = dict(DEFAULT_RATE_CARD)
     raw = os.environ.get(_RATE_CARD_ENV)
     if raw:
@@ -84,11 +61,6 @@ def estimate_cost(
     event_id: Optional[str] = None,
     timestamp_utc: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """
-    Estime le coût d'une quantité consommée sur un poste. Retourne un cost_event
-    conforme au schéma. Si aucun tarif n'est configuré, le montant est 0.0 et
-    cost_source = A_VALIDER (jamais de prix inventé).
-    """
     if cost_center not in COST_CENTERS:
         raise ValueError(f"cost_center inconnu : {cost_center}")
     if quantity < 0:
@@ -138,12 +110,6 @@ def check_budget(
     budget_eur: Optional[float] = None,
     warn_pct: Optional[float] = None,
 ) -> Dict[str, Any]:
-    """
-    Évalue un budget. NE bloque RIEN (no block by default) : renvoie seulement un
-    niveau d'alerte que la couche admin peut décider d'actionner (kill-switch).
-
-    Niveaux : ok | warning | exceeded. Si aucun budget n'est configuré → unknown.
-    """
     budget = budget_eur if budget_eur is not None else _budget_eur()
     pct_threshold = warn_pct if warn_pct is not None else _warn_pct()
 

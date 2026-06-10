@@ -1,16 +1,3 @@
-"""
-admin_controls.py — Contrôles administrateur AC360 (P0-09).
-
-Permet à un ADMIN (et uniquement un admin) de bloquer / débloquer la
-consommation : globalement, par fonctionnalité coûteuse, par utilisateur ou
-par équipe. Un commercial NE PEUT PAS se débloquer lui-même (autorisation par
-rôle requise).
-
-Ce module produit l'action d'audit (conforme à schemas/admin_control.schema.json)
-et décide de l'autorisation. L'APPLICATION effective du blocage se fait via les
-variables d'environnement lues par feature_flags (un commercial ne peut pas les
-modifier — seul un admin a accès aux app settings / Key Vault).
-"""
 from __future__ import annotations
 
 import os
@@ -20,7 +7,6 @@ from typing import Any, Dict, Iterable, Optional
 
 from feature_flags import hash_id
 
-# Rôle requis pour exécuter une action de contrôle. Surchargable par config.
 ADMIN_ROLE_ENV = "AC360_ADMIN_ROLE"
 _DEFAULT_ADMIN_ROLE = "AC360.Admin"
 
@@ -46,7 +32,6 @@ def admin_role() -> str:
 
 
 def is_admin(roles: Optional[Iterable[str]]) -> bool:
-    """True si l'appelant possède le rôle admin AC360."""
     if not roles:
         return False
     return admin_role() in set(roles)
@@ -72,17 +57,6 @@ def apply_control(
     action_id: Optional[str] = None,
     timestamp_utc: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """
-    Construit une action de contrôle admin auditée.
-
-    Autorisation :
-      - action inconnue / scope incohérent → result = "noop"
-      - appelant non-admin → result = "denied_not_admin" (anti self-unblock)
-      - sinon → result = "applied"
-
-    Le `target_id` (utilisateur/équipe ciblé) est hashé. Aucune donnée sensible
-    en clair n'est journalisée.
-    """
     if action not in _ACTION_SCOPES or not _scope_valid(action, scope):
         result = "noop"
     elif not is_admin(roles):

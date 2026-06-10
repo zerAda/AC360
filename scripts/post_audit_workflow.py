@@ -67,7 +67,6 @@ def archive_and_cleanup(source_file, target_folder="Archives_Documentaires/Erreu
         print(f"[WARNING] Le fichier source {source_file} n'existe plus.")
         return
 
-    # [PATCH HATER] Sécurisation contre le Path Traversal et suppression arbitraire
     try:
         from config import load_config
         JOBS_BASE_DIR = load_config().jobs_base_dir
@@ -77,7 +76,6 @@ def archive_and_cleanup(source_file, target_folder="Archives_Documentaires/Erreu
     resolved_source = os.path.abspath(source_file)
     base_resolved = os.path.abspath(JOBS_BASE_DIR)
 
-    # [PATCH HATER] Correction du bypass Path Traversal : utilisation de commonpath au lieu de startswith
     try:
         common = os.path.commonpath([resolved_source, base_resolved])
         if common != base_resolved:

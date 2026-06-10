@@ -1,21 +1,3 @@
-"""
-usage_tracker.py — Traçage d'usage AC360 (P0-08).
-
-Objectif : suivi fin de la consommation par commercial / équipe / client / cas
-d'usage, SANS limiter par défaut et SANS exposer de donnée personnelle.
-
-Garanties :
-  - Identifiants (utilisateur, commercial, client) → hash SHA-256 (jamais en clair).
-  - Tokens marqués ESTIMATED : Copilot Studio n'expose pas les tokens réels ;
-    le nom des champs (`estimated_tokens_*`) l'indique explicitement.
-  - Événements conformes à schemas/usage_event.schema.json.
-  - Émission « best-effort » : le traçage ne doit JAMAIS casser le métier
-    (une erreur d'émission est avalée et journalisée safe).
-
-Le sink est configurable (fichier JSONL via AC360_USAGE_SINK) ; à défaut,
-l'événement est journalisé via safe_logger. En production réelle, brancher ce
-sink sur Application Insights / Log Analytics (cf. docs/observability).
-"""
 from __future__ import annotations
 
 import json
@@ -82,11 +64,6 @@ def build_usage_event(
     event_id: Optional[str] = None,
     timestamp_utc: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """
-    Construit un événement d'usage conforme au schéma. Les identifiants bruts
-    (user_id, commercial_id, client_id) sont hashés ici — ne JAMAIS passer de
-    hash déjà calculé pour ces champs, passer la valeur brute.
-    """
     if event_type not in VALID_EVENT_TYPES:
         raise ValueError(f"event_type inconnu : {event_type}")
     if status not in _VALID_STATUS:
@@ -119,7 +96,6 @@ def build_usage_event(
 
 
 def _default_sink(line: str) -> None:
-    """Sink par défaut : fichier JSONL si AC360_USAGE_SINK défini, sinon log safe."""
     sink_path = os.environ.get("AC360_USAGE_SINK")
     if sink_path:
         with open(sink_path, "a", encoding="utf-8") as f:
@@ -129,7 +105,6 @@ def _default_sink(line: str) -> None:
         from safe_logger import log_security
         log_security("INFO", "usage_event", json.loads(line))
     except Exception:
-        # Dernier recours : ne jamais lever depuis le traçage.
         pass
 
 
@@ -137,10 +112,6 @@ def emit_usage_event(
     event: Dict[str, Any],
     sink: Optional[Callable[[str], None]] = None,
 ) -> Dict[str, Any]:
-    """
-    Émet un événement (best-effort). Toute exception d'émission est avalée :
-    le traçage ne doit jamais interrompre le métier. Retourne l'événement.
-    """
     try:
         line = json.dumps(event, ensure_ascii=False, separators=(",", ":"))
         (sink or _default_sink)(line)
@@ -150,6 +121,5 @@ def emit_usage_event(
 
 
 def track(event_type: str, *, sink: Optional[Callable[[str], None]] = None, **kwargs: Any) -> Dict[str, Any]:
-    """Raccourci : construit puis émet un événement d'usage."""
     event = build_usage_event(event_type, **kwargs)
     return emit_usage_event(event, sink=sink)

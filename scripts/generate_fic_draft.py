@@ -33,7 +33,6 @@ def evaluate_fic_rules(motif):
     if not motif_lower or motif_lower.strip() in ("non_determine", "non déterminé"):
         return True, "À VÉRIFIER : motif non déterminé depuis le document (revue humaine requise)"
 
-    # [PATCH HATER] Critères d'exclusion de FIC (DOIVENT ÊTRE ÉVALUÉS EN PREMIER)
     if any(keyword in motif_lower for keyword in ["reprise de gestion", "changement tarif", "gestionnaire"]):
         return False, "Non requis (Reprise/Tarif/Gestionnaire)"
 

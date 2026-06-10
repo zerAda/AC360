@@ -4,7 +4,7 @@ import argparse
 import pandas as pd
 from thefuzz import fuzz
 from dotenv import load_dotenv
-# [PATCH HATER] Correction de l'oubli fatal qui faisait crasher la connexion à Fabric
+
 import struct
 
 # NOTE: pyodbc + azure-identity sont des dépendances *optionnelles* (driver natif
@@ -116,10 +116,7 @@ def match_client_name(doc_name, fabric_df):
     for index, row in fabric_df.iterrows():
         fabric_name = str(row['nom_client'])
 
-        # Score de base
         score = fuzz.token_sort_ratio(doc_name.lower(), fabric_name.lower())
-
-        # [PATCH HATER] Pénalité stricte mais juste (évite de pénaliser "Lafrance" à cause de "france")
         fabric_words = set(re.findall(r'\b\w+\b', fabric_name.lower()))
         for word in rejet_words:
             if (word in doc_words) != (word in fabric_words):

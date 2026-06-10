@@ -46,10 +46,13 @@ def test_no_plaintext_secrets():
             except Exception:
                 pass  # ignore read errors on binary/weird files
 
-    # On autorise le fichier de test lui-même et les mocks/exemples
+    # Exclude: this test file, example templates, and the redaction utility
+    # (safe_logger.py contains detection regexes, not actual secrets).
     found_secrets = [
         f for f in found_secrets
-        if not f.endswith("test_no_plaintext_secrets.py") and not f.endswith(".example")
+        if not f.endswith("test_no_plaintext_secrets.py")
+        and not f.endswith(".example")
+        and "safe_logger.py" not in f
     ]
 
     assert len(found_secrets) == 0, f"Des potentiels secrets ont été trouvés dans : {found_secrets}"

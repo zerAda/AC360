@@ -18,9 +18,6 @@ from safe_logger import log_security
 from feature_flags import is_allowed, blocked_message, hash_id
 from usage_tracker import track
 
-# Caractères/motifs interdits dans un document_id SharePoint (defense-in-depth :
-# rejet au bord avant de démarrer une orchestration). Un drive-item id Graph
-# n'a jamais d'espace, de séparateur de chemin, de guillemet, de ";" ni de "..".
 _DOCID_FORBIDDEN = re.compile(r"[/\\\s;'\"<>`]|\.\.|\x00")
 _DOCID_MAX_LEN = 512
 
@@ -35,10 +32,6 @@ def _validate_sharepoint_doc_id(document_id: str) -> str:
     return document_id
 
 
-# --- Planner : résolution des paramètres (anti-POC) -------------------------
-# Le topic envoie des placeholders ("DEFAULT_PLAN"/"DEFAULT_BUCKET") ; Graph les
-# rejette. On résout vers les IDs réels configurés, et on normalise la date au
-# format ISO 8601 attendu par Graph (sinon 400). Échec CLAIR si non configuré.
 _PLANNER_PLACEHOLDER_PLAN = {"", "DEFAULT_PLAN"}
 _PLANNER_PLACEHOLDER_BUCKET = {"", "DEFAULT_BUCKET"}
 _DATE_ONLY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -51,7 +44,7 @@ def _resolve_planner_params(plan_id, bucket_id, due_date):
         else os.environ.get("PLANNER_DEFAULT_BUCKET_ID", "")
     due = due_date
     if due_date and _DATE_ONLY_RE.match(str(due_date).strip()):
-        due = str(due_date).strip() + "T00:00:00Z"  # date -> datetime ISO Graph
+        due = str(due_date).strip() + "T00:00:00Z"
     return plan, bucket, due
 
 
@@ -61,31 +54,18 @@ app = FastAPI(
     version="3.0.0"
 )
 
-# Configuration de l'Azure Function Backend
 AZURE_FUNCTION_URL = os.environ.get("AZURE_FUNCTION_URL", "http://localhost:7071/api")
 AZURE_FUNCTION_KEY = os.environ.get("AZURE_FUNCTION_KEY", "")
-# Racine de l'hôte Function (sans le suffixe "/api") : les webhooks Durable
-# (/runtime/webhooks/durabletask/...) NE sont PAS sous /api, contrairement à
-# http_start. On retire donc un éventuel "/api" final.
 AZURE_FUNCTION_HOST = AZURE_FUNCTION_URL.rstrip("/")
 if AZURE_FUNCTION_HOST.endswith("/api"):
     AZURE_FUNCTION_HOST = AZURE_FUNCTION_HOST[: -len("/api")]
-# Clé système Durable (durabletask_extension) : requise par les webhooks de
-# gestion Durable. La clé de fonction par défaut N'EST PAS acceptée. Fallback
-# sur AZURE_FUNCTION_KEY pour rétro-compat / dev local.
 AZURE_DURABLE_KEY = os.environ.get("AZURE_DURABLE_KEY", "") or AZURE_FUNCTION_KEY
-
-# Global HTTP Client pour éviter le Socket Exhaustion
 http_client = httpx.AsyncClient(limits=httpx.Limits(max_keepalive_connections=50, max_connections=200))
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     await http_client.aclose()
-
-# ---------------------------------------------------------------------------
-# Middleware Application Insights (Monitoring Enterprise)
-# ---------------------------------------------------------------------------
 
 
 class AppInsightsMiddleware(BaseHTTPMiddleware):
@@ -103,7 +83,6 @@ class AppInsightsMiddleware(BaseHTTPMiddleware):
             })
 
         response.headers["X-Process-Time"] = str(round(process_time, 4))
-        # En-têtes de sécurité standard (défense en profondeur API).
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "no-referrer"
@@ -114,9 +93,6 @@ class AppInsightsMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(AppInsightsMiddleware)
 
-# ---------------------------------------------------------------------------
-# Rate-limiting
-# ---------------------------------------------------------------------------
 _RATE_LIMIT_MAX = 10
 _RATE_LIMIT_WINDOW = 3600  # secondes
 _rate_limit_store: dict[str, list[float]] = defaultdict(list)
@@ -131,7 +107,7 @@ async def cleanup_rate_limits():
             keys_to_delete.append(k)
         else:
             _rate_limit_store[k] = valid_ts
-        await asyncio.sleep(0)  # Ne pas bloquer l'Event Loop
+        await asyncio.sleep(0)
     for k in keys_to_delete:
         _rate_limit_store.pop(k, None)
 
@@ -151,24 +127,8 @@ async def _check_rate_limit(upn: str) -> None:
         )
     _rate_limit_store[upn].append(now)
 
-# ---------------------------------------------------------------------------
-# Validation des identifiants (anti path-traversal + anti accès arbitraire)
-# ---------------------------------------------------------------------------
-
 
 def _validate_document_id(document_id: str) -> str:
-    """Valide qu'un identifiant est un UUID canonique ET qu'il correspond à une
-    ressource connue (répertoire de job sous ``jobs_base_dir``).
-
-    Double objectif de sécurité :
-      * empêcher le path traversal sur un segment d'URL (``..``, chemins absolus,
-        séparateurs) en exigeant un UUID strict ;
-      * empêcher l'énumération/accès à des ressources arbitraires en vérifiant
-        l'existence du répertoire de job.
-
-    Lève ``HTTPException`` 400 (format invalide) ou 404 (ressource inconnue).
-    Retourne l'UUID normalisé en cas de succès.
-    """
     try:
         normalized = str(uuid.UUID(str(document_id)))
     except (ValueError, AttributeError, TypeError):
@@ -182,7 +142,6 @@ def _validate_document_id(document_id: str) -> str:
     base = os.path.abspath(config.jobs_base_dir)
     resolved = os.path.abspath(os.path.join(base, normalized))
 
-    # Défense en profondeur : le chemin résolu doit rester confiné sous la base.
     try:
         if os.path.commonpath([resolved, base]) != base:
             raise HTTPException(status_code=400, detail="Identifiant invalide.")
@@ -195,7 +154,6 @@ def _validate_document_id(document_id: str) -> str:
     return normalized
 
 
-# Schémas de requête
 class AuditRequest(BaseModel):
     document_id: str
     client_context: Optional[str] = None
@@ -214,12 +172,6 @@ class FicheRDVRequest(BaseModel):
     alert_points: str
 
 
-# Suivi d'appartenance des jobs d'audit (defense-in-depth contre l'IDOR) : on
-# mémorise l'auteur de chaque audit pour interdire qu'un AUTRE utilisateur
-# authentifié lise le verdict (PII client) via un job_id fuité — par exemple la
-# « référence » rendue dans le transcript Copilot. Map en mémoire de l'instance :
-# ferme l'accès croisé pour les jobs connus. Garantie multi-instance/redémarrage
-# = à renforcer en persistant l'auteur dans l'input de l'orchestration Durable.
 _AUDIT_OWNER_MAX = 5000
 _audit_job_owners: dict = {}
 
@@ -228,7 +180,7 @@ def _record_audit_owner(job_id, user_upn):
     if not job_id:
         return
     if len(_audit_job_owners) >= _AUDIT_OWNER_MAX:
-        _audit_job_owners.clear()  # éviction simple anti-croissance mémoire
+        _audit_job_owners.clear()
     _audit_job_owners[job_id] = user_upn
 
 
@@ -248,14 +200,8 @@ async def trigger_audit(
     user_upn: str = Depends(verify_azure_ad_token)
 ):
     await _check_rate_limit(user_upn)
-
-    # Validation au bord : rejette injection/traversal/oversized avant de
-    # déclencher une orchestration (defense-in-depth).
     _validate_sharepoint_doc_id(request.document_id)
 
-    # Kill-switch / blocage de consommation (P0-09) : un admin peut couper
-    # l'audit globalement, par fonctionnalité ou par utilisateur, sans
-    # supprimer le bot. Tracé en usage (P0-08), sans donnée sensible en clair.
     _user_hash = hash_id(user_upn)
     _allowed, _reason = is_allowed("audit", user_id_hash=_user_hash)
     if not _allowed:
@@ -265,15 +211,10 @@ async def trigger_audit(
     track("audit_documentaire_started", status="ok",
           user_id=user_upn, action_name="trigger_audit")
 
-    # [PATCH HATER OPTION A] Plus de fausse validation locale.
-    # On transmet l'ID du document à l'Azure Durable Function qui s'occupera
-    # de le télécharger depuis SharePoint via Graph API en tâche de fond.
-
     log_security("INFO", "Envoi de la requête d'audit à l'Azure Function",
                  {"document_id": request.document_id, "user": user_upn})
 
     try:
-        # Forward auth if available, append key to URL if present
         auth_headers = {}
         if req and req.headers.get("Authorization"):
             auth_headers["Authorization"] = req.headers["Authorization"]
@@ -294,7 +235,6 @@ async def trigger_audit(
         log_security("ERROR", f"Failed to start Azure Function: {e}")
         raise HTTPException(status_code=502, detail="Erreur de communication avec le moteur d'audit Azure.")
 
-    # Mémorise l'auteur du job pour le contrôle d'appartenance au statut (IDOR).
     _record_audit_owner(az_data.get("id"), user_upn)
 
     return {
@@ -368,16 +308,10 @@ async def download_fiche_rdv(
     filename: str,
     user_upn: str = Depends(verify_azure_ad_token)
 ):
-    """
-    [PATCH HATER] L'endpoint fantôme est réparé.
-    Le fichier Word généré peut enfin être téléchargé en toute sécurité.
-    """
     if ".." in filename or "/" in filename or "\\" in filename:
         log_security("WARNING", f"Tentative de Path Traversal : {filename} par {user_upn}")
         raise HTTPException(status_code=400, detail="Nom de fichier invalide.")
 
-    # [SECURITY] Le segment job_id doit être un UUID connu : empêche le path
-    # traversal sur le job_id lui-même (ex: job_id="..") et l'accès arbitraire.
     job_id = _validate_document_id(job_id)
 
     from config import load_config
@@ -388,7 +322,6 @@ async def download_fiche_rdv(
         log_security("WARNING", f"Fichier non trouvé : {file_path}")
         raise HTTPException(status_code=404, detail="Fichier introuvable.")
 
-    # [PATCH IDOR] Verify the authenticated user owns this file
     import json
     meta_path = os.path.join(config.jobs_base_dir, job_id, "meta.json")
     if os.path.exists(meta_path):
@@ -398,8 +331,6 @@ async def download_fiche_rdv(
                 log_security("WARNING", f"Tentative IDOR par {user_upn} sur la job_id {job_id}")
                 raise HTTPException(status_code=403, detail="Accès refusé.")
     else:
-        # Legacy behavior: if no meta.json, restrict just in case or allow if strictly needed.
-        # Strict by default:
         log_security("WARNING", f"Fichier meta.json manquant pour le job {job_id}")
         raise HTTPException(status_code=403, detail="Propriétaire non vérifiable.")
 
@@ -412,7 +343,6 @@ async def download_fiche_rdv(
 
 @app.get("/health")
 def health_check():
-    """Health-check allégé depuis la purge de Celery."""
     return {
         "status": "healthy",
         "version": "3.0.0",
@@ -426,21 +356,9 @@ async def get_job_status(
     job_id: str,
     user_upn: str = Depends(verify_azure_ad_token)
 ):
-    """
-    Interroge le statut d'une orchestration d'audit sur Azure Durable Functions.
-    Le bot Copilot interroge cet endpoint pour connaître l'avancement de l'audit.
-    """
-    # Contrôle d'appartenance (IDOR) : un utilisateur ne peut consulter que le
-    # statut/verdict de SES audits (cohérent avec l'endpoint de téléchargement).
     _assert_audit_owner(job_id, user_upn)
 
     try:
-        # Appel à l'API standard des instances Durable Functions :
-        # GET /runtime/webhooks/durabletask/instances/{instanceId}
-        # Le task hub DOIT être configuré explicitement (pas de valeur de test
-        # par défaut) afin de ne jamais interroger un hub de test en production.
-        # Webhook Durable : clé système durabletask_extension (pas la clé de
-        # fonction par défaut) + racine d'hôte SANS "/api".
         auth_param = f"&code={AZURE_DURABLE_KEY}" if AZURE_DURABLE_KEY else ""
         task_hub = os.environ.get("TASK_HUB_NAME")
         if not task_hub:
@@ -466,8 +384,6 @@ async def get_job_status(
             "result": data.get("output") if data.get("runtimeStatus") == "Completed" else None
         }
     except HTTPException:
-        # Laisse passer nos réponses HTTP volontaires (404 job introuvable,
-        # 500 configuration) sans les ré-emballer en 500 générique.
         raise
     except httpx.HTTPStatusError as e:
         log_security("ERROR", f"Azure Function HTTP error: {e}")
@@ -479,7 +395,4 @@ async def get_job_status(
 
 if __name__ == "__main__":
     import uvicorn
-    # host 0.0.0.0 REQUIS dans le conteneur App Service (le binding interne ne
-    # restreint pas l'exposition : l'ingress est géré par App Service +
-    # restrictions IP + auth JWT Entra). nosec B104 justifié.
     uvicorn.run("api_server:app", host="0.0.0.0", port=8000, reload=False)  # nosec B104
