@@ -214,6 +214,33 @@ class FicheRDVRequest(BaseModel):
     alert_points: str
 
 
+# Suivi d'appartenance des jobs d'audit (defense-in-depth contre l'IDOR) : on
+# mémorise l'auteur de chaque audit pour interdire qu'un AUTRE utilisateur
+# authentifié lise le verdict (PII client) via un job_id fuité — par exemple la
+# « référence » rendue dans le transcript Copilot. Map en mémoire de l'instance :
+# ferme l'accès croisé pour les jobs connus. Garantie multi-instance/redémarrage
+# = à renforcer en persistant l'auteur dans l'input de l'orchestration Durable.
+_AUDIT_OWNER_MAX = 5000
+_audit_job_owners: dict = {}
+
+
+def _record_audit_owner(job_id, user_upn):
+    if not job_id:
+        return
+    if len(_audit_job_owners) >= _AUDIT_OWNER_MAX:
+        _audit_job_owners.clear()  # éviction simple anti-croissance mémoire
+    _audit_job_owners[job_id] = user_upn
+
+
+def _assert_audit_owner(job_id, user_upn):
+    owner = _audit_job_owners.get(job_id)
+    if owner is not None and owner != user_upn:
+        log_security("WARNING",
+                     "Accès refusé au statut d'un audit appartenant à un autre utilisateur",
+                     {"user": user_upn})
+        raise HTTPException(status_code=403, detail="Accès refusé à ce job d'audit.")
+
+
 @app.post("/api/audit")
 async def trigger_audit(
     request: AuditRequest,
@@ -266,6 +293,9 @@ async def trigger_audit(
     except Exception as e:
         log_security("ERROR", f"Failed to start Azure Function: {e}")
         raise HTTPException(status_code=502, detail="Erreur de communication avec le moteur d'audit Azure.")
+
+    # Mémorise l'auteur du job pour le contrôle d'appartenance au statut (IDOR).
+    _record_audit_owner(az_data.get("id"), user_upn)
 
     return {
         "status": "accepted",
@@ -400,6 +430,10 @@ async def get_job_status(
     Interroge le statut d'une orchestration d'audit sur Azure Durable Functions.
     Le bot Copilot interroge cet endpoint pour connaître l'avancement de l'audit.
     """
+    # Contrôle d'appartenance (IDOR) : un utilisateur ne peut consulter que le
+    # statut/verdict de SES audits (cohérent avec l'endpoint de téléchargement).
+    _assert_audit_owner(job_id, user_upn)
+
     try:
         # Appel à l'API standard des instances Durable Functions :
         # GET /runtime/webhooks/durabletask/instances/{instanceId}
