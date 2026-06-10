@@ -47,11 +47,28 @@ beginDialog:
           }
         contentType: application/json
       responseStringVariable: Topic.ApiResponse
-      
-    - kind: SendActivity
-      id: send-success
-      activity: "✅ La tâche **{Topic.TaskTitle}** a bien été ajoutée à votre Planner via Azure !"
-      
-    - kind: EndDialog
-      id: end-dialog
-      clearTopicQueue: true
+
+    # Gestion d'erreur : réponse vide ou sans statut de succès = échec API
+    # (auth refusée, Graph/Planner indisponible). Pas de faux « succès ».
+    - kind: ConditionGroup
+      id: condition_planner_result
+      conditions:
+        - id: planner_succeeded
+          condition: =!IsBlank(Topic.ApiResponse) && ("success" in Topic.ApiResponse)
+          actions:
+            - kind: SendActivity
+              id: send-success
+              activity: "✅ La tâche **{Topic.TaskTitle}** a bien été ajoutée à votre Planner (échéance {Topic.DueDate})."
+            - kind: EndDialog
+              id: end-dialog
+              clearTopicQueue: true
+      elseActions:
+        - kind: SendActivity
+          id: send-planner-error
+          activity: |-
+            ⚠️ Je n'ai pas pu créer la tâche Planner (service momentanément indisponible ou accès non autorisé).
+
+            Réessayez dans un instant, ou créez la relance manuellement si le problème persiste.
+        - kind: EndDialog
+          id: end-planner-error
+          clearTopicQueue: true

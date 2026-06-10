@@ -1,6 +1,6 @@
 mcs.metadata:
   componentName: Lancer Audit AC360
-  description: Déclenche l'audit documentaire (OCR + comparaison Microsoft Fabric) via la passerelle Azure, puis restitue le verdict. Lecture seule, aucune modification de document.
+  description: Déclenche l'audit documentaire (OCR + comparaison Microsoft Fabric) via la passerelle Azure, puis restitue le verdict. Lecture seule, gestion d'erreur robuste.
 kind: AdaptiveDialog
 beginDialog:
   kind: OnRecognizedIntent
@@ -28,7 +28,7 @@ beginDialog:
       id: send-audit-start
       activity: "⏳ Je lance l'audit documentaire (OCR + comparaison Fabric, lecture seule) sur le document **{Topic.DocumentId}**…"
 
-    # 1) Déclenchement de l'orchestration d'audit (Durable Function via la passerelle).
+    # 1) Déclenchement de l'orchestration (Durable Function via la passerelle).
     - kind: HttpRequestAction
       id: http_audit_trigger
       method: Post
@@ -43,50 +43,68 @@ beginDialog:
         contentType: application/json
       responseStringVariable: Topic.AuditTriggerResponse
 
-    # 2) Extraction de la référence du job pour interroger le statut.
-    - kind: SetVariable
-      id: set_audit_job_id
-      variable: Global.AuditJobId
-      value: =Text(ParseJSON(Topic.AuditTriggerResponse).job_id)
-
-    - kind: SendActivity
-      id: send-audit-queued
-      activity: "✅ Audit lancé (référence : {Global.AuditJobId}). Je récupère le verdict…"
-
-    # 3) Lecture du statut/verdict de l'orchestration.
-    - kind: HttpRequestAction
-      id: http_audit_status
-      method: Get
-      url: ="https://ac360-gateway-staging.azurewebsites.net/api/audit/" & Global.AuditJobId & "/status"
-      headers:
-        Authorization: ="Bearer " & System.User.AccessToken
-      responseStringVariable: Topic.AuditStatusResponse
-
+    # 2) Gestion d'erreur : réponse vide / sans job_id = service indisponible,
+    #    accès refusé (401/403) ou document invalide (400). On ne parse jamais
+    #    une réponse non conforme.
     - kind: ConditionGroup
-      id: condition_audit_status
+      id: condition_trigger_ok
       conditions:
-        - id: audit_completed
-          condition: =Text(ParseJSON(Topic.AuditStatusResponse).status) = "Completed"
+        - id: trigger_succeeded
+          condition: =!IsBlank(Topic.AuditTriggerResponse) && ("job_id" in Topic.AuditTriggerResponse)
           actions:
+            - kind: SetVariable
+              id: set_audit_job_id
+              variable: Global.AuditJobId
+              value: =Text(ParseJSON(Topic.AuditTriggerResponse).job_id)
+
             - kind: SendActivity
-              id: display_audit_result
-              activity: |-
-                ## 🔎 Résultat de l'audit documentaire
+              id: send-audit-queued
+              activity: "✅ Audit lancé (référence : {Global.AuditJobId}). Je récupère le verdict…"
 
-                {Topic.AuditStatusResponse}
+            # 3) Lecture du statut/verdict.
+            - kind: HttpRequestAction
+              id: http_audit_status
+              method: Get
+              url: ="https://ac360-gateway-staging.azurewebsites.net/api/audit/" & Global.AuditJobId & "/status"
+              headers:
+                Authorization: ="Bearer " & System.User.AccessToken
+              responseStringVariable: Topic.AuditStatusResponse
 
-                _L'audit compare le document à la référence Microsoft Fabric (lecture seule). Aucun document n'a été modifié. Vérifiez les écarts éventuels avant toute action commerciale._
-            - kind: EndDialog
-              id: end_audit_done
-              clearTopicQueue: true
+            - kind: ConditionGroup
+              id: condition_audit_status
+              conditions:
+                - id: audit_completed
+                  condition: =!IsBlank(Topic.AuditStatusResponse) && (Text(ParseJSON(Topic.AuditStatusResponse).status) = "Completed")
+                  actions:
+                    - kind: SendActivity
+                      id: display_audit_result
+                      activity: |-
+                        ## 🔎 Résultat de l'audit documentaire
+
+                        {Topic.AuditStatusResponse}
+
+                        _Comparaison à la référence Microsoft Fabric (lecture seule). Aucun document modifié. Vérifiez les écarts avant toute action commerciale._
+                    - kind: EndDialog
+                      id: end_audit_done
+                      clearTopicQueue: true
+              elseActions:
+                - kind: SendActivity
+                  id: msg_audit_pending
+                  activity: |-
+                    ⏳ L'audit est encore en cours de traitement.
+
+                    Reposez la question « Où en est mon audit ? » dans quelques instants pour récupérer le verdict (référence {Global.AuditJobId}).
+                - kind: EndDialog
+                  id: end_audit_pending
+                  clearTopicQueue: true
 
       elseActions:
         - kind: SendActivity
-          id: msg_audit_pending
+          id: msg_audit_error
           activity: |-
-            ⏳ L'audit est encore en cours de traitement.
+            ⚠️ L'audit n'a pas pu démarrer.
 
-            Reposez la question « Où en est mon audit ? » dans quelques instants pour récupérer le verdict (référence {Global.AuditJobId}).
+            Causes possibles : service d'audit momentanément indisponible, accès non autorisé, ou identifiant de document invalide. Vérifiez l'identifiant SharePoint et réessayez, ou contactez votre administrateur si le problème persiste.
         - kind: EndDialog
-          id: end_audit_pending
+          id: end_audit_error
           clearTopicQueue: true

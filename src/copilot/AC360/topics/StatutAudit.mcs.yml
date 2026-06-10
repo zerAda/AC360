@@ -37,7 +37,7 @@ beginDialog:
               id: condition_recheck
               conditions:
                 - id: recheck_completed
-                  condition: =Text(ParseJSON(Topic.StatusResponse).status) = "Completed"
+                  condition: =!IsBlank(Topic.StatusResponse) && (Text(ParseJSON(Topic.StatusResponse).status) = "Completed")
                   actions:
                     - kind: SendActivity
                       id: display_recheck_result
