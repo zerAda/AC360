@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from dataclasses import replace
 
 _HERE = os.path.dirname(__file__)
 for _p in (os.path.join(_HERE, "shared"), os.path.abspath(os.path.join(_HERE, "..", "scripts"))):
@@ -63,6 +64,34 @@ def _download(document_id: str) -> str:
         dest_dir=dest_dir,
         access_token=token,
     )
+
+
+def _download_as_user(document_id: str, graph_token: str) -> str:
+    """Télécharge le document AVEC le token Graph délégué de l'utilisateur (OBO).
+
+    Graph applique les permissions SharePoint de l'utilisateur : pas d'accès ->
+    HTTPStatusError 403/404 (propagé tel quel par `http_start`).
+    """
+    from sharepoint import download_document
+
+    drive_id = os.environ.get("SHAREPOINT_DRIVE_ID")
+    if not drive_id:
+        raise RuntimeError("SHAREPOINT_DRIVE_ID manquant (configuration requise).")
+    dest_dir = os.path.join(os.environ.get("JOBS_BASE_DIR", "jobs"), str(document_id))
+    return download_document(
+        item_id=document_id,
+        drive_id=drive_id,
+        dest_dir=dest_dir,
+        access_token=graph_token,
+    )
+
+
+def _graph_error_status(exc: Exception) -> int:
+    """Mappe une erreur de téléchargement Graph vers un statut HTTP à renvoyer :
+    403/404 (refus/introuvable côté utilisateur) propagés, sinon 502."""
+    resp = getattr(exc, "response", None)
+    code = getattr(resp, "status_code", None)
+    return code if code in (403, 404) else 502
 
 
 def _ocr(path: str) -> dict:
@@ -133,12 +162,18 @@ def _activity_logger():
 
 def _run_activity(payload: dict) -> dict:
     """Corps de l'activité Durable : exécute l'orchestration pure avec _DEPS.
-    Testable sans le runtime Azure."""
+    Testable sans le runtime Azure. Si `document_path` est fourni (document déjà
+    téléchargé AU NOM de l'utilisateur via OBO côté http_start), on court-circuite
+    le téléchargement applicatif — aucun token n'est persisté dans l'état Durable."""
     payload = payload or {}
+    deps = _DEPS
+    pre_path = payload.get("document_path")
+    if pre_path:
+        deps = replace(_DEPS, download=lambda _id, _p=pre_path: _p)
     return run_audit(
         payload.get("document_id"),
         payload.get("client_context"),
-        _DEPS,
+        deps,
         logger=_activity_logger(),
     )
 
@@ -149,7 +184,9 @@ def _audit_orchestration(context):
     payload = context.get_input() or {}
     result = yield context.call_activity(
         "activity_run_audit",
-        {"document_id": payload.get("document_id"), "client_context": payload.get("client_context")},
+        {"document_id": payload.get("document_id"),
+         "client_context": payload.get("client_context"),
+         "document_path": payload.get("document_path")},
     )
     return result
 
@@ -170,6 +207,23 @@ if _DURABLE_AVAILABLE:
         document_id = (body or {}).get("document_id")
         if not document_id:
             return func.HttpResponse("document_id manquant.", status_code=400)
+
+        # OBO : si la passerelle a fourni un token Graph délégué, on télécharge le
+        # document AU NOM de l'utilisateur (Graph applique sa RBAC SharePoint).
+        # Pas d'accès -> 403/404 propagés, l'orchestration ne démarre pas. Seul un
+        # chemin local (pas de token) entre ensuite dans l'état Durable.
+        body = dict(body or {})
+        graph_token = req.headers.get("X-MS-Graph-Token")
+        if graph_token:
+            try:
+                body["document_path"] = _download_as_user(document_id, graph_token)
+            except Exception as exc:  # noqa: BLE001
+                status = _graph_error_status(exc)
+                logging.warning("Téléchargement SharePoint (OBO) refusé/échoué (%s)", status)
+                return func.HttpResponse(
+                    "Accès refusé à ce document ou document introuvable.",
+                    status_code=status)
+
         instance_id = await client.start_new("audit_orchestrator", None, body)
         logging.info("Orchestration audit démarrée: %s", instance_id)
         # Renvoie {id, statusQueryGetUri, ...} — contrat attendu par api_server.

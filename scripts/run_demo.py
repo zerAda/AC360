@@ -141,7 +141,7 @@ def _generate_fic(result: Dict[str, Any], out_dir: str) -> Optional[str]:
 def main():
     parser = argparse.ArgumentParser(description="Démo AC360 (audit + FIC), hors-ligne par défaut.")
     parser.add_argument("--ocr", default=None, help="Fichier JSON OCR (défaut : fixture embarquée).")
-    parser.add_argument("--reference", default=None, help="Fichier JSON de référence Fabric (défaut : fixture embarquée).")
+    parser.add_argument("--reference", default=None, help="Fichier JSON de référence Fabric (défaut : embarquée).")
     parser.add_argument("--pdf", default=None, help="PDF à analyser via Azure OCR réel (si .env configuré).")
     parser.add_argument("--fic", action="store_true", help="Générer aussi le brouillon FIC (.docx).")
     args = parser.parse_args()

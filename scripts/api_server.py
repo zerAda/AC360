@@ -17,6 +17,12 @@ from auth import verify_azure_ad_token
 from safe_logger import log_security
 from feature_flags import is_allowed, blocked_message, hash_id
 from usage_tracker import track
+from graph_obo import acquire_obo_graph_token, obo_configured
+
+
+def _truthy(val) -> bool:
+    return str(val or "").strip().lower() in ("1", "true", "yes", "on", "enabled")
+
 
 _DOCID_FORBIDDEN = re.compile(r"[/\\\s;'\"<>`]|\.\.|\x00")
 _DOCID_MAX_LEN = 512
@@ -214,11 +220,28 @@ async def trigger_audit(
     log_security("INFO", "Envoi de la requête d'audit à l'Azure Function",
                  {"document_id": request.document_id, "user": user_upn})
 
-    try:
-        auth_headers = {}
-        if req and req.headers.get("Authorization"):
-            auth_headers["Authorization"] = req.headers["Authorization"]
+    auth_headers = {}
+    if req and req.headers.get("Authorization"):
+        auth_headers["Authorization"] = req.headers["Authorization"]
 
+    # On-Behalf-Of : échange le token utilisateur contre un token Graph délégué.
+    # Le téléchargement SharePoint s'effectuera AVEC les permissions de
+    # l'utilisateur (superposition RBAC). Sans OBO, l'accès reste applicatif côté
+    # Function : AC360_REQUIRE_OBO=true ferme alors la porte (prod stricte).
+    raw_auth = req.headers.get("Authorization", "") if req else ""
+    if obo_configured():
+        try:
+            graph_token = await run_in_threadpool(acquire_obo_graph_token, raw_auth)
+            auth_headers["X-MS-Graph-Token"] = graph_token
+        except Exception as e:
+            log_security("ERROR", f"OBO exchange failed: {e}")
+            raise HTTPException(status_code=502, detail="Échec de l'autorisation déléguée (OBO).")
+    elif _truthy(os.environ.get("AC360_REQUIRE_OBO")):
+        log_security("ERROR", "OBO requis (AC360_REQUIRE_OBO) mais non configuré")
+        raise HTTPException(status_code=503,
+                            detail="Autorisation déléguée requise mais non configurée.")
+
+    try:
         func_url = f"{AZURE_FUNCTION_URL}/audit"
         if AZURE_FUNCTION_KEY:
             func_url += f"?code={AZURE_FUNCTION_KEY}"
@@ -227,10 +250,19 @@ async def trigger_audit(
             func_url,
             json={"document_id": request.document_id, "client_context": request.client_context},
             headers=auth_headers,
-            timeout=10.0
+            timeout=30.0
         )
+        # Refus Graph propagé : l'utilisateur n'a pas accès au document (403) ou
+        # il est introuvable (404) — on ne masque pas en 502.
+        if resp.status_code in (403, 404):
+            track("audit_documentaire_started", status="blocked",
+                  user_id=user_upn, action_name="trigger_audit", error_code="sharepoint_denied")
+            raise HTTPException(status_code=resp.status_code,
+                                detail="Accès refusé à ce document ou document introuvable.")
         resp.raise_for_status()
         az_data = resp.json()
+    except HTTPException:
+        raise
     except Exception as e:
         log_security("ERROR", f"Failed to start Azure Function: {e}")
         raise HTTPException(status_code=502, detail="Erreur de communication avec le moteur d'audit Azure.")

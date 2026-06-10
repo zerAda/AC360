@@ -103,6 +103,51 @@ def test_run_activity_never_raises_on_bad_payload():
     assert out["status"] == "Failed"
 
 
+def test_run_activity_uses_pre_downloaded_path(monkeypatch):
+    # OBO : un document_path fourni court-circuite le téléchargement réseau.
+    captured = {}
+
+    def fake_run_audit(document_id, client_context, deps, logger=None):
+        captured["downloaded"] = deps.download("ignored-id")
+        return {"status": "Completed"}
+
+    monkeypatch.setattr(fa, "run_audit", fake_run_audit)
+    out = fa._run_activity({"document_id": "d1", "document_path": "/jobs/d1/contrat.pdf"})
+    assert out["status"] == "Completed"
+    # Le download injecté retourne le chemin pré-téléchargé, sans appel réseau.
+    assert captured["downloaded"] == "/jobs/d1/contrat.pdf"
+
+
+# --- Mapping erreurs Graph (OBO) -------------------------------------------
+def test_graph_error_status_maps_403_404_and_default():
+    class _Exc(Exception):
+        def __init__(self, code):
+            self.response = type("R", (), {"status_code": code})()
+
+    assert fa._graph_error_status(_Exc(403)) == 403
+    assert fa._graph_error_status(_Exc(404)) == 404
+    assert fa._graph_error_status(_Exc(500)) == 502
+    assert fa._graph_error_status(RuntimeError("no response attr")) == 502
+
+
+def test_download_as_user_passes_user_token(monkeypatch):
+    monkeypatch.setenv("SHAREPOINT_DRIVE_ID", "drive-123")
+    monkeypatch.setenv("JOBS_BASE_DIR", "/tmp/jobs")
+    captured = {}
+
+    import sharepoint
+    monkeypatch.setattr(
+        sharepoint, "download_document",
+        lambda **kw: captured.update(kw) or "/tmp/jobs/x/contrat.pdf")
+
+    path = fa._download_as_user("item-1", "USER-GRAPH-TOKEN")
+    assert path == "/tmp/jobs/x/contrat.pdf"
+    # Le token délégué de l'utilisateur (et non l'identité applicative) est utilisé.
+    assert captured["access_token"] == "USER-GRAPH-TOKEN"
+    assert captured["item_id"] == "item-1"
+    assert captured["drive_id"] == "drive-123"
+
+
 # --- Orchestration (générateur) --------------------------------------------
 def test_audit_orchestration_calls_activity():
     ctx = MagicMock()
