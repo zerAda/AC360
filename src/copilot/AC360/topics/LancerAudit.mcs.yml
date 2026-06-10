@@ -1,6 +1,6 @@
 mcs.metadata:
   componentName: Lancer Audit AC360
-  description: Déclenche l'audit documentaire (OCR + comparaison Microsoft Fabric) via la passerelle Azure, puis restitue le verdict. Lecture seule, gestion d'erreur robuste.
+  description: Déclenche l'audit documentaire (OCR + comparaison Microsoft Fabric) via la passerelle Azure, puis restitue le verdict. Le document est recherché en langage naturel, au nom de l'utilisateur (permissions SharePoint respectées). Lecture seule.
 kind: AdaptiveDialog
 beginDialog:
   kind: OnRecognizedIntent
@@ -17,18 +17,121 @@ beginDialog:
 
   actions:
     - kind: Question
-      id: ask-document-id
+      id: ask-doc-query
       interruptionPolicy:
         allowInterruption: true
-      variable: Topic.DocumentId
-      prompt: "Quel document souhaitez-vous auditer ? Indiquez son identifiant SharePoint (drive item id)."
+      variable: Topic.DocQuery
+      prompt: "Quel document souhaitez-vous auditer ? Indiquez le client et le type de document (ex. « contrat GEREP »)."
       entity: StringPrebuiltEntity
+
+    # 1) Résolution du document en langage naturel, AU NOM de l'utilisateur
+    #    (seuls les documents auxquels il a accès remontent).
+    - kind: HttpRequestAction
+      id: http_resolve_doc
+      method: Post
+      url: https://ac360-gateway-staging.azurewebsites.net/api/documents/resolve
+      headers:
+        Authorization: ="Bearer " & System.User.AccessToken
+      body:
+        content: |-
+          {
+            "query": "{Topic.DocQuery}"
+          }
+        contentType: application/json
+      responseStringVariable: Topic.ResolveResponse
+
+    - kind: ConditionGroup
+      id: condition_resolve
+      conditions:
+        # Cas A : un seul document correspond -> on enchaîne directement.
+        - id: resolve_single
+          condition: =!IsBlank(Topic.ResolveResponse) && ("document_id" in Topic.ResolveResponse)
+          actions:
+            - kind: SetVariable
+              id: set_doc_id_single
+              variable: Topic.DocumentId
+              value: =Text(ParseJSON(Topic.ResolveResponse).document_id)
+            - kind: SetVariable
+              id: set_doc_name_single
+              variable: Topic.DocName
+              value: =Text(ParseJSON(Topic.ResolveResponse).document_name)
+
+        # Cas B : plusieurs documents -> liste numérotée, l'utilisateur choisit.
+        - id: resolve_multiple
+          condition: =!IsBlank(Topic.ResolveResponse) && ("display" in Topic.ResolveResponse)
+          actions:
+            - kind: SetVariable
+              id: set_doc_display
+              variable: Topic.DocDisplay
+              value: =Text(ParseJSON(Topic.ResolveResponse).display)
+            - kind: SendActivity
+              id: send_doc_choices
+              activity: |-
+                J'ai trouvé plusieurs documents accessibles :
+
+                {Topic.DocDisplay}
+            - kind: Question
+              id: ask-doc-choice
+              variable: Topic.DocChoice
+              prompt: "Quel document ? Répondez par son numéro (ex. 1)."
+              entity: NumberPrebuiltEntity
+            - kind: HttpRequestAction
+              id: http_resolve_choice
+              method: Post
+              url: https://ac360-gateway-staging.azurewebsites.net/api/documents/resolve
+              headers:
+                Authorization: ="Bearer " & System.User.AccessToken
+              body:
+                content: |-
+                  {
+                    "query": "{Topic.DocQuery}",
+                    "choice": {Topic.DocChoice}
+                  }
+                contentType: application/json
+              responseStringVariable: Topic.ChoiceResponse
+            - kind: ConditionGroup
+              id: condition_choice
+              conditions:
+                - id: choice_ok
+                  condition: =!IsBlank(Topic.ChoiceResponse) && ("document_id" in Topic.ChoiceResponse)
+                  actions:
+                    - kind: SetVariable
+                      id: set_doc_id_choice
+                      variable: Topic.DocumentId
+                      value: =Text(ParseJSON(Topic.ChoiceResponse).document_id)
+                    - kind: SetVariable
+                      id: set_doc_name_choice
+                      variable: Topic.DocName
+                      value: =Text(ParseJSON(Topic.ChoiceResponse).document_name)
+              elseActions:
+                - kind: SendActivity
+                  id: msg_choice_invalid
+                  activity: "Ce numéro ne correspond à aucun document de la liste. Relancez l'audit pour recommencer la recherche."
+
+      elseActions:
+        - kind: SendActivity
+          id: msg_no_doc_found
+          activity: |-
+            Je n'ai trouvé aucun document accessible correspondant à « {Topic.DocQuery} ».
+
+            Précisez le nom du client ou du fichier (ex. « contrat GEREP 2026 »), puis relancez l'audit. Seuls les documents auxquels vous avez accès dans SharePoint sont consultables.
+
+    # Garde : sans document résolu, on s'arrête proprement ici.
+    - kind: ConditionGroup
+      id: condition_have_doc
+      conditions:
+        - id: no_doc_resolved
+          condition: =IsBlank(Topic.DocumentId)
+          actions:
+            - kind: EndDialog
+              id: end_no_doc
+              clearTopicQueue: true
 
     - kind: SendActivity
       id: send-audit-start
-      activity: "⏳ Je lance l'audit documentaire (OCR + comparaison Fabric, lecture seule) sur le document **{Topic.DocumentId}**…"
+      activity: "⏳ Je lance l'audit documentaire (OCR + comparaison Fabric, lecture seule) sur **{Topic.DocName}**…"
 
-    # 1) Déclenchement de l'orchestration (Durable Function via la passerelle).
+    # 2) Déclenchement de l'orchestration (Durable Function via la passerelle).
     - kind: HttpRequestAction
       id: http_audit_trigger
       method: Post
@@ -43,7 +146,7 @@ beginDialog:
         contentType: application/json
       responseStringVariable: Topic.AuditTriggerResponse
 
-    # 2) Gestion d'erreur : réponse vide / sans job_id = service indisponible,
+    # 3) Gestion d'erreur : réponse vide / sans job_id = service indisponible,
     #    accès refusé (401/403) ou document invalide (400). On ne parse jamais
     #    une réponse non conforme.
     - kind: ConditionGroup
@@ -61,7 +164,7 @@ beginDialog:
               id: send-audit-queued
               activity: "✅ Audit lancé (référence : {Global.AuditJobId}). Je récupère le verdict…"
 
-            # 3) Lecture du statut/verdict.
+            # 4) Lecture du statut/verdict.
             - kind: HttpRequestAction
               id: http_audit_status
               method: Get
@@ -99,6 +202,7 @@ beginDialog:
 
                         **Verdict : {Topic.ResVerdict}**
 
+                        - **Document audité** : {Topic.DocName}
                         - **Client (document)** : {Topic.ResClient}
                         - **Référence Microsoft Fabric** : {Topic.ResRef}
                         - **Score de correspondance (nom)** : {Topic.ResScore} %
@@ -124,7 +228,7 @@ beginDialog:
           activity: |-
             ⚠️ L'audit n'a pas pu démarrer.
 
-            Causes possibles : service d'audit momentanément indisponible, accès non autorisé, ou identifiant de document invalide. Vérifiez l'identifiant SharePoint et réessayez, ou contactez votre administrateur si le problème persiste.
+            Causes possibles : service d'audit momentanément indisponible, accès non autorisé à ce document, ou document non auditable. Réessayez, ou contactez votre administrateur si le problème persiste.
         - kind: EndDialog
           id: end_audit_error
           clearTopicQueue: true

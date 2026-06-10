@@ -41,6 +41,7 @@ l'audit ne démarre pas. `AC360_REQUIRE_OBO=true` ferme la porte si OBO absent.
 
 | Route | Méthode | Appelée par (topic) |
 |---|---|---|
+| `/api/documents/resolve` | POST | **LancerAudit** ✅ (résolution en langage naturel, as-user/OBO) |
 | `/api/audit` | POST | **LancerAudit** ✅ (câblé ce jour) |
 | `/api/audit/{job}/status` | GET | **LancerAudit** + **StatutAudit** ✅ |
 | `/api/planner/task` | POST | **CreerRelancePlanner** ✅ |
@@ -134,10 +135,11 @@ RAG de `agent.mcs.yml` (anti-injection, anti-promesse, lecture seule).
 - ✅ **Rendu du verdict** : corrigé — le statut est mis à plat côté passerelle
   (`verdict`/`client`/`score` au premier niveau) et les topics affichent une fiche
   lisible (plus de JSON brut).
-- **UX identifiant document** : `LancerAudit` demande un *drive item id* Graph —
-  inutilisable par un commercial. **Recommandation** : résoudre le document depuis
-  un nom client + type via une recherche Graph **au nom de l'utilisateur** (OBO
-  déjà en place), au lieu d'exiger un GUID opaque.
+- ✅ **UX identifiant document** : corrigé — `LancerAudit` demande désormais une
+  recherche en langage naturel (« contrat GEREP »), résolue par
+  `/api/documents/resolve` (Graph search **au nom de l'utilisateur** via OBO,
+  filtre extensions auditables, tri récence, choix par numéro si plusieurs).
+  Plus aucun GUID demandé au commercial.
 - `/api/download/{job}/{file}` : non surfacé par un topic (FIC générée mais pas
   proposée en téléchargement dans le chat ; un lien chat ne peut pas porter le
   bearer — nécessite un lien pré-signé ou une remise via Graph).

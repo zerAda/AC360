@@ -10,6 +10,7 @@ import uuid
 import time
 import httpx
 import asyncio
+import urllib.parse
 from collections import defaultdict
 from planner_integration import create_planner_task
 from generate_fiche_rdv import generate_fiche_rdv
@@ -134,6 +135,23 @@ async def _check_rate_limit(upn: str) -> None:
     _rate_limit_store[upn].append(now)
 
 
+# Quota distinct (plus généreux) pour la résolution documentaire : une recherche
+# ne doit pas consommer le quota d'audits.
+_RESOLVE_RATE_MAX = 60
+
+
+async def _check_resolve_rate_limit(upn: str) -> None:
+    key = f"resolve:{upn}"
+    now = time.time()
+    _rate_limit_store[key] = [t for t in _rate_limit_store[key] if now - t < _RATE_LIMIT_WINDOW]
+    if len(_rate_limit_store[key]) >= _RESOLVE_RATE_MAX:
+        log_security("WARNING", f"Rate limit recherche dépassé pour {upn}")
+        raise HTTPException(
+            status_code=429,
+            detail=f"Quota dépassé : maximum {_RESOLVE_RATE_MAX} recherches par heure.")
+    _rate_limit_store[key].append(now)
+
+
 def _validate_document_id(document_id: str) -> str:
     try:
         normalized = str(uuid.UUID(str(document_id)))
@@ -163,6 +181,11 @@ def _validate_document_id(document_id: str) -> str:
 class AuditRequest(BaseModel):
     document_id: str
     client_context: Optional[str] = None
+
+
+class DocumentResolveRequest(BaseModel):
+    query: str
+    choice: Optional[int] = None
 
 
 class PlannerTaskRequest(BaseModel):
@@ -343,6 +366,104 @@ async def trigger_audit(
     }
 
 
+# Extensions auditables (alignées sur l'allowlist de téléchargement Function).
+_AUDITABLE_EXT = (".pdf", ".docx", ".png", ".jpg", ".jpeg", ".tiff", ".tif")
+_RESOLVE_QUERY_MIN, _RESOLVE_QUERY_MAX = 2, 200
+
+
+def _validate_resolve_query(query: str) -> str:
+    q = (query or "").strip()
+    if not (_RESOLVE_QUERY_MIN <= len(q) <= _RESOLVE_QUERY_MAX):
+        raise HTTPException(status_code=400,
+                            detail="Recherche invalide (2 à 200 caractères).")
+    if re.search(r"[\x00-\x1f\x7f]", q):
+        raise HTTPException(status_code=400,
+                            detail="Recherche invalide (caractères interdits).")
+    return q
+
+
+@app.post("/api/documents/resolve")
+async def resolve_document(
+    request: DocumentResolveRequest,
+    req: Request,
+    user_upn: str = Depends(verify_azure_ad_token)
+):
+    """Résout un document auditable depuis une recherche en langage naturel
+    (« contrat GEREP ») via Graph **au nom de l'utilisateur** (OBO) : seuls les
+    documents auxquels IL a accès remontent. Évite d'exiger un drive-item-id."""
+    await _check_resolve_rate_limit(user_upn)
+    q = _validate_resolve_query(request.query)
+
+    drive_id = os.environ.get("SHAREPOINT_DRIVE_ID")
+    if not drive_id:
+        raise HTTPException(status_code=503,
+                            detail="Recherche documentaire non configurée (SHAREPOINT_DRIVE_ID).")
+    if not obo_configured():
+        raise HTTPException(status_code=503,
+                            detail="Recherche au nom de l'utilisateur non configurée (OBO).")
+
+    raw_auth = req.headers.get("Authorization", "") if req else ""
+    try:
+        graph_token = await run_in_threadpool(acquire_obo_graph_token, raw_auth)
+    except Exception as e:
+        log_security("ERROR", f"OBO exchange failed (resolve): {e}")
+        raise HTTPException(status_code=502, detail="Échec de l'autorisation déléguée (OBO).")
+
+    # Littéral OData : quote simple doublée, puis URL-encode du segment.
+    safe_q = urllib.parse.quote(q.replace("'", "''"), safe="")
+    try:
+        resp = await http_client.get(
+            f"{GRAPH_BASE}/drives/{drive_id}/root/search(q='{safe_q}')",
+            params={"$select": "id,name,lastModifiedDateTime,parentReference", "$top": "25"},
+            headers={"Authorization": f"Bearer {graph_token}"},
+            timeout=15.0,
+        )
+    except Exception as e:
+        log_security("ERROR", f"Graph search error: {e}")
+        raise HTTPException(status_code=502, detail="Recherche SharePoint indisponible.")
+    if resp.status_code == 403:
+        log_security("WARNING", "Recherche SharePoint refusée (as-user)")
+        raise HTTPException(status_code=403, detail="Accès SharePoint refusé.")
+    if resp.status_code >= 400:
+        log_security("ERROR", f"Graph search HTTP {resp.status_code}")
+        raise HTTPException(status_code=502, detail="Recherche SharePoint indisponible.")
+
+    docs = []
+    for it in (resp.json() or {}).get("value", []) or []:
+        name = str(it.get("name") or "")
+        if os.path.splitext(name)[1].lower() not in _AUDITABLE_EXT:
+            continue
+        folder = str(((it.get("parentReference") or {}).get("path") or ""))
+        folder = folder.split("root:", 1)[-1].lstrip("/") or "racine"
+        docs.append({
+            "id": it.get("id"),
+            "name": name,
+            "modified": str(it.get("lastModifiedDateTime") or "")[:10],
+            "folder": folder,
+        })
+    docs.sort(key=lambda d: d["modified"], reverse=True)
+    docs = docs[:5]
+    count = len(docs)
+
+    track("backend_action_called", user_id=user_upn, action_name="resolve_document")
+
+    if count == 0:
+        return {"count": 0}
+    if request.choice is not None:
+        if not (1 <= int(request.choice) <= count):
+            raise HTTPException(status_code=400, detail=f"Choix invalide (1 à {count}).")
+        chosen = docs[int(request.choice) - 1]
+        return {"count": count, "single": True,
+                "document_id": chosen["id"], "document_name": chosen["name"]}
+    if count == 1:
+        return {"count": 1, "single": True,
+                "document_id": docs[0]["id"], "document_name": docs[0]["name"]}
+    display = "\n".join(
+        f"{i + 1}. **{d['name']}** — {d['folder']} (modifié {d['modified']})"
+        for i, d in enumerate(docs))
+    return {"count": count, "single": False, "display": display}
+
+
 @app.post("/api/planner/task")
 async def api_create_planner_task(
     request: PlannerTaskRequest,
@@ -463,7 +584,6 @@ async def get_job_status(
             log_security("ERROR", "TASK_HUB_NAME non configuré — statut d'audit indisponible")
             raise HTTPException(status_code=500, detail="Configuration du moteur d'audit incomplète.")
 
-        import urllib.parse
         safe_job_id = urllib.parse.quote(job_id)
 
         resp = await http_client.get(
