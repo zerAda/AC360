@@ -1,4 +1,37 @@
 import os
+import subprocess
+
+# Extensions interdites pour tout fichier SUIVI par git (anti-régression P0-02).
+# Le code source ne doit jamais tracker de documents bureautiques, données ou
+# artefacts : ils peuvent contenir des données client réelles.
+FORBIDDEN_TRACKED_EXTS = (
+    ".docx", ".xlsx", ".xlsm", ".csv", ".tsv", ".log",
+    ".db", ".sqlite", ".sqlite3", ".pyc", ".pyo", ".env",
+)
+FORBIDDEN_TRACKED_NAMES = ("docs_content.txt",)
+
+
+def test_no_forbidden_files_git_tracked():
+    """Aucun fichier interdit ne doit être SUIVI par git (vérifie le vrai
+    contenu versionné, pas seulement le disque local)."""
+    root = get_project_root()
+    try:
+        out = subprocess.run(
+            ["git", "ls-files"], cwd=root, capture_output=True, text=True, check=True
+        ).stdout
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        import pytest
+        pytest.skip("git indisponible")
+        return
+
+    offenders = []
+    for path in out.splitlines():
+        name = os.path.basename(path)
+        _, ext = os.path.splitext(name)
+        if ext.lower() in FORBIDDEN_TRACKED_EXTS or name in FORBIDDEN_TRACKED_NAMES:
+            offenders.append(path)
+    assert not offenders, f"Fichiers interdits suivis par git (P0-02) : {offenders}"
+
 
 # Fichiers interdits stricts (ex: DB, secrets en clair) dans le repo
 FORBIDDEN_FILES = [

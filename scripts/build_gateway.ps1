@@ -28,9 +28,13 @@ $root = Split-Path $PSScriptRoot -Parent
 $pkg = Join-Path $root "gwpkg"
 
 # Modules réellement importés par api_server (chaîne vérifiée) :
+# api_server -> planner_integration, generate_fiche_rdv, auth, safe_logger,
+#               feature_flags, usage_tracker ; auth -> config ;
+#               usage_tracker -> feature_flags, safe_logger.
 $modules = @(
     "api_server.py", "auth.py", "config.py",
-    "safe_logger.py", "planner_integration.py", "generate_fiche_rdv.py"
+    "safe_logger.py", "planner_integration.py", "generate_fiche_rdv.py",
+    "feature_flags.py", "usage_tracker.py"
 )
 
 Remove-Item -Recurse -Force $pkg -ErrorAction SilentlyContinue

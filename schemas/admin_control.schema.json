@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ac360/schemas/admin_control.schema.json",
+  "title": "AC360 Admin Control Action",
+  "description": "Action de contrôle administrateur (blocage/déblocage de consommation). Tracée en audit log, sans donnée sensible en clair.",
+  "type": "object",
+  "required": ["action_id", "timestamp_utc", "admin_id_hash", "action", "scope", "result"],
+  "additionalProperties": false,
+  "properties": {
+    "action_id": { "type": "string", "minLength": 1 },
+    "timestamp_utc": { "type": "string", "format": "date-time" },
+    "admin_id_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "action": {
+      "type": "string",
+      "enum": [
+        "block_global",
+        "unblock_global",
+        "block_feature",
+        "unblock_feature",
+        "block_user",
+        "unblock_user",
+        "block_team",
+        "unblock_team",
+        "emergency_stop"
+      ]
+    },
+    "scope": {
+      "type": "string",
+      "enum": ["global", "ocr", "rag", "email_draft", "audit", "user", "team"]
+    },
+    "target_hash": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+    "reason": { "type": ["string", "null"] },
+    "result": { "type": "string", "enum": ["applied", "denied_not_admin", "noop"] }
+  }
+}

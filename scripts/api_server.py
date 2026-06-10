@@ -15,6 +15,8 @@ from planner_integration import create_planner_task
 from generate_fiche_rdv import generate_fiche_rdv
 from auth import verify_azure_ad_token
 from safe_logger import log_security
+from feature_flags import is_allowed, blocked_message, hash_id
+from usage_tracker import track
 
 # Caractères/motifs interdits dans un document_id SharePoint (defense-in-depth :
 # rejet au bord avant de démarrer une orchestration). Un drive-item id Graph
@@ -203,6 +205,18 @@ async def trigger_audit(
     # Validation au bord : rejette injection/traversal/oversized avant de
     # déclencher une orchestration (defense-in-depth).
     _validate_sharepoint_doc_id(request.document_id)
+
+    # Kill-switch / blocage de consommation (P0-09) : un admin peut couper
+    # l'audit globalement, par fonctionnalité ou par utilisateur, sans
+    # supprimer le bot. Tracé en usage (P0-08), sans donnée sensible en clair.
+    _user_hash = hash_id(user_upn)
+    _allowed, _reason = is_allowed("audit", user_id_hash=_user_hash)
+    if not _allowed:
+        track("audit_documentaire_started", status="blocked",
+              user_id=user_upn, action_name="trigger_audit", error_code=_reason)
+        raise HTTPException(status_code=403, detail=blocked_message(_reason))
+    track("audit_documentaire_started", status="ok",
+          user_id=user_upn, action_name="trigger_audit")
 
     # [PATCH HATER OPTION A] Plus de fausse validation locale.
     # On transmet l'ID du document à l'Azure Durable Function qui s'occupera

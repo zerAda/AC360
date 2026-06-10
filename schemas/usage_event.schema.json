@@ -1,0 +1,61 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ac360/schemas/usage_event.schema.json",
+  "title": "AC360 Usage Event",
+  "description": "Événement d'usage AC360. AUCUNE donnée personnelle en clair : les identifiants utilisateur/commercial/client sont des hash. Les tokens sont ESTIMÉS (Copilot Studio n'expose pas les tokens réels) — le nom du champ le rend explicite.",
+  "type": "object",
+  "required": [
+    "event_id",
+    "timestamp_utc",
+    "environment",
+    "bot_version",
+    "event_type",
+    "status"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "event_id": { "type": "string", "minLength": 1 },
+    "timestamp_utc": { "type": "string", "format": "date-time" },
+    "environment": { "type": "string", "enum": ["dev", "test", "uat", "prod", "staging"] },
+    "bot_version": { "type": "string", "minLength": 1 },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "conversation_started",
+        "message_sent",
+        "message_received",
+        "rag_search_executed",
+        "sharepoint_document_accessed",
+        "ocr_started",
+        "ocr_completed",
+        "ocr_failed",
+        "backend_action_called",
+        "email_draft_generated",
+        "audit_documentaire_started",
+        "audit_documentaire_completed",
+        "cost_estimated",
+        "budget_warning_triggered",
+        "user_blocked",
+        "user_unblocked",
+        "bot_emergency_stopped"
+      ]
+    },
+    "user_id_hash": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+    "commercial_id_hash": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+    "team_id": { "type": ["string", "null"] },
+    "client_id_hash": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+    "conversation_id": { "type": ["string", "null"] },
+    "session_id": { "type": ["string", "null"] },
+    "action_name": { "type": ["string", "null"] },
+    "topic_name": { "type": ["string", "null"] },
+    "document_count": { "type": "integer", "minimum": 0 },
+    "page_count": { "type": "integer", "minimum": 0 },
+    "estimated_tokens_input": { "type": "integer", "minimum": 0 },
+    "estimated_tokens_output": { "type": "integer", "minimum": 0 },
+    "estimated_cost_eur": { "type": "number", "minimum": 0 },
+    "cost_source": { "type": "string", "enum": ["REEL_MESURE", "ESTIME", "PARAMETRABLE", "A_VALIDER"] },
+    "status": { "type": "string", "enum": ["ok", "error", "blocked", "skipped"] },
+    "error_code": { "type": ["string", "null"] },
+    "safe_error_message": { "type": ["string", "null"] }
+  }
+}
