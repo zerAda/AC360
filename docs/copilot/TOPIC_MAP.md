@@ -20,6 +20,23 @@ Deux mécanismes coexistent (orchestration **générative désactivée** :
 - **Action HTTP** : `HttpRequestAction` → **passerelle** `ac360-gateway-staging`
   (auth `System.User.AccessToken`) → Azure Function / Graph.
 
+## Sécurité d'accès — superposition RBAC SharePoint
+
+Les deux chemins lisent SharePoint **avec l'identité de l'utilisateur**, jamais au
+nom du bot :
+
+| Chemin | Identité | Trimming RBAC |
+|---|---|---|
+| RAG natif (`SearchAndSummarizeContent`) | utilisateur (auth intégrée) | ✅ natif Graph |
+| Audit (`/api/audit`) | utilisateur via **On-Behalf-Of** | ✅ `download_as_user` côté Function |
+
+Flux audit : token utilisateur (aud = passerelle) → la passerelle fait l'**échange
+OBO** (`scripts/graph_obo.py`) → token Graph délégué → pré-vérification d'accès au
+bord (`_assert_user_can_access_document`, échec rapide 403/404) → la Function
+télécharge **au nom de l'utilisateur** (`X-MS-Graph-Token`). Aucun jeton n'est
+persisté dans l'état Durable (seul un chemin local transite). Pas d'accès → 403,
+l'audit ne démarre pas. `AC360_REQUIRE_OBO=true` ferme la porte si OBO absent.
+
 ## Routes passerelle (vérité — `api_server.py`)
 
 | Route | Méthode | Appelée par (topic) |
@@ -95,18 +112,34 @@ RAG de `agent.mcs.yml` (anti-injection, anti-promesse, lecture seule).
 
 ## Pré-requis runtime — `À VALIDER EN ENVIRONNEMENT RÉEL`
 
-1. **Audience du jeton** : `System.User.AccessToken` doit porter le scope
-   `api://5399f31e-c4d5-46db-b620-033e59abda84/Audit.Trigger` (auth de l'agent
-   configurée sur l'app Entra de la passerelle). Sinon la passerelle renvoie 401.
-2. **URL passerelle** : actuellement l'hôte **staging** est codé en dur dans les
-   topics. **Recommandation prod** : variable d'environnement Power Platform
+1. **🔴 CRITIQUE — Audience du jeton (make-or-break).** Les actions HTTP envoient
+   `="Bearer " & System.User.AccessToken`. Pour que la passerelle accepte le jeton
+   ET que l'OBO fonctionne, ce jeton DOIT avoir **aud = app passerelle** et le
+   scope `api://5399f31e-c4d5-46db-b620-033e59abda84/Audit.Trigger`.
+   Or `settings.mcs.yml` est en `authenticationMode: Integrated` (« Authenticate
+   with Microsoft »), où `System.User.AccessToken` n'est **pas** garanti de porter
+   une audience custom. Action requise côté tenant : configurer l'**auth Entra ID
+   de l'agent** (SSO) pour exposer/demander ce scope (Expose an API + consentement
+   délégué). Sinon → 401 systématique, l'audit ne marche jamais. **À VALIDER.**
+2. **OBO délégué** : l'app passerelle doit avoir la permission **déléguée**
+   `Files.Read.All` (ou `Sites.Read.All`) **consentie**, plus `OBO_CLIENT_SECRET`.
+   Sans cela, l'échange OBO échoue (et avec `AC360_REQUIRE_OBO=true`, l'audit est
+   refusé proprement). **À VALIDER.**
+3. **URL passerelle** : l'hôte **staging** est codé en dur dans les topics.
+   **Recommandation prod** : variable d'environnement Power Platform
    (`Env.<gatewayBaseUrl>`) pour porter dev/staging/prod sans réédition.
-3. **Rendu du verdict d'audit** : la rubrique affiche la réponse JSON brute du
-   statut ; le rendu lisible (table des écarts) est à affiner sur Copilot réel.
 
 ## Résiduels (non bloquants)
 
+- ✅ **Rendu du verdict** : corrigé — le statut est mis à plat côté passerelle
+  (`verdict`/`client`/`score` au premier niveau) et les topics affichent une fiche
+  lisible (plus de JSON brut).
+- **UX identifiant document** : `LancerAudit` demande un *drive item id* Graph —
+  inutilisable par un commercial. **Recommandation** : résoudre le document depuis
+  un nom client + type via une recherche Graph **au nom de l'utilisateur** (OBO
+  déjà en place), au lieu d'exiger un GUID opaque.
 - `/api/download/{job}/{file}` : non surfacé par un topic (FIC générée mais pas
-  proposée en téléchargement dans le chat).
+  proposée en téléchargement dans le chat ; un lien chat ne peut pas porter le
+  bearer — nécessite un lien pré-signé ou une remise via Graph).
 - `GenererFicheRDV` : corps de requête générique (`summary`/`alert_points`
   placeholders) — à alimenter depuis une synthèse préalable.

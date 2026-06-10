@@ -39,12 +39,32 @@ beginDialog:
                 - id: recheck_completed
                   condition: =!IsBlank(Topic.StatusResponse) && (Text(ParseJSON(Topic.StatusResponse).status) = "Completed")
                   actions:
+                    - kind: SetVariable
+                      id: set_st_verdict
+                      variable: Topic.StVerdict
+                      value: =Text(ParseJSON(Topic.StatusResponse).verdict)
+                    - kind: SetVariable
+                      id: set_st_client
+                      variable: Topic.StClient
+                      value: =Text(ParseJSON(Topic.StatusResponse).client_document)
+                    - kind: SetVariable
+                      id: set_st_ref
+                      variable: Topic.StRef
+                      value: =Text(ParseJSON(Topic.StatusResponse).reference_fabric)
+                    - kind: SetVariable
+                      id: set_st_score
+                      variable: Topic.StScore
+                      value: =Text(ParseJSON(Topic.StatusResponse).score_nom)
                     - kind: SendActivity
                       id: display_recheck_result
                       activity: |-
                         ## 🔎 Verdict de l'audit
 
-                        {Topic.StatusResponse}
+                        **Verdict : {Topic.StVerdict}**
+
+                        - **Client (document)** : {Topic.StClient}
+                        - **Référence Microsoft Fabric** : {Topic.StRef}
+                        - **Score de correspondance (nom)** : {Topic.StScore} %
 
                         _Comparaison à la référence Microsoft Fabric (lecture seule)._
               elseActions:

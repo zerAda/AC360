@@ -63,34 +63,34 @@ gptCapabilities:
   webBrowsing: false
 
 conversationStarters:
-  - title: Résume-moi le dossier client
+  - title: Résumé d’un dossier client
     text: Résume-moi le dossier d’un client.
 
-  - title: Retrouve le dernier contrat di
+  - title: Dernier contrat d’un client
     text: Retrouve le dernier contrat disponible pour un client.
 
-  - title: Prépare-moi une synthèse
+  - title: Synthèse avant rendez-vous
     text: Prépare-moi une synthèse avant rendez-vous client.
 
-  - title: "Les points d’attention "
+  - title: Points d’attention du dossier
     text: Identifie les points d’attention dans un dossier client.
 
-  - title: "La dernière proposition "
+  - title: Dernière proposition
     text: Retrouve la dernière proposition commerciale d’un client.
 
-  - title: Liste les documents disponible
+  - title: Documents disponibles
     text: Liste les documents disponibles pour un client.
 
-  - title: Rédige un brouillon de mail
+  - title: Brouillon de mail de suivi
     text: Rédige un brouillon de mail de suivi client.
 
-  - title: Quelles informations manquent
+  - title: Informations manquantes
     text: Quelles informations manquent dans ce dossier client ?
 
-  - title: Quels documents as-tu utilisés
+  - title: Sources utilisées
     text: Quels documents as-tu utilisés pour ta réponse ?
 
-  - title: Je veux vérifier si j’ai accès
+  - title: Vérifier mon accès
     text: Je veux vérifier si j’ai accès à un dossier client.
 
 aISettings:

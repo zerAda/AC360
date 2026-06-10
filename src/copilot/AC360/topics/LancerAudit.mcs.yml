@@ -76,12 +76,32 @@ beginDialog:
                 - id: audit_completed
                   condition: =!IsBlank(Topic.AuditStatusResponse) && (Text(ParseJSON(Topic.AuditStatusResponse).status) = "Completed")
                   actions:
+                    - kind: SetVariable
+                      id: set_res_verdict
+                      variable: Topic.ResVerdict
+                      value: =Text(ParseJSON(Topic.AuditStatusResponse).verdict)
+                    - kind: SetVariable
+                      id: set_res_client
+                      variable: Topic.ResClient
+                      value: =Text(ParseJSON(Topic.AuditStatusResponse).client_document)
+                    - kind: SetVariable
+                      id: set_res_ref
+                      variable: Topic.ResRef
+                      value: =Text(ParseJSON(Topic.AuditStatusResponse).reference_fabric)
+                    - kind: SetVariable
+                      id: set_res_score
+                      variable: Topic.ResScore
+                      value: =Text(ParseJSON(Topic.AuditStatusResponse).score_nom)
                     - kind: SendActivity
                       id: display_audit_result
                       activity: |-
                         ## 🔎 Résultat de l'audit documentaire
 
-                        {Topic.AuditStatusResponse}
+                        **Verdict : {Topic.ResVerdict}**
+
+                        - **Client (document)** : {Topic.ResClient}
+                        - **Référence Microsoft Fabric** : {Topic.ResRef}
+                        - **Score de correspondance (nom)** : {Topic.ResScore} %
 
                         _Comparaison à la référence Microsoft Fabric (lecture seule). Aucun document modifié. Vérifiez les écarts avant toute action commerciale._
                     - kind: EndDialog

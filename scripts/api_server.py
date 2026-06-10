@@ -199,6 +199,60 @@ def _assert_audit_owner(job_id, user_upn):
         raise HTTPException(status_code=403, detail="Accès refusé à ce job d'audit.")
 
 
+GRAPH_BASE = "https://graph.microsoft.com/v1.0"
+
+
+async def _assert_user_can_access_document(graph_token: str, document_id: str) -> None:
+    """Échec rapide : vérifie AVEC le token délégué de l'utilisateur qu'il a accès
+    au document SharePoint, avant de déclencher l'orchestration. Best-effort — un
+    drive non configuré ou une erreur transitoire ne bloque pas (le téléchargement
+    as-user côté Function reste le contrôle faisant autorité)."""
+    drive_id = os.environ.get("SHAREPOINT_DRIVE_ID")
+    if not drive_id or not graph_token:
+        return
+    try:
+        resp = await http_client.get(
+            f"{GRAPH_BASE}/drives/{drive_id}/items/{document_id}",
+            params={"$select": "id"},
+            headers={"Authorization": f"Bearer {graph_token}"},
+            timeout=10.0,
+        )
+    except Exception as e:
+        log_security("WARNING", f"Pré-vérification d'accès indisponible: {e}")
+        return
+    if resp.status_code in (403, 404):
+        log_security("WARNING", "Accès SharePoint refusé (pré-vérification as-user)",
+                     {"status": resp.status_code})
+        raise HTTPException(status_code=resp.status_code,
+                            detail="Accès refusé à ce document ou document introuvable.")
+
+
+def _shape_status_response(job_id, data):
+    """Met à plat la réponse Durable en un contrat de présentation stable : le
+    verdict et les champs remontent au premier niveau (évite un JSON doublement
+    imbriqué et un rendu fragile côté Copilot). `result` reste pour rétro-compat.
+    Tolérant : accepte une sortie plate ou imbriquée (output.result)."""
+    runtime_status = data.get("runtimeStatus")
+    completed = runtime_status == "Completed"
+    output = data.get("output") if completed else None
+    output = output if isinstance(output, dict) else {}
+    audit = output.get("result")
+    audit = audit if isinstance(audit, dict) else output
+    return {
+        "job_id": job_id,
+        "status": runtime_status,
+        "audit_status": output.get("status"),
+        "verdict": audit.get("verdict"),
+        "client_document": audit.get("client_document"),
+        "reference_fabric": audit.get("meilleur_match_fabric"),
+        "score_nom": audit.get("score_correspondance_nom"),
+        "fields": audit.get("fields"),
+        "fic_available": bool(output.get("fic_path")),
+        "error": output.get("error"),
+        "result": output if completed else None,
+    }
+
+
 @app.post("/api/audit")
 async def trigger_audit(
     request: AuditRequest,
@@ -229,6 +283,7 @@ async def trigger_audit(
     # l'utilisateur (superposition RBAC). Sans OBO, l'accès reste applicatif côté
     # Function : AC360_REQUIRE_OBO=true ferme alors la porte (prod stricte).
     raw_auth = req.headers.get("Authorization", "") if req else ""
+    graph_token = None
     if obo_configured():
         try:
             graph_token = await run_in_threadpool(acquire_obo_graph_token, raw_auth)
@@ -240,6 +295,17 @@ async def trigger_audit(
         log_security("ERROR", "OBO requis (AC360_REQUIRE_OBO) mais non configuré")
         raise HTTPException(status_code=503,
                             detail="Autorisation déléguée requise mais non configurée.")
+
+    # Échec rapide au bord : si l'utilisateur n'a pas accès au document, on refuse
+    # AVANT de démarrer l'orchestration (le contrôle as-user côté Function reste
+    # le garant final).
+    if graph_token:
+        try:
+            await _assert_user_can_access_document(graph_token, request.document_id)
+        except HTTPException:
+            track("audit_documentaire_started", status="blocked", user_id=user_upn,
+                  action_name="trigger_audit", error_code="sharepoint_denied")
+            raise
 
     try:
         func_url = f"{AZURE_FUNCTION_URL}/audit"
@@ -409,12 +475,7 @@ async def get_job_status(
             raise HTTPException(status_code=404, detail="Job introuvable.")
         resp.raise_for_status()
         data = resp.json()
-
-        return {
-            "job_id": job_id,
-            "status": data.get("runtimeStatus"),
-            "result": data.get("output") if data.get("runtimeStatus") == "Completed" else None
-        }
+        return _shape_status_response(job_id, data)
     except HTTPException:
         raise
     except httpx.HTTPStatusError as e:
