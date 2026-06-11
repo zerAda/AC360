@@ -14,8 +14,14 @@ param (
     [string]$CommitMessage = "Auto-sync: mise à jour du bot Copilot Studio depuis le Cloud"
 )
 
-$EnvironmentId = "https://org2cf282f3.crm4.dynamics.com"
-$BotId = "c82f127c-8f47-f111-bec6-000d3ab9a512"
+# Identifiants d'environnement Dataverse / Bot : externalisés (pas de couplage
+# tenant figé dans le script). Définir AC360_DATAVERSE_ENV_URL / AC360_BOT_ID.
+$EnvironmentId = if ($env:AC360_DATAVERSE_ENV_URL) { $env:AC360_DATAVERSE_ENV_URL } else { "" }
+$BotId = if ($env:AC360_BOT_ID) { $env:AC360_BOT_ID } else { "" }
+if (-not $EnvironmentId -or -not $BotId) {
+    Write-Host "Erreur: définissez AC360_DATAVERSE_ENV_URL et AC360_BOT_ID avant de lancer ce script." -ForegroundColor Red
+    exit 1
+}
 $CopilotParentDir = Join-Path -Path $PSScriptRoot -ChildPath "..\src\copilot"
 $CopilotProjectDir = Join-Path -Path $CopilotParentDir -ChildPath "AC360"
 
@@ -90,15 +96,15 @@ if ($Mode -eq 'Pull') {
     Write-Host "Synchronisation Git en cours..." -ForegroundColor Cyan
     Set-Location $PSScriptRoot\..
     git add src/copilot
-    
-    # [PATCH HATER] Prévention du crash Git (Ne pas commit si l'arbre est propre)
+
+    # Ne pas commit si l'arbre est propre.
     $gitStatus = git status --porcelain src/copilot
     if ([string]::IsNullOrWhiteSpace($gitStatus)) {
         Write-Host "Aucune modification détectée dans Copilot Studio. Le dépôt est déjà à jour." -ForegroundColor Green
     } else {
         git commit -m $CommitMessage
-        git push origin main
-        Write-Host "Synchronisation locale et Git terminée avec succès." -ForegroundColor Green
+        # Pas de push automatique vers main : l'opérateur revoit puis pousse.
+        Write-Host "Modifications committées localement. Revoyez puis 'git push' manuellement." -ForegroundColor Green
     }
 }
 elseif ($Mode -eq 'Push') {
