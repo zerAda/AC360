@@ -77,7 +77,11 @@ def extract_document_azure(file_path):
 
     # Borne le temps d'attente : sans timeout, un document pathologique pourrait
     # bloquer indéfiniment l'activité Durable (worker épuisé).
+    # NB: result(timeout) NE lève PAS à l'expiration (azure-core rend la main avec
+    # un résultat possiblement incomplet) -> on impose une échéance explicite.
     result = poller.result(timeout=_ocr_timeout())
+    if not poller.done():
+        raise TimeoutError(f"OCR non terminé après {_ocr_timeout():.0f}s (document trop lourd ?).")
 
     # Structuration de la sortie JSON
     output_data = {

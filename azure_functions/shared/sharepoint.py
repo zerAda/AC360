@@ -81,8 +81,11 @@ def download_document(
             headers=headers, timeout=60.0,
         )
     content_resp.raise_for_status()
-    # Garde anti-mémoire : rejette via Content-Length AVANT de bufferiser le corps
-    # (sinon un corps de plusieurs Go est entièrement lu en RAM avant le contrôle).
+    # La borne anti-mémoire AMONT est le contrôle de taille des métadonnées (avant
+    # ce GET). Ici, repli quand la taille déclarée par Graph était absente/0 : on
+    # rejette via Content-Length avant l'écriture disque et l'appel OCR. (Une borne
+    # mémoire STRICTE imposerait un téléchargement en streaming — le client HTTP est
+    # injecté/bufferisé ici ; cf. résiduel.)
     try:
         declared_len = int((getattr(content_resp, "headers", None) or {}).get("Content-Length", 0) or 0)
     except (ValueError, TypeError):
