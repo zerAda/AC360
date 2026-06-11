@@ -47,12 +47,16 @@ beginDialog:
         - id: fiche_succeeded
           condition: =!IsBlank(Topic.ApiResponse) && ("success" in Topic.ApiResponse)
           actions:
+            - kind: SetVariable
+              id: set_fiche_job
+              variable: Topic.FicheJobId
+              value: =Text(ParseJSON(Topic.ApiResponse).job_id)
             - kind: SendActivity
               id: send-success
               activity: |-
                 ✅ La fiche de rendez-vous pour **{Topic.ClientName}** a été générée.
 
-                Référence : {Topic.ApiResponse}
+                Référence : {Topic.FicheJobId}
 
                 _Le document est disponible côté service ; son téléchargement sécurisé nécessite votre authentification (lien non public)._
             - kind: EndDialog

@@ -21,7 +21,7 @@ param (
     [Parameter(Mandatory=$true)]
     [string]$ClientFolderName,
     
-    [string]$LibraryName = "Dossiers_Clients"
+    [string]$LibraryName = "Dossiers_Clients",
     [string]$ClientId = $env:ENTRA_CLIENT_ID,
     [string]$ClientSecret = $env:ENTRA_CLIENT_SECRET
 )

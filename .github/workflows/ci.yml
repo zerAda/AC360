@@ -76,10 +76,10 @@ jobs:
           pip install bandit
           bandit -r scripts azure_functions -ll
 
-      - name: Audit des dépendances (pip-audit / CVE)
+      - name: Audit des dépendances (pip-audit / CVE — tous les requirements)
         run: |
           pip install pip-audit
-          pip-audit -r requirements.txt
+          pip-audit -r requirements.txt -r scripts/requirements.txt -r azure_functions/requirements.txt
 
   # ============================================================
   # JOB 2 — Validation des YAML Copilot Studio
