@@ -24,7 +24,7 @@ jobs:
 
     steps:
       - name: Checkout du code source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Afficher la version à déployer
         env:
