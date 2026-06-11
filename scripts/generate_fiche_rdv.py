@@ -42,10 +42,15 @@ def safe_filename(name: str, max_length: int = 64) -> str:
     return name
 
 
-def generate_fiche_rdv(client_name: str, summary: str, alert_points: str, job_id: str = None) -> str:
+def generate_fiche_rdv(client_name: str, summary: str, alert_points: str,
+                       job_id: str = None, owner_upn: str = None) -> str:
     """
     Génère un document Word synthétique pour préparer un rendez-vous.
     Protégé contre le Path Traversal via safe_filename().
+
+    ``owner_upn`` : identité de l'auteur, transmise EXPLICITEMENT (jamais via une
+    variable d'environnement de processus — sinon course inter-requêtes sur
+    l'appartenance, contournant le contrôle IDOR du téléchargement).
     """
     if not DOCX_AVAILABLE:
         raise ImportError(
@@ -62,11 +67,12 @@ def generate_fiche_rdv(client_name: str, summary: str, alert_points: str, job_id
     job_dir = Path(JOBS_BASE_DIR) / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save metadata for IDOR protection
+    # Appartenance (anti-IDOR) : owner explicite, repli legacy sur l'env var.
+    owner = owner_upn or os.environ.get("CURRENT_USER_UPN", "unknown")
     meta_path = job_dir / "meta.json"
     import json
     with open(meta_path, "w", encoding="utf-8") as f:
-        json.dump({"user_upn": os.environ.get("CURRENT_USER_UPN", "unknown")}, f)
+        json.dump({"user_upn": owner}, f)
 
     file_path = job_dir / f"Fiche_RDV_{safe_name}.docx"
 

@@ -8,7 +8,9 @@ from jwt.algorithms import RSAAlgorithm
 from fastapi import HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from config import load_config
-config = load_config()
+# Fail-fast au démarrage : sans TENANT_ID/CLIENT_ID, la validation des jetons est
+# impossible — on refuse de démarrer plutôt que de servir mal configuré.
+config = load_config(require_auth=True)
 
 JWKS_URL = config.jwks_url
 API_AUDIENCE = config.client_id

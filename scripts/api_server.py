@@ -471,7 +471,15 @@ async def api_create_planner_task(
     user_upn: str = Depends(verify_azure_ad_token)
 ):
     try:
-        token = req.headers.get("Authorization", "").replace("Bearer ", "")
+        # Le jeton entrant a pour audience la PASSERELLE ; Graph le rejetterait.
+        # On échange via On-Behalf-Of pour un jeton Graph délégué (permission
+        # déléguée Tasks.ReadWrite consentie), au nom de l'utilisateur.
+        raw_auth = req.headers.get("Authorization", "") if req else ""
+        if not obo_configured():
+            raise HTTPException(
+                status_code=503,
+                detail="Planner indisponible : autorisation déléguée (OBO) non configurée.")
+        token = await run_in_threadpool(acquire_obo_graph_token, raw_auth)
         plan_id, bucket_id, due_date = _resolve_planner_params(
             request.plan_id, request.bucket_id, request.due_date)
         if not plan_id or not bucket_id:
@@ -501,15 +509,15 @@ async def api_generate_fiche_rdv(
     job_id = str(uuid.uuid4())
     log_security("INFO", f"Génération fiche RDV demandée par {user_upn} pour {request.client_name}")
     try:
-        # Prevent event loop blocking by offloading the synchronous file I/O to a threadpool
-        import os
-        os.environ["CURRENT_USER_UPN"] = user_upn
+        # I/O fichier synchrone déportée en threadpool. L'identité de l'auteur est
+        # passée EXPLICITEMENT (pas via os.environ : sinon course inter-requêtes).
         file_path = await run_in_threadpool(
             generate_fiche_rdv,
             request.client_name,
             request.summary,
             request.alert_points,
-            job_id
+            job_id,
+            user_upn,
         )
         return {
             "status": "success",
