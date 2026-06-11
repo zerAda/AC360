@@ -14,7 +14,7 @@ azure-identity>=1.15.0
 
 # Fabric / Data
 pyodbc>=5.1.0
-pandas>=2.2.0
+pandas>=3.0.3
 thefuzz>=0.22.0
 python-Levenshtein>=0.25.0
 jsonschema>=4.21.0
