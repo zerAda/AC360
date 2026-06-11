@@ -28,7 +28,7 @@ beginDialog:
       id: search_documents_manquants
       variable: Topic.Answer
       userInput: =System.Activity.Text
-      moderationLevel: Medium
+      moderationLevel: High
       additionalInstructions: |-
         Tu es Assistant Client 360.
         

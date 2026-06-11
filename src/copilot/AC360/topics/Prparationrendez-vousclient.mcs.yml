@@ -22,9 +22,9 @@ beginDialog:
       id: search_rdv_client
       variable: Topic.Answer
       userInput: =System.Activity.Text
-      moderationLevel: Medium
+      moderationLevel: High
       additionalInstructions: |-
-        Tu es Assistant Client 360 - DEV.
+        Tu es Assistant Client 360.
 
         Objectif de cette rubrique :
         Préparer un brief commercial avant rendez-vous client à partir des documents SharePoint accessibles.

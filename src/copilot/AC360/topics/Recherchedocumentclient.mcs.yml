@@ -23,9 +23,9 @@ beginDialog:
       id: search_recherche_doc
       variable: Topic.Answer
       userInput: =System.Activity.Text
-      moderationLevel: Medium
+      moderationLevel: High
       additionalInstructions: |-
-        Tu es Assistant Client 360 - DEV.
+        Tu es Assistant Client 360.
 
         Objectif de cette rubrique :
         Aider l’utilisateur à retrouver un document client dans SharePoint : contrat, proposition commerciale, compte rendu, document administratif ou archive.

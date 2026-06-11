@@ -23,9 +23,9 @@ beginDialog:
       id: search_risques_client
       variable: Topic.Answer
       userInput: =System.Activity.Text
-      moderationLevel: Medium
+      moderationLevel: High
       additionalInstructions: |-
-        Tu es Assistant Client 360 - DEV.
+        Tu es Assistant Client 360.
 
         Objectif de cette rubrique :
         Identifier les points d’attention, risques, échéances, alertes ou sujets sensibles présents dans les documents SharePoint accessibles.
