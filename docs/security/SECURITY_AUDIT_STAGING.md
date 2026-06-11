@@ -152,3 +152,38 @@ comptent le plus pour un système traitant des documents clients : **auth forte
 privilège, données en lecture seule, TLS 1.2 partout, aucune donnée fabriquée**.
 Le seul point à fermer côté identité est la **suppression du SP de setup**, qui
 nécessite une réactivation PIM de votre part.
+
+---
+
+## Re-vérification live — 2026-06-11 (audit multi-équipes)
+
+Posture re-confirmée par `az` (compte `a.zeriri@gerep.fr`, tenant GEREP) :
+
+| Contrôle | État live | Verdict |
+|---|---|---|
+| Function/Gateway `httpsOnly` | true / true | ✅ |
+| TLS min · FTPS | 1.2 / Disabled (les deux) | ✅ |
+| Function ingress | 22 règles `allow-gw-*` + **Deny all** | ✅ verrouillé |
+| MI Function / Gateway (RBAC Azure) | **Key Vault Secrets User** uniquement, scoped au vault | ✅ moindre privilège |
+| Key Vault | purge-protection + soft-delete + RBAC = on ; `publicNetworkAccess=Enabled` | 🟡 réseau ouvert |
+| Storage | `allowBlobPublicAccess=false`, TLS 1.2 | ✅ |
+| Doc Intelligence | `publicNetworkAccess=Enabled`, **auth locale par clé active** (`disableLocalAuth=null`) | 🟡 |
+
+### Résiduels infra — **À VALIDER EN ENVIRONNEMENT RÉEL** (fenêtre de maintenance requise)
+
+Ces durcissements ne sont **pas** appliqués à chaud car ils risquent une coupure
+du staging vivant (apps non intégrées à un VNet ; OCR auth par clé). À planifier :
+
+1. **Key Vault privé** — nécessite l'intégration VNet des apps (App Service VNet
+   integration + Private Endpoint KV). Sinon les références KV cassent.
+   `az keyvault update -n ac360-kv-staging --public-network-access Disabled --default-action Deny` **après** VNet + PE.
+2. **Doc Intelligence en Entra-only** — le code OCR supporte désormais la Managed
+   Identity (repli clé) : accorder à la MI Function le rôle *Cognitive Services
+   User* sur `ac360-docintel-staging`, retirer `AZURE_OCR_KEY` des app settings,
+   puis `az cognitiveservices account update ... --custom-domain ... ` +
+   `--api-properties` / portail → `disableLocalAuth=true`. Valider l'OCR end-to-end
+   avant de retirer la clé.
+3. **Storage `AzureWebJobsStorage` via MI** + `defaultAction=Deny` + service
+   endpoints (Durable exige aujourd'hui la Shared Key).
+4. **IaC** (Bicep/Terraform) pour figer cette posture et empêcher la dérive
+   (ex. la régression `httpsOnly` déjà observée).

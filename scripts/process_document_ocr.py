@@ -58,9 +58,17 @@ def extract_document_azure(file_path):
     logger.info("OCR: analyse via Azure Document Intelligence")
 
     AzureKeyCredential, DocumentAnalysisClient = _require_azure_sdk()
+    # Identité Entra (Managed Identity) si aucune clé n'est fournie -> permet de
+    # désactiver l'auth locale par clé (disableLocalAuth) côté ressource. Repli
+    # sur la clé pour rétro-compat / dev.
+    if AZURE_OCR_KEY:
+        credential = AzureKeyCredential(AZURE_OCR_KEY)
+    else:
+        from azure.identity import DefaultAzureCredential
+        credential = DefaultAzureCredential()
     document_analysis_client = DocumentAnalysisClient(
         endpoint=AZURE_OCR_ENDPOINT,
-        credential=AzureKeyCredential(AZURE_OCR_KEY)
+        credential=credential,
     )
 
     logger.debug("OCR: analyse du fichier %s", os.path.basename(str(file_path)))
