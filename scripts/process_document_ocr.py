@@ -1,7 +1,18 @@
 import os
 import json
+import logging
 import argparse
 from dotenv import load_dotenv
+
+logger = logging.getLogger("AC360.ocr")
+
+
+def _ocr_timeout() -> float:
+    try:
+        return float(os.getenv("AZURE_OCR_TIMEOUT_S", "120"))
+    except (ValueError, TypeError):
+        return 120.0
+
 
 # NOTE: Le SDK Azure est une dépendance *optionnelle* chargée paresseusement au
 # runtime (voir _require_azure_sdk). On n'appelle JAMAIS sys.exit() à l'import :
@@ -44,7 +55,7 @@ def extract_document_azure(file_path):
     Extrait les données du document via Azure AI Document Intelligence.
     Utilise le modèle prebuilt-document pour extraire les paires Clé-Valeur et les Tableaux.
     """
-    print(f"[AZURE MODE] Connexion à l'endpoint : {AZURE_OCR_ENDPOINT}")
+    logger.info("OCR: analyse via Azure Document Intelligence")
 
     AzureKeyCredential, DocumentAnalysisClient = _require_azure_sdk()
     document_analysis_client = DocumentAnalysisClient(
@@ -52,11 +63,13 @@ def extract_document_azure(file_path):
         credential=AzureKeyCredential(AZURE_OCR_KEY)
     )
 
-    print(f"[AZURE MODE] Analyse du fichier : {file_path}...")
+    logger.debug("OCR: analyse du fichier %s", os.path.basename(str(file_path)))
     with open(file_path, "rb") as f:
         poller = document_analysis_client.begin_analyze_document("prebuilt-document", document=f)
 
-    result = poller.result()
+    # Borne le temps d'attente : sans timeout, un document pathologique pourrait
+    # bloquer indéfiniment l'activité Durable (worker épuisé).
+    result = poller.result(timeout=_ocr_timeout())
 
     # Structuration de la sortie JSON
     output_data = {

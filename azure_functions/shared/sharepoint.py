@@ -81,6 +81,14 @@ def download_document(
             headers=headers, timeout=60.0,
         )
     content_resp.raise_for_status()
+    # Garde anti-mémoire : rejette via Content-Length AVANT de bufferiser le corps
+    # (sinon un corps de plusieurs Go est entièrement lu en RAM avant le contrôle).
+    try:
+        declared_len = int((getattr(content_resp, "headers", None) or {}).get("Content-Length", 0) or 0)
+    except (ValueError, TypeError):
+        declared_len = 0
+    if declared_len and declared_len > max_bytes:
+        raise ValueError(f"Document trop volumineux (Content-Length {declared_len} > {max_bytes}).")
     data = content_resp.content
     if data is not None and len(data) > max_bytes:
         raise ValueError(f"Contenu téléchargé trop volumineux ({len(data)} octets > {max_bytes}).")
