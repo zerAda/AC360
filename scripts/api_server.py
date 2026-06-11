@@ -222,6 +222,26 @@ def _assert_audit_owner(job_id, user_upn):
         raise HTTPException(status_code=403, detail="Accès refusé à ce job d'audit.")
 
 
+def _assert_durable_owner(data, user_upn):
+    """Contrôle d'appartenance robuste au scale-out/redémarrage : compare le
+    ``owner_hash`` persisté dans l'entrée d'orchestration Durable (stockage
+    partagé) au hash de l'appelant. Absent (job legacy) -> on n'élève pas ici
+    (le fast-path mémoire et le contrôle au déclenchement couvrent)."""
+    import json as _json
+    inp = data.get("input")
+    if isinstance(inp, str):
+        try:
+            inp = _json.loads(inp)
+        except (ValueError, TypeError):
+            inp = None
+    owner_hash = inp.get("owner_hash") if isinstance(inp, dict) else None
+    if owner_hash and owner_hash != hash_id(user_upn):
+        log_security("WARNING",
+                     "Accès refusé au statut d'audit (owner_hash Durable ne correspond pas)",
+                     {"user": user_upn})
+        raise HTTPException(status_code=403, detail="Accès refusé à ce job d'audit.")
+
+
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 
 
@@ -337,7 +357,12 @@ async def trigger_audit(
 
         resp = await http_client.post(
             func_url,
-            json={"document_id": request.document_id, "client_context": request.client_context},
+            json={"document_id": request.document_id,
+                  "client_context": request.client_context,
+                  # Appartenance persistée DANS l'entrée d'orchestration Durable
+                  # (stockage partagé) -> contrôle IDOR robuste au redémarrage et
+                  # au scale-out, contrairement à la map mémoire (fast-path seul).
+                  "owner_hash": hash_id(user_upn)},
             headers=auth_headers,
             timeout=30.0
         )
@@ -596,13 +621,15 @@ async def get_job_status(
 
         resp = await http_client.get(
             f"{AZURE_FUNCTION_HOST}/runtime/webhooks/durabletask/instances/{safe_job_id}"
-            f"?taskHub={task_hub}&connection=Storage{auth_param}",
+            f"?taskHub={task_hub}&connection=Storage&showInput=true{auth_param}",
             timeout=5.0
         )
         if resp.status_code == 404:
             raise HTTPException(status_code=404, detail="Job introuvable.")
         resp.raise_for_status()
         data = resp.json()
+        # Contrôle d'appartenance robuste (cross-instance) en plus du fast-path mémoire.
+        _assert_durable_owner(data, user_upn)
         return _shape_status_response(job_id, data)
     except HTTPException:
         raise

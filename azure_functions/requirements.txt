@@ -10,3 +10,4 @@ thefuzz>=0.22.0
 python-Levenshtein>=0.25.0
 python-docx>=1.1.0
 python-dotenv>=1.0.1
+jsonschema>=4.21.0

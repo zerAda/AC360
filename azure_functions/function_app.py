@@ -94,6 +94,13 @@ def _graph_error_status(exc: Exception) -> int:
     return code if code in (403, 404) else 502
 
 
+def _require_obo() -> bool:
+    """True si la lecture au nom de l'utilisateur (OBO) est OBLIGATOIRE : interdit
+    alors le repli sur l'identité applicative (download as-app) de la Function."""
+    return os.environ.get("AC360_REQUIRE_OBO", "").strip().lower() in (
+        "1", "true", "yes", "on", "enabled")
+
+
 def _ocr(path: str) -> dict:
     from process_document_ocr import extract_document_azure
     return extract_document_azure(path)
@@ -223,6 +230,13 @@ if _DURABLE_AVAILABLE:
                 return func.HttpResponse(
                     "Accès refusé à ce document ou document introuvable.",
                     status_code=status)
+        elif _require_obo():
+            # Fail-closed : pas de jeton délégué -> on REFUSE le repli as-app
+            # (sinon la Function lirait SharePoint avec ses pleins droits).
+            logging.warning("OBO requis mais X-MS-Graph-Token absent — audit refusé")
+            return func.HttpResponse(
+                "Autorisation déléguée requise (lecture au nom de l'utilisateur).",
+                status_code=403)
 
         instance_id = await client.start_new("audit_orchestrator", None, body)
         logging.info("Orchestration audit démarrée: %s", instance_id)

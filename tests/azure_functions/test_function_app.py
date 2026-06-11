@@ -130,6 +130,15 @@ def test_graph_error_status_maps_403_404_and_default():
     assert fa._graph_error_status(RuntimeError("no response attr")) == 502
 
 
+def test_require_obo_flag(monkeypatch):
+    monkeypatch.delenv("AC360_REQUIRE_OBO", raising=False)
+    assert fa._require_obo() is False
+    monkeypatch.setenv("AC360_REQUIRE_OBO", "true")
+    assert fa._require_obo() is True
+    monkeypatch.setenv("AC360_REQUIRE_OBO", "garbage")
+    assert fa._require_obo() is False  # valeur inconnue -> ne force pas par accident
+
+
 def test_download_as_user_passes_user_token(monkeypatch):
     monkeypatch.setenv("SHAREPOINT_DRIVE_ID", "drive-123")
     monkeypatch.setenv("JOBS_BASE_DIR", "/tmp/jobs")
