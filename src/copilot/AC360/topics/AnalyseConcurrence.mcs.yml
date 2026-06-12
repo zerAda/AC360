@@ -3,9 +3,10 @@ mcs.metadata:
   description: Compare le contrat concurrent avec l'offre GEREP via RAG.
 kind: AdaptiveDialog
 beginDialog:
-  kind: OnIntent
+  kind: OnRecognizedIntent
   id: main
   intent:
+    displayName: Analyse de Concurrence
     triggerQueries:
       - Compare le contrat concurrent
       - Analyse le concurrent

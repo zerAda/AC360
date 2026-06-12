@@ -3,9 +3,10 @@ mcs.metadata:
   description: Compile les informations du client et génère un fichier Word (Fiche de Vol).
 kind: AdaptiveDialog
 beginDialog:
-  kind: OnIntent
+  kind: OnRecognizedIntent
   id: main
   intent:
+    displayName: Générer Fiche RDV
     triggerQueries:
       - Génère la fiche de rendez-vous
       - Prépare le One-Pager pour mon RDV

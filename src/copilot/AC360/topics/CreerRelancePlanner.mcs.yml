@@ -3,9 +3,10 @@ mcs.metadata:
   description: Crée une tâche de suivi dans Microsoft Planner.
 kind: AdaptiveDialog
 beginDialog:
-  kind: OnIntent
+  kind: OnRecognizedIntent
   id: main
   intent:
+    displayName: Créer Relance Planner
     triggerQueries:
       - Créer une relance
       - Ajouter une tâche Planner
