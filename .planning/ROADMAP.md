@@ -40,7 +40,7 @@ Plans:
 
 - [x] 01-01-PLAN.md — Wave 0: create the AUD-07/AUD-08 failing test scaffolds (audit-trail contract + JOBS_BASE_DIR locality)
 - [x] 01-02-PLAN.md — Wave 1: oid identity in verify_azure_ad_token (AUD-02) + safe_logger dict-value redaction helper (AUD-06)
-- [ ] 01-03-PLAN.md — Wave 1: bounded-backoff transient-only OBO retry wrapper, 503-on-exhaustion (AUD-05) + OBO scope checkpoint
+- [x] 01-03-PLAN.md — Wave 1: bounded-backoff transient-only OBO retry wrapper, 503-on-exhaustion (AUD-05) + OBO scope checkpoint
 - [ ] 01-04-PLAN.md — Wave 2: scripts/audit_trail.py document-access emit seam, 4-field PII-free contract (AUD-07)
 - [ ] 01-05-PLAN.md — Wave 1: single-instance gateway pin in infra/main.bicep, documented load-bearing (AUD-04)
 - [ ] 01-06-PLAN.md — Wave 3: wire oid owner_hash + authoritative IDOR gate + 503 OBO + redaction + audit emit + locality (AUD-03/05/06/07/08)
@@ -131,7 +131,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Deep Code Audit & Critical Fixes | 2/7 | In Progress|  |
+| 1. Deep Code Audit & Critical Fixes | 3/7 | In Progress|  |
 | 2. Production Infrastructure Provisioning | 0/TBD | Not started | - |
 | 3. Backend Deploy & Observability | 0/TBD | Not started | - |
 | 4. Copilot Studio Production Publish | 0/TBD | Not started | - |
