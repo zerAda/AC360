@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 02-01-PLAN.md
-last_updated: "2026-06-13T23:14:46.126Z"
+last_updated: "2026-06-13T23:48:43.050Z"
 last_activity: 2026-06-13 -- Phase 02 execution started
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 13
-  completed_plans: 8
+  completed_plans: 9
   percent: 17
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-13)
 ## Current Position
 
 Phase: 02 (production-infrastructure-provisioning) — EXECUTING
-Plan: 2 of 6
+Plan: 4 of 6
 Status: Ready to execute
 Last activity: 2026-06-13 -- Phase 02 execution started
 
@@ -59,6 +59,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P04 | 6 | 1 tasks | 1 files |
 | Phase 01 P06 | 35 | 2 tasks | 9 files |
 | Phase 02 P01 | 14 | 2 tasks | 3 files |
+| Phase 02 P02 | 9 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -77,6 +78,8 @@ Recent decisions affecting current work:
 - [Phase 01]: 01-04: AUD-07 emit seam is gate-inert and dependency-free; real Azure Monitor exporter deferred to Phase 3 OBS-01 behind the same APPINSIGHTS gate.
 - [Phase ?]: [02-01]: docIntelLocation defaults francecentral in prod params; West Europe is operator fallback if EU-residency/DocIntel-S0 checkpoint fails.
 - [Phase ?]: [02-01]: validate_infra.ps1 defers per-INF assertions (exit 0) until prod B1 shape compiled then fails closed; UTF-8+BOM for Windows PowerShell 5.1.
+- [Phase ?]: [02-02]: Delegated Graph scope GUIDs resolved at runtime from the live Graph SP (Get-Scope), never hardcoded; live scope-set operator-verified at 02-04.
+- [Phase ?]: [02-02]: API audience app carries NO credential; only the OBO confidential client holds a secret, written exclusively to Key Vault (OBO-CLIENT-SECRET).
 
 ### Pending Todos
 
@@ -104,6 +107,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-13T23:14:46.116Z
+Last session: 2026-06-13T23:48:23.087Z
 Stopped at: Completed 02-01-PLAN.md
 Resume file: None
