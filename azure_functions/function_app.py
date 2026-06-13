@@ -33,6 +33,17 @@ except Exception:  # pragma: no cover - dépend du runtime
     _DURABLE_AVAILABLE = False
 
 from audit_pipeline import AuditDeps, run_audit  # noqa: E402
+# AUD-07 — seam d'émission de la piste d'accès document. Importé ici pour rendre
+# le lien explicite, MAIS l'émission CANONIQUE de l'événement d'accès vit côté
+# api_server.py (`trigger_audit`), pas dans cette activité. Raison : le contrat
+# AUD-07 exige `user_id_hash = hash_id(oid)`, or l'entrée d'orchestration Durable
+# ne transporte QUE l'`owner_hash` (un hash à SENS UNIQUE de l'oid) et JAMAIS
+# l'oid en clair — par conception, pour qu'aucun identifiant brut n'atterrisse
+# dans l'état Durable persisté. L'activité ne peut donc pas recalculer
+# `hash_id(oid)`. On émet par conséquent au seul site porteur de l'oid
+# (api_server.trigger_audit, sur le chemin d'accès, avant le démarrage de
+# l'orchestration). Voir Plan 01-06 / RESEARCH §AUD-07 (Open Q2).
+from audit_trail import emit_document_access as _emit_document_access  # noqa: E402,F401
 
 
 # ---------------------------------------------------------------------------
@@ -171,7 +182,17 @@ def _run_activity(payload: dict) -> dict:
     """Corps de l'activité Durable : exécute l'orchestration pure avec _DEPS.
     Testable sans le runtime Azure. Si `document_path` est fourni (document déjà
     téléchargé AU NOM de l'utilisateur via OBO côté http_start), on court-circuite
-    le téléchargement applicatif — aucun token n'est persisté dans l'état Durable."""
+    le téléchargement applicatif — aucun token n'est persisté dans l'état Durable.
+
+    AUD-08 — LOCALITÉ : download() -> ocr() -> compare() -> make_fic() s'exécutent
+    TOUS dans CETTE unique activité, partageant le même JOBS_BASE_DIR/{document_id}
+    sur la MÊME VM. Aucun chemin de fichier produit ici ne traverse une frontière
+    d'activité (ce qui, sur un plan multi-VM sans état, atterrirait sur un
+    JOBS_BASE_DIR vide). Ne PAS scinder ce corps en activités fan-out.
+
+    AUD-07 — la piste d'accès document est émise au site porteur de l'oid
+    (api_server.trigger_audit) : l'entrée Durable ne porte que l'owner_hash (hash
+    à sens unique), pas l'oid, donc l'émission canonique ne peut pas vivre ici."""
     payload = payload or {}
     deps = _DEPS
     pre_path = payload.get("document_path")
@@ -187,7 +208,14 @@ def _run_activity(payload: dict) -> dict:
 
 def _audit_orchestration(context):
     """Générateur d'orchestration : appelle l'activité d'audit. Testable avec un
-    contexte factice exposant get_input() et call_activity()."""
+    contexte factice exposant get_input() et call_activity().
+
+    AUD-08 — INVARIANT STRUCTUREL : cette orchestration DOIT piloter EXACTEMENT
+    une activité ("activity_run_audit"). Tout fan-out (ajout d'un second
+    call_activity) ferait traverser un chemin JOBS_BASE_DIR entre VMs et casserait
+    la localité (cf. test_orchestration_drives_exactly_one_activity). La charge
+    transmise ne contient QUE des identifiants/contexte (document_id,
+    client_context, document_path d'ENTRÉE) — jamais un chemin de SORTIE."""
     payload = context.get_input() or {}
     result = yield context.call_activity(
         "activity_run_audit",
