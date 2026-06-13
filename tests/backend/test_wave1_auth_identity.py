@@ -8,14 +8,54 @@ import os
 import sys
 import types
 
+import contextlib
+
 import pytest
 from fastapi import HTTPException
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))
 
 import api_server  # noqa: E402
 import generate_fiche_rdv as gfr  # noqa: E402
 import config  # noqa: E402
+import auth  # noqa: E402
+from fastapi.security import HTTPAuthorizationCredentials  # noqa: E402
+
+
+# --- Identité dérivée de l'oid immuable (AUD-02) ---------------------------
+def _verify_with_claims(claims):
+    """Pilote verify_azure_ad_token jusqu'à l'extraction des claims (oid)."""
+    creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials="dummy")
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(patch("jwt.get_unverified_header",
+                                  return_value={"kid": "123", "alg": "RS256"}))
+        stack.enter_context(patch("auth._get_public_key", return_value="pubkey"))
+        stack.enter_context(patch("jwt.decode", return_value=claims))
+        stack.enter_context(patch.object(auth, "ALLOWED_ISSUERS", [claims.get("iss")]))
+        stack.enter_context(patch.object(auth, "REQUIRED_SCOPES", []))
+        stack.enter_context(patch.object(auth, "REQUIRED_ROLES", []))
+        return auth.verify_azure_ad_token(creds)
+
+
+def test_identity_is_oid_not_upn():
+    oid = "deadbeef-0000-1111-2222-333344445555"
+    out = _verify_with_claims({"iss": "https://i", "oid": oid, "upn": "a@gerep.fr"})
+    assert out == oid  # identité = oid immuable, jamais l'upn réutilisable
+
+
+def test_identity_guest_b2b_accepted_via_oid():
+    # Un invité (B2B) a un oid par-locataire : il est un utilisateur de plein droit.
+    oid = "guest123-0000-0000-0000-000000000000"
+    out = _verify_with_claims({"iss": "https://i", "oid": oid,
+                               "upn": "ext@autre-societe.com"})
+    assert out == oid
+
+
+def test_identity_missing_oid_rejected_401():
+    with pytest.raises(HTTPException) as exc:
+        _verify_with_claims({"iss": "https://i", "upn": "a@gerep.fr"})  # pas d'oid
+    assert exc.value.status_code == 401
 
 
 # --- Planner : OBO au lieu du passthrough -----------------------------------
