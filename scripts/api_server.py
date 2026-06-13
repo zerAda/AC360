@@ -18,7 +18,7 @@ from auth import verify_azure_ad_token
 from safe_logger import log_security, redact, redact_mapping
 from feature_flags import is_allowed, blocked_message, hash_id
 from usage_tracker import track
-from graph_obo import acquire_obo_graph_token, acquire_obo_graph_token_retrying, obo_configured
+from graph_obo import acquire_obo_graph_token_retrying, obo_configured
 from audit_trail import emit_document_access
 
 
