@@ -156,6 +156,13 @@ _RESOLVE_RATE_MAX = 60
 
 
 async def _check_resolve_rate_limit(upn: str) -> None:
+    # Même garde de débordement que `_check_rate_limit` : le chemin résolution
+    # écrit des clés `resolve:{upn}` dans le MÊME store partagé. Sans ce garde,
+    # un déploiement dominé par la recherche accumule des clés jamais purgées
+    # (croissance non bornée clé par identité). cleanup_rate_limits() purge les
+    # listes vides quel que soit leur préfixe.
+    if len(_rate_limit_store) > 1000:
+        asyncio.create_task(cleanup_rate_limits())
     key = f"resolve:{upn}"
     now = time.time()
     _rate_limit_store[key] = [t for t in _rate_limit_store[key] if now - t < _RATE_LIMIT_WINDOW]
