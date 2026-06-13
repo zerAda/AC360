@@ -35,6 +35,9 @@ def _make_token(key=None, alg="RS256", **overrides):
         "iat": now, "nbf": now - 5, "exp": now + 3600,
         "scp": "Audit.Trigger",
         "upn": "user@gerep.fr",
+        # Depuis Plan 01-02, l'identité retournée est l'oid (Object ID immuable),
+        # plus l'upn mutable (cause racine de l'IDOR par réutilisation d'upn).
+        "oid": "00000000-1111-2222-3333-444444444444",
     }
     claims.update(overrides)
     claims = {k: v for k, v in claims.items() if v is not None}
@@ -46,8 +49,10 @@ def _verify(token):
         HTTPAuthorizationCredentials(scheme="Bearer", credentials=token))
 
 
-def test_valid_token_returns_upn():
-    assert _verify(_make_token()) == "user@gerep.fr"
+def test_valid_token_returns_oid():
+    # L'identité retournée est l'oid immuable (Plan 01-02), jamais l'upn mutable.
+    assert _verify(_make_token()) == "00000000-1111-2222-3333-444444444444"
+    assert _verify(_make_token()) != "user@gerep.fr"
 
 
 def test_forged_signature_rejected():
@@ -87,9 +92,10 @@ def test_missing_required_scope_rejected():
     assert exc.value.status_code == 403
 
 
-def test_missing_upn_rejected():
+def test_missing_oid_rejected():
+    # Sans oid (identité stable absente) -> 401 (Plan 01-02). L'upn seul ne suffit pas.
     with pytest.raises(HTTPException) as exc:
-        _verify(_make_token(upn=None))
+        _verify(_make_token(oid=None))
     assert exc.value.status_code == 401
 
 
