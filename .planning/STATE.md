@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: ROADMAP.md and STATE.md written; REQUIREMENTS.md traceability populated. Awaiting roadmap approval.
-last_updated: "2026-06-13T10:23:45.156Z"
+stopped_at: Completed 01-05-PLAN.md
+last_updated: "2026-06-13T10:50:42.590Z"
 last_activity: 2026-06-13 -- Phase 01 execution started
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 7
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-13)
 ## Current Position
 
 Phase: 01 (deep-code-audit-critical-fixes) — EXECUTING
-Plan: 4 of 7
+Plan: 5 of 7
 Status: Ready to execute
 Last activity: 2026-06-13 -- Phase 01 execution started
 
@@ -55,6 +55,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P01 | 16 | 2 tasks | 2 files |
 | Phase 01 P02 | 7 | 2 tasks | 5 files |
 | Phase 01 P03 | 9 | 2 tasks | 2 files |
+| Phase 01 P05 | 6 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -69,6 +70,7 @@ Recent decisions affecting current work:
 - [Phase ?]: [01-01]: Wave 0 RED scaffolds pin AUD-07 (4-field audit-trail contract) and AUD-08 (JOBS_BASE_DIR locality + single-activity) as executable specs before implementation.
 - [Phase ?]: [01-03]: OBO scope-verification checkpoint DEFERRED to Phase 2 INF-06 (staging app registration not yet available); retry logic (scope-independent) proceeded.
 - [Phase ?]: [01-03]: OBO retry added as NEW acquire_obo_graph_token_retrying wrapper preserving the http_post seam; exhaustion RAISES so gateway maps to HTTP 503 (not 502).
+- [Phase 01-05]: F1/Free rejects explicit sku.capacity; single-instance pin carried by gunicorn --workers 1 + load-bearing comment now, explicit capacity=1 deferred to Phase 2 (INF-02, B1).
 
 ### Pending Todos
 
@@ -96,6 +98,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-13T10:18:26.288Z
-Stopped at: ROADMAP.md and STATE.md written; REQUIREMENTS.md traceability populated. Awaiting roadmap approval.
+Last session: 2026-06-13T10:50:42.583Z
+Stopped at: Completed 01-05-PLAN.md
 Resume file: None

@@ -14,7 +14,7 @@ Go-live gate (P1). Each maps to a roadmap phase.
 - [ ] **AUD-01**: Deep code audit of existing AC360 re-validates every "addressed" mitigation under production (multi-worker) topology and surfaces launch-relevant bugs
 - [x] **AUD-02**: `owner_hash` is derived from the Entra **Object ID**, not UPN (closes PII-access bug on user re-provisioning)
 - [ ] **AUD-03**: The durable `owner_hash` check is the authoritative IDOR gate; the in-memory ownership map is treated as cache only
-- [ ] **AUD-04**: Gateway is pinned to a single instance (scale-out max = 1, one worker) and documented as load-bearing for in-memory state (rate limit, JWKS)
+- [x] **AUD-04**: Gateway is pinned to a single instance (scale-out max = 1, one worker) and documented as load-bearing for in-memory state (rate limit, JWKS)
 - [x] **AUD-05**: OBO token exchange retries transient failures with bounded exponential backoff (no false 502 on first-call flakiness)
 - [x] **AUD-06**: Client-facing error responses and Application Insights traces are redacted of PII/secrets
 - [x] **AUD-07**: Document-access audit trail (user-id hash, document id, timestamp, verdict) is written to an immutable log
@@ -120,7 +120,7 @@ Populated during roadmap creation. Every v1 requirement maps to exactly one phas
 | AUD-01 | Phase 1 | Pending |
 | AUD-02 | Phase 1 | Complete |
 | AUD-03 | Phase 1 | Pending |
-| AUD-04 | Phase 1 | Pending |
+| AUD-04 | Phase 1 | Complete |
 | AUD-05 | Phase 1 | Complete |
 | AUD-06 | Phase 1 | Complete |
 | AUD-07 | Phase 1 | Complete |
