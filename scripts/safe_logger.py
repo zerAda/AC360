@@ -23,8 +23,11 @@ Application Insights.
 Les motifs de secrets s'alignent sur ceux de .gitleaks.toml.
 """
 
+from __future__ import annotations
+
 import re
 import logging
+from typing import Any, Dict, Mapping
 
 
 logger = logging.getLogger("AC360")
@@ -49,7 +52,7 @@ def log_security(level: str, message: str, data: dict = None):
         logger.debug(full_msg)
 
 
-__all__ = ["redact", "MAX_LEN", "logger", "log_security"]
+__all__ = ["redact", "redact_mapping", "MAX_LEN", "logger", "log_security"]
 
 # Longueur maximale conservée pour un message journalisé (extrait borné).
 MAX_LEN = 800
@@ -112,3 +115,21 @@ def redact(message, max_len=MAX_LEN):
         text = text[:max_len].rstrip() + f"... [tronqué, {total} caractères au total]"
 
     return text
+
+
+def redact_mapping(mapping: Mapping[str, Any]) -> Dict[str, Any]:
+    """Neutralise les VALEURS d'un dict (dimensions de télémétrie, paramètres
+    d'un message detail) en réutilisant la SEULE surface auditée `redact()`.
+
+    Chaque valeur de type `str` est passée par `redact()` (mêmes motifs/masques
+    que pour les journaux — aucun nouveau regex n'est introduit ici). Les valeurs
+    non-textuelles (int, None, bool, etc.) sont conservées telles quelles. Le
+    dict d'entrée n'est pas muté : un nouveau dict est retourné.
+
+    Seam consommée par le middleware télémétrie d'api_server (Plan 01-06) et par
+    l'émission audit-trail (Plan 01-04).
+    """
+    return {
+        key: (redact(value) if isinstance(value, str) else value)
+        for key, value in mapping.items()
+    }
