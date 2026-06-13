@@ -113,17 +113,67 @@ Explicitly excluded for this milestone.
 
 ## Traceability
 
-Populated during roadmap creation.
+Populated during roadmap creation. Every v1 requirement maps to exactly one phase.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUD-01 … GO-04 | TBD | Pending |
+| AUD-01 | Phase 1 | Pending |
+| AUD-02 | Phase 1 | Pending |
+| AUD-03 | Phase 1 | Pending |
+| AUD-04 | Phase 1 | Pending |
+| AUD-05 | Phase 1 | Pending |
+| AUD-06 | Phase 1 | Pending |
+| AUD-07 | Phase 1 | Pending |
+| AUD-08 | Phase 1 | Pending |
+| INF-01 | Phase 2 | Pending |
+| INF-02 | Phase 2 | Pending |
+| INF-03 | Phase 2 | Pending |
+| INF-04 | Phase 2 | Pending |
+| INF-05 | Phase 2 | Pending |
+| INF-06 | Phase 2 | Pending |
+| INF-07 | Phase 2 | Pending |
+| INF-08 | Phase 2 | Pending |
+| INF-09 | Phase 2 | Pending |
+| CD-01 | Phase 3 | Pending |
+| CD-02 | Phase 3 | Pending |
+| OBS-01 | Phase 3 | Pending |
+| OBS-02 | Phase 3 | Pending |
+| OBS-03 | Phase 3 | Pending |
+| OBS-04 | Phase 3 | Pending |
+| OBS-05 | Phase 3 | Pending |
+| OPS-01 | Phase 3 | Pending |
+| OPS-02 | Phase 3 | Pending |
+| OPS-03 | Phase 3 | Pending |
+| OPS-04 | Phase 3 | Pending |
+| OPS-05 | Phase 3 | Pending |
+| PUB-01 | Phase 4 | Pending |
+| PUB-02 | Phase 4 | Pending |
+| PUB-03 | Phase 4 | Pending |
+| PUB-04 | Phase 4 | Pending |
+| PUB-05 | Phase 4 | Pending |
+| SEC-01 | Phase 5 | Pending |
+| SEC-02 | Phase 5 | Pending |
+| SEC-03 | Phase 5 | Pending |
+| SEC-04 | Phase 5 | Pending |
+| SEC-05 | Phase 5 | Pending |
+| RGP-01 | Phase 5 | Pending |
+| RGP-02 | Phase 5 | Pending |
+| RGP-03 | Phase 5 | Pending |
+| RGP-04 | Phase 5 | Pending |
+| RGP-05 | Phase 5 | Pending |
+| RGP-06 | Phase 5 | Pending |
+| GO-01 | Phase 6 | Pending |
+| GO-02 | Phase 6 | Pending |
+| GO-03 | Phase 6 | Pending |
+| GO-04 | Phase 6 | Pending |
 
 **Coverage:**
-- v1 requirements: 44 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 44 ⚠️
+- v1 requirements: 49 total (AUD 8, INF 9, OBS 5, CD 2, OPS 5, PUB 5, SEC 5, RGP 6, GO 4)
+- Mapped to phases: 49 ✓
+- Unmapped: 0 ✓
+
+> Count note: the prior header stated "44 total" as a round summary; the enumerated requirement IDs actually sum to **49**. All 49 are mapped here. Reconcile the summary figure if 44 was the intended hard count.
 
 ---
 *Requirements defined: 2026-06-13*
-*Last updated: 2026-06-13 after initial definition*
+*Last updated: 2026-06-13 after roadmap creation (traceability populated, 49/49 mapped)*
