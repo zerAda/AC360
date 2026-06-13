@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import api_server
-from safe_logger import redact
+from safe_logger import redact, redact_mapping
 
 # --- Faux secrets / PII réutilisés dans les tests ---------------------------
 FAKE_JWT = (
@@ -77,6 +77,38 @@ def test_redact_tronque_les_messages_longs():
 def test_redact_robuste_aux_entrees_invalides():
     assert redact(None) == ""
     assert redact(12345678901234) == "[PII_MASQUÉE]"  # 14 chiffres -> masqué
+
+
+# ---------------------------------------------------------------------------
+# Unité : safe_logger.redact_mapping() — redaction des VALEURS d'un dict
+# (dimensions de télémétrie / chaînes detail) via la surface auditée redact().
+# ---------------------------------------------------------------------------
+def test_redact_mapping_masque_les_valeurs_email():
+    dims = {"client": FAKE_EMAIL, "action": "audit"}
+    out = redact_mapping(dims)
+
+    # La valeur e-mail est masquée avec le placeholder existant _MASK_EMAIL.
+    assert FAKE_EMAIL not in out["client"]
+    assert "[EMAIL_MASQUÉ]" in out["client"]
+    # Les clés sont conservées telles quelles.
+    assert set(out.keys()) == {"client", "action"}
+
+
+def test_redact_mapping_laisse_passer_les_non_strings():
+    dims = {"count": 42, "ratio": None, "ok": True}
+    out = redact_mapping(dims)
+
+    assert out["count"] == 42
+    assert out["ratio"] is None
+    assert out["ok"] is True
+
+
+def test_redact_mapping_ne_mute_pas_l_entree():
+    dims = {"client": FAKE_EMAIL}
+    redact_mapping(dims)
+
+    # Le dict source reste inchangé (nouveau dict retourné).
+    assert dims["client"] == FAKE_EMAIL
 
 
 # ---------------------------------------------------------------------------
