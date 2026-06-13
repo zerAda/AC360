@@ -16,7 +16,7 @@ async def test_status_fails_closed_without_task_hub(monkeypatch):
     """Sans TASK_HUB_NAME configuré, le statut renvoie 500 (jamais un hub de test)."""
     monkeypatch.delenv("TASK_HUB_NAME", raising=False)
     with pytest.raises(HTTPException) as exc:
-        await api_server.get_job_status(job_id="abc", user_upn="u@gerep.fr")
+        await api_server.get_job_status(job_id="abc", oid="u@gerep.fr")
     assert exc.value.status_code == 500
 
 
@@ -28,7 +28,7 @@ async def test_status_404_passthrough(monkeypatch):
     resp.status_code = 404
     with patch("api_server.http_client.get", new=AsyncMock(return_value=resp)):
         with pytest.raises(HTTPException) as exc:
-            await api_server.get_job_status(job_id="missing", user_upn="u@gerep.fr")
+            await api_server.get_job_status(job_id="missing", oid="u@gerep.fr")
     assert exc.value.status_code == 404
 
 
@@ -40,7 +40,7 @@ async def test_status_completed_returns_output(monkeypatch):
     resp.raise_for_status = MagicMock()
     resp.json = MagicMock(return_value={"runtimeStatus": "Completed", "output": {"verdict": "CONFORME"}})
     with patch("api_server.http_client.get", new=AsyncMock(return_value=resp)):
-        out = await api_server.get_job_status(job_id="j1", user_upn="u@gerep.fr")
+        out = await api_server.get_job_status(job_id="j1", oid="u@gerep.fr")
     assert out["status"] == "Completed"
     assert out["result"] == {"verdict": "CONFORME"}
 
@@ -67,7 +67,7 @@ async def test_status_flattens_nested_audit_verdict(monkeypatch):
     resp.raise_for_status = MagicMock()
     resp.json = MagicMock(return_value={"runtimeStatus": "Completed", "output": durable_output})
     with patch("api_server.http_client.get", new=AsyncMock(return_value=resp)):
-        out = await api_server.get_job_status(job_id="j2", user_upn="u@gerep.fr")
+        out = await api_server.get_job_status(job_id="j2", oid="u@gerep.fr")
     assert out["verdict"] == "ECART"
     assert out["client_document"] == "GEREP SA"
     assert out["reference_fabric"] == "GEREP SA"

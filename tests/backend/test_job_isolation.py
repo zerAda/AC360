@@ -43,7 +43,7 @@ async def test_audit_response_contains_job_id():
 
     with patch("api_server.http_client.post", new=AsyncMock(return_value=_azure_response("az-instance-001"))), \
          patch("api_server._check_rate_limit", new=AsyncMock(return_value=None)):
-        res = await trigger_audit(req, _fake_request(), user_upn="user1@gerep.fr")
+        res = await trigger_audit(req, _fake_request(), oid="user1@gerep.fr")
 
     assert res["status"] == "accepted"
     assert res["job_id"] == "az-instance-001"
@@ -58,7 +58,7 @@ async def test_audit_forwarded_to_azure_function():
     post_mock = AsyncMock(return_value=_azure_response("az-instance-002"))
     with patch("api_server.http_client.post", new=post_mock), \
          patch("api_server._check_rate_limit", new=AsyncMock(return_value=None)):
-        await trigger_audit(req, _fake_request(), user_upn="test@gerep.fr")
+        await trigger_audit(req, _fake_request(), oid="test@gerep.fr")
 
     post_mock.assert_called_once()
     called_url = post_mock.call_args[0][0]
@@ -78,7 +78,7 @@ async def test_audit_rejects_empty_document_id():
     with patch("api_server.http_client.post", new=AsyncMock()) as post_mock, \
          patch("api_server._check_rate_limit", new=AsyncMock(return_value=None)):
         with pytest.raises(HTTPException) as exc:
-            await trigger_audit(req, _fake_request(), user_upn="test@gerep.fr")
+            await trigger_audit(req, _fake_request(), oid="test@gerep.fr")
 
     assert exc.value.status_code == 400
     post_mock.assert_not_called()
@@ -99,7 +99,7 @@ async def test_owner_hash_persisted_from_oid():
     with patch("api_server.http_client.post", new=post_mock), \
          patch("api_server._check_rate_limit", new=AsyncMock(return_value=None)), \
          patch("api_server.obo_configured", return_value=False):
-        await trigger_audit(req, _fake_request(), user_upn=_OID_A)
+        await trigger_audit(req, _fake_request(), oid=_OID_A)
     sent_json = post_mock.call_args[1]["json"]
     assert sent_json["owner_hash"] == api_server.hash_id(_OID_A)
     assert sent_json["owner_hash"] != _OID_A
@@ -132,7 +132,7 @@ async def test_durable_gate_blocks_cross_oid_status_read():
     with patch("api_server.http_client.get", new=AsyncMock(return_value=resp)), \
          patch.dict(os.environ, {"TASK_HUB_NAME": "hub"}):
         with pytest.raises(HTTPException) as exc:
-            await api_server.get_job_status("doc-x", user_upn=_OID_B)
+            await api_server.get_job_status("doc-x", oid=_OID_B)
     assert exc.value.status_code == 403
 
 
@@ -150,5 +150,5 @@ async def test_obo_exhaustion_returns_503_not_502():
          patch("api_server.obo_configured", return_value=True), \
          patch("api_server.acquire_obo_graph_token_retrying", side_effect=_boom):
         with pytest.raises(HTTPException) as exc:
-            await trigger_audit(req, _fake_request(), user_upn=_OID_A)
+            await trigger_audit(req, _fake_request(), oid=_OID_A)
     assert exc.value.status_code == 503

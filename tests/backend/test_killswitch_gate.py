@@ -32,7 +32,7 @@ async def test_audit_blocked_when_feature_disabled(monkeypatch):
     monkeypatch.setenv("AC360_AUDIT_ENABLED", "false")
     with pytest.raises(HTTPException) as exc:
         await api_server.trigger_audit(
-            AuditRequest(document_id="01ABCDEF2GHIJ"), _FakeReq(), user_upn="x@gerep.fr"
+            AuditRequest(document_id="01ABCDEF2GHIJ"), _FakeReq(), oid="x@gerep.fr"
         )
     assert exc.value.status_code == 403
     assert "désactiv" in exc.value.detail.lower()
@@ -43,7 +43,7 @@ async def test_audit_blocked_when_global_off(monkeypatch):
     monkeypatch.setenv("AC360_GLOBAL_ENABLED", "false")
     with pytest.raises(HTTPException) as exc:
         await api_server.trigger_audit(
-            AuditRequest(document_id="01ABCDEF2GHIJ"), _FakeReq(), user_upn="x@gerep.fr"
+            AuditRequest(document_id="01ABCDEF2GHIJ"), _FakeReq(), oid="x@gerep.fr"
         )
     assert exc.value.status_code == 403
 
@@ -53,7 +53,7 @@ async def test_audit_blocked_for_specific_user(monkeypatch):
     monkeypatch.setenv("AC360_BLOCKED_USERS_HASHED", hash_id("blocked@gerep.fr"))
     with pytest.raises(HTTPException) as exc:
         await api_server.trigger_audit(
-            AuditRequest(document_id="01ABCDEF2GHIJ"), _FakeReq(), user_upn="blocked@gerep.fr"
+            AuditRequest(document_id="01ABCDEF2GHIJ"), _FakeReq(), oid="blocked@gerep.fr"
         )
     assert exc.value.status_code == 403
 
@@ -65,6 +65,6 @@ async def test_killswitch_does_not_block_by_default(monkeypatch):
     # On prouve juste que ce n'est PAS un 403 de blocage.
     with pytest.raises(HTTPException) as exc:
         await api_server.trigger_audit(
-            AuditRequest(document_id="01ABCDEF2GHIJ"), _FakeReq(), user_upn="ok@gerep.fr"
+            AuditRequest(document_id="01ABCDEF2GHIJ"), _FakeReq(), oid="ok@gerep.fr"
         )
     assert exc.value.status_code != 403  # 502 (backend injoignable), pas un blocage

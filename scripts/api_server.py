@@ -15,10 +15,22 @@ from collections import defaultdict
 from planner_integration import create_planner_task
 from generate_fiche_rdv import generate_fiche_rdv
 from auth import verify_azure_ad_token
-from safe_logger import log_security
+from safe_logger import log_security, redact, redact_mapping
 from feature_flags import is_allowed, blocked_message, hash_id
 from usage_tracker import track
-from graph_obo import acquire_obo_graph_token, obo_configured
+from graph_obo import acquire_obo_graph_token, acquire_obo_graph_token_retrying, obo_configured
+from audit_trail import emit_document_access
+
+
+def _redacted_detail(generic: str, *sensitive: object) -> str:
+    """Construit un message d'erreur client neutralisé : un texte générique suivi
+    d'une portion redactée (via la SEULE surface auditée ``safe_logger.redact``)
+    de toute valeur dynamique (exception, valeur utilisateur). Aucune PII / aucun
+    secret ne fuit dans le corps de réponse (Pitfall 5)."""
+    if not sensitive:
+        return generic
+    safe = redact(" ".join(str(s) for s in sensitive if s is not None))
+    return f"{generic} ({safe})" if safe else generic
 
 
 def _truthy(val) -> bool:
@@ -82,12 +94,15 @@ class AppInsightsMiddleware(BaseHTTPMiddleware):
         process_time = time.time() - start_time
 
         if os.environ.get("APPINSIGHTS_INSTRUMENTATIONKEY"):
-            log_security("INFO", "AppInsights_Telemetry", {
+            # Les dimensions traversent la frontière vers App Insights : on route
+            # toutes les valeurs par la seule surface de redaction auditée avant
+            # émission (aucune PII / aucun secret ne fuit — AUD-06).
+            log_security("INFO", "AppInsights_Telemetry", redact_mapping({
                 "method": request.method,
                 "url": str(request.url.path),
                 "status_code": response.status_code,
                 "duration_ms": round(process_time * 1000, 2)
-            })
+            }))
 
         response.headers["X-Process-Time"] = str(round(process_time, 4))
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -222,11 +237,18 @@ def _assert_audit_owner(job_id, user_upn):
         raise HTTPException(status_code=403, detail="Accès refusé à ce job d'audit.")
 
 
-def _assert_durable_owner(data, user_upn):
-    """Contrôle d'appartenance robuste au scale-out/redémarrage : compare le
-    ``owner_hash`` persisté dans l'entrée d'orchestration Durable (stockage
-    partagé) au hash de l'appelant. Absent (job legacy) -> on n'élève pas ici
-    (le fast-path mémoire et le contrôle au déclenchement couvrent)."""
+def _assert_durable_owner(data, oid):
+    """Gate IDOR AUTORITAIRE (AUD-03) : compare le ``owner_hash`` persisté dans
+    l'entrée d'orchestration Durable (stockage partagé, robuste au scale-out et au
+    redémarrage) à ``hash_id(oid)`` de l'appelant — la map mémoire ``_assert_audit_owner``
+    n'est qu'un fast-path/cache. Hard-fail en 403 sur NON-CORRESPONDANCE (la menace
+    IDOR réelle : un autre oid lisant le job d'autrui).
+
+    owner_hash ABSENT (job legacy d'avant le cutover oid, ou shape de statut
+    intermédiaire qui n'expose pas encore l'input) -> on n'élève pas ici : le
+    durcissement fail-closed-on-absent est laissé en suivi (Open Q3) pour ne pas
+    rejeter les jobs legacy ni la fenêtre transitoire ; tous les NOUVEAUX jobs
+    portent l'owner_hash et sont donc couverts par la branche de comparaison."""
     import json as _json
     inp = data.get("input")
     if isinstance(inp, str):
@@ -235,10 +257,10 @@ def _assert_durable_owner(data, user_upn):
         except (ValueError, TypeError):
             inp = None
     owner_hash = inp.get("owner_hash") if isinstance(inp, dict) else None
-    if owner_hash and owner_hash != hash_id(user_upn):
+    if owner_hash and owner_hash != hash_id(oid):
         log_security("WARNING",
                      "Accès refusé au statut d'audit (owner_hash Durable ne correspond pas)",
-                     {"user": user_upn})
+                     {"oid_hash": hash_id(oid)})
         raise HTTPException(status_code=403, detail="Accès refusé à ce job d'audit.")
 
 
@@ -300,22 +322,31 @@ def _shape_status_response(job_id, data):
 async def trigger_audit(
     request: AuditRequest,
     req: Request,
-    user_upn: str = Depends(verify_azure_ad_token)
+    oid: str = Depends(verify_azure_ad_token)
 ):
-    await _check_rate_limit(user_upn)
+    # La dépendance verify_azure_ad_token retourne l'Entra Object ID immuable
+    # (Plan 01-02) : `oid` est la SEULE clé d'appartenance/de quota. L'upn mutable
+    # n'est jamais utilisé comme clé (cause racine de l'IDOR par réutilisation
+    # d'upn — AUD-02/03). Le nom de paramètre porte explicitement `oid`.
+    await _check_rate_limit(oid)
     _validate_sharepoint_doc_id(request.document_id)
 
-    _user_hash = hash_id(user_upn)
+    _user_hash = hash_id(oid)
     _allowed, _reason = is_allowed("audit", user_id_hash=_user_hash)
     if not _allowed:
         track("audit_documentaire_started", status="blocked",
-              user_id=user_upn, action_name="trigger_audit", error_code=_reason)
+              user_id=oid, action_name="trigger_audit", error_code=_reason)
         raise HTTPException(status_code=403, detail=blocked_message(_reason))
     track("audit_documentaire_started", status="ok",
-          user_id=user_upn, action_name="trigger_audit")
+          user_id=oid, action_name="trigger_audit")
+
+    # AUD-07 : piste d'audit d'accès document émise au point d'accès portant l'oid
+    # (seul site qui le détient — l'entrée Durable ne porte que l'owner_hash à sens
+    # unique). Seam gaté/inerte sans APPINSIGHTS ; 4 champs verrouillés, sans PII brute.
+    emit_document_access(oid=oid, document_id=request.document_id)
 
     log_security("INFO", "Envoi de la requête d'audit à l'Azure Function",
-                 {"document_id": request.document_id, "user": user_upn})
+                 {"document_id": request.document_id, "oid_hash": _user_hash})
 
     auth_headers = {}
     if req and req.headers.get("Authorization"):
@@ -329,11 +360,17 @@ async def trigger_audit(
     graph_token = None
     if obo_configured():
         try:
-            graph_token = await run_in_threadpool(acquire_obo_graph_token, raw_auth)
+            # Wrapper avec backoff borné, réessais sur erreurs transitoires (AUD-05).
+            graph_token = await run_in_threadpool(acquire_obo_graph_token_retrying, raw_auth)
             auth_headers["X-MS-Graph-Token"] = graph_token
         except Exception as e:
+            # Épuisement des réessais = indisponibilité transitoire -> 503 (retriable),
+            # pas 502 (qui suggèrerait à tort un upstream défaillant). Détail redacté.
             log_security("ERROR", f"OBO exchange failed: {e}")
-            raise HTTPException(status_code=502, detail="Échec de l'autorisation déléguée (OBO).")
+            raise HTTPException(
+                status_code=503,
+                detail=_redacted_detail(
+                    "Échec de l'autorisation déléguée (OBO) — réessayez.", e))
     elif _truthy(os.environ.get("AC360_REQUIRE_OBO")):
         log_security("ERROR", "OBO requis (AC360_REQUIRE_OBO) mais non configuré")
         raise HTTPException(status_code=503,
@@ -346,7 +383,7 @@ async def trigger_audit(
         try:
             await _assert_user_can_access_document(graph_token, request.document_id)
         except HTTPException:
-            track("audit_documentaire_started", status="blocked", user_id=user_upn,
+            track("audit_documentaire_started", status="blocked", user_id=oid,
                   action_name="trigger_audit", error_code="sharepoint_denied")
             raise
 
@@ -362,7 +399,7 @@ async def trigger_audit(
                   # Appartenance persistée DANS l'entrée d'orchestration Durable
                   # (stockage partagé) -> contrôle IDOR robuste au redémarrage et
                   # au scale-out, contrairement à la map mémoire (fast-path seul).
-                  "owner_hash": hash_id(user_upn)},
+                  "owner_hash": hash_id(oid)},
             headers=auth_headers,
             timeout=30.0
         )
@@ -370,7 +407,7 @@ async def trigger_audit(
         # il est introuvable (404) — on ne masque pas en 502.
         if resp.status_code in (403, 404):
             track("audit_documentaire_started", status="blocked",
-                  user_id=user_upn, action_name="trigger_audit", error_code="sharepoint_denied")
+                  user_id=oid, action_name="trigger_audit", error_code="sharepoint_denied")
             raise HTTPException(status_code=resp.status_code,
                                 detail="Accès refusé à ce document ou document introuvable.")
         resp.raise_for_status()
@@ -381,13 +418,14 @@ async def trigger_audit(
         log_security("ERROR", f"Failed to start Azure Function: {e}")
         raise HTTPException(status_code=502, detail="Erreur de communication avec le moteur d'audit Azure.")
 
-    _record_audit_owner(az_data.get("id"), user_upn)
+    # Fast-path mémoire (cache) : le contrôle Durable autoritaire reste _assert_durable_owner.
+    _record_audit_owner(az_data.get("id"), oid)
 
     return {
         "status": "accepted",
         "job_id": az_data.get("id"),
         "statusQueryGetUri": az_data.get("statusQueryGetUri"),
-        "requested_by": user_upn
+        "requested_by": oid
     }
 
 
@@ -606,9 +644,11 @@ def health_check():
 @app.get("/api/audit/{job_id}/status")
 async def get_job_status(
     job_id: str,
-    user_upn: str = Depends(verify_azure_ad_token)
+    oid: str = Depends(verify_azure_ad_token)
 ):
-    _assert_audit_owner(job_id, user_upn)
+    # Fast-path mémoire (cache, par-processus) ; le contrôle Durable autoritaire
+    # (_assert_durable_owner, robuste au scale-out) tranche AVANT toute donnée.
+    _assert_audit_owner(job_id, oid)
 
     try:
         auth_param = f"&code={AZURE_DURABLE_KEY}" if AZURE_DURABLE_KEY else ""
@@ -628,8 +668,9 @@ async def get_job_status(
             raise HTTPException(status_code=404, detail="Job introuvable.")
         resp.raise_for_status()
         data = resp.json()
-        # Contrôle d'appartenance robuste (cross-instance) en plus du fast-path mémoire.
-        _assert_durable_owner(data, user_upn)
+        # Gate IDOR AUTORITAIRE (robuste cross-instance/scale-out) — en plus du
+        # fast-path mémoire ci-dessus. Compare hash_id(oid) à l'owner_hash Durable.
+        _assert_durable_owner(data, oid)
         return _shape_status_response(job_id, data)
     except HTTPException:
         raise

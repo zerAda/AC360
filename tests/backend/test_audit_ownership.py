@@ -34,7 +34,7 @@ async def test_status_endpoint_blocks_non_owner():
     api_server._record_audit_owner("job-2", "alice@gerep.fr")
     # bob tente de lire le job d'alice via l'endpoint → 403 AVANT tout appel réseau.
     with pytest.raises(HTTPException) as exc:
-        await api_server.get_job_status("job-2", user_upn="bob@gerep.fr")
+        await api_server.get_job_status("job-2", oid="bob@gerep.fr")
     assert exc.value.status_code == 403
 
 
