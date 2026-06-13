@@ -47,7 +47,8 @@ def _req(query, choice=None):
 def _setup(monkeypatch):
     monkeypatch.setenv("SHAREPOINT_DRIVE_ID", "drive-d1")
     monkeypatch.setattr(api_server, "obo_configured", lambda: True)
-    monkeypatch.setattr(api_server, "acquire_obo_graph_token", lambda raw: "graph-tok")
+    # resolve_document échange via le wrapper réessayant (AUD-05/WR-04).
+    monkeypatch.setattr(api_server, "acquire_obo_graph_token_retrying", lambda raw: "graph-tok")
     api_server._rate_limit_store.clear()
     yield
     api_server._rate_limit_store.clear()

@@ -62,7 +62,8 @@ def test_identity_missing_oid_rejected_401():
 async def test_planner_exchanges_obo_not_gateway_token(monkeypatch):
     captured = {}
     monkeypatch.setattr(api_server, "obo_configured", lambda: True)
-    monkeypatch.setattr(api_server, "acquire_obo_graph_token", lambda raw: "graph-deleg-tok")
+    # Planner échange via le wrapper réessayant (AUD-05/WR-04).
+    monkeypatch.setattr(api_server, "acquire_obo_graph_token_retrying", lambda raw: "graph-deleg-tok")
 
     async def fake_create(token, plan_id, bucket_id, title, due_date):
         captured.update(token=token, plan_id=plan_id, bucket_id=bucket_id, title=title)

@@ -489,10 +489,15 @@ async def resolve_document(
 
     raw_auth = req.headers.get("Authorization", "") if req else ""
     try:
-        graph_token = await run_in_threadpool(acquire_obo_graph_token, raw_auth)
+        # Wrapper avec backoff borné, réessais sur erreurs transitoires (AUD-05).
+        graph_token = await run_in_threadpool(acquire_obo_graph_token_retrying, raw_auth)
     except Exception as e:
-        log_security("ERROR", f"OBO exchange failed (resolve): {e}")
-        raise HTTPException(status_code=502, detail="Échec de l'autorisation déléguée (OBO).")
+        # Épuisement = indisponibilité transitoire -> 503 (retriable), pas 502.
+        # Détail dynamique via le canal `data` redacté (message statique).
+        log_security("ERROR", "OBO exchange failed (resolve)", {"error": str(e)})
+        raise HTTPException(
+            status_code=503,
+            detail=_redacted_detail("Échec de l'autorisation déléguée (OBO).", e))
 
     # Littéral OData : quote simple doublée, puis URL-encode du segment.
     safe_q = urllib.parse.quote(q.replace("'", "''"), safe="")
@@ -504,7 +509,7 @@ async def resolve_document(
             timeout=15.0,
         )
     except Exception as e:
-        log_security("ERROR", f"Graph search error: {e}")
+        log_security("ERROR", "Graph search error", {"error": str(e)})
         raise HTTPException(status_code=502, detail="Recherche SharePoint indisponible.")
     if resp.status_code == 403:
         log_security("WARNING", "Recherche SharePoint refusée (as-user)")
@@ -564,7 +569,15 @@ async def api_create_planner_task(
             raise HTTPException(
                 status_code=503,
                 detail="Planner indisponible : autorisation déléguée (OBO) non configurée.")
-        token = await run_in_threadpool(acquire_obo_graph_token, raw_auth)
+        # Wrapper avec backoff borné, réessais sur erreurs transitoires (AUD-05) :
+        # l'épuisement transitoire est mappé en 503 (retriable), pas 502/500.
+        try:
+            token = await run_in_threadpool(acquire_obo_graph_token_retrying, raw_auth)
+        except Exception as e:
+            log_security("ERROR", "OBO exchange failed (planner)", {"error": str(e)})
+            raise HTTPException(
+                status_code=503,
+                detail=_redacted_detail("Échec de l'autorisation déléguée (OBO).", e))
         plan_id, bucket_id, due_date = _resolve_planner_params(
             request.plan_id, request.bucket_id, request.due_date)
         if not plan_id or not bucket_id:
@@ -579,7 +592,10 @@ async def api_create_planner_task(
     except HTTPException:
         raise
     except httpx.HTTPStatusError as e:
-        log_security("ERROR", f"Graph API Error: {e.response.text}")
+        # Corps Graph dynamique via le canal `data` redacté (message statique) :
+        # un corps d'erreur arbitraire peut porter des identifiants hors des
+        # motifs connus du message — `redact_mapping` neutralise ses valeurs.
+        log_security("ERROR", "Graph API Error", {"body": e.response.text})
         raise HTTPException(status_code=502, detail="Erreur Microsoft Graph.")
     except Exception as e:
         log_security("ERROR", "Planner error", {"error": str(e)})
