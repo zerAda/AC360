@@ -133,3 +133,48 @@ def test_orchestration_drives_exactly_one_activity():
     )
     # Le résultat de l'activité unique est bien remonté tel quel.
     assert result == {"status": "Completed", "document_id": "job-uuid-002"}
+
+
+def test_orchestration_payload_carries_no_cross_activity_file_path():
+    """AUD-08 — la charge transmise à l'activité unique ne contient QUE des
+    identifiants/contexte (document_id, client_context, document_path d'entrée),
+    jamais un chemin de SORTIE (OCR/FIC) produit par une autre activité."""
+    import function_app as fa
+
+    seen_payload = {}
+
+    class _Ctx:
+        def get_input(self):
+            return {"document_id": "d", "client_context": "c", "document_path": None}
+
+        def call_activity(self, name, payload):
+            seen_payload.update(payload)
+            return {"status": "Completed"}
+
+    gen = fa._audit_orchestration(_Ctx())
+    try:
+        sent = None
+        while True:
+            sent = gen.send(sent)
+    except StopIteration:
+        pass
+
+    # Aucune clé de chemin de sortie ne traverse la frontière d'activité.
+    forbidden = {"fic_path", "ocr_path", "output_path", "result_path"}
+    assert not (forbidden & set(seen_payload.keys())), (
+        f"un chemin de sortie traverse la frontière d'activité : {seen_payload.keys()}"
+    )
+    assert set(seen_payload.keys()) <= {"document_id", "client_context", "document_path"}
+
+
+def test_function_app_documents_audit_trail_choice():
+    """AUD-07 — function_app référence le seam audit_trail et documente que
+    l'émission de la piste d'accès vit au site porteur de l'oid (api_server),
+    l'entrée Durable ne portant que l'owner_hash (hash à sens unique)."""
+    import os as _os
+    fa_path = _os.path.join(_os.path.dirname(__file__), "..", "..",
+                            "azure_functions", "function_app.py")
+    src = open(fa_path, encoding="utf-8").read()
+    assert "audit_trail" in src, "function_app doit référencer le seam audit_trail (AUD-07)"
+    # La justification du choix de site d'émission est documentée dans le source.
+    assert "owner_hash" in src and "oid" in src
