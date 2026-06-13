@@ -101,8 +101,22 @@ def _is_transient(exc: BaseException) -> bool:
     return getattr(resp, "status_code", None) in _TRANSIENT_STATUS
 
 
+# Plafond du délai Retry-After honoré : on ne bloque JAMAIS un worker du
+# threadpool (acquire_obo_graph_token_retrying tourne sous run_in_threadpool)
+# plus longtemps que ce cap. Un upstream throttlé/hostile renvoyant
+# `Retry-After: 86400` ne peut donc pas épingler un thread une journée entière
+# (déni de service sur l'instance unique).
+_RETRY_AFTER_MAX_SECONDS = 30.0
+
+
 def _retry_after_seconds(exc: BaseException) -> Optional[float]:
-    """Délai Retry-After (en secondes) si l'erreur est un 429 avec en-tête valide."""
+    """Délai Retry-After (en secondes) si l'erreur est un 429 avec en-tête valide.
+
+    Le délai est borné à `_RETRY_AFTER_MAX_SECONDS` et les valeurs <= 0 (ou non
+    numériques, ou en forme HTTP-date — non supportée ici) sont rejetées : on
+    retombe alors sur le backoff plein-jitter de l'appelant. Cela évite à la fois
+    `time.sleep(valeur_negative)` (ValueError non transitoire) et le blocage
+    prolongé d'un worker."""
     resp = getattr(exc, "response", None)
     if getattr(resp, "status_code", None) != 429:
         return None
@@ -111,9 +125,12 @@ def _retry_after_seconds(exc: BaseException) -> Optional[float]:
     if raw is None:
         return None
     try:
-        return float(raw)
+        secs = float(raw)
     except (TypeError, ValueError):
         return None
+    if secs <= 0:
+        return None
+    return min(secs, _RETRY_AFTER_MAX_SECONDS)
 
 
 def acquire_obo_graph_token_retrying(
