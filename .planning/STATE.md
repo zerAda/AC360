@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-05-PLAN.md
-last_updated: "2026-06-13T10:50:42.590Z"
+stopped_at: Completed 01-04-PLAN.md
+last_updated: "2026-06-13T11:16:30.411Z"
 last_activity: 2026-06-13 -- Phase 01 execution started
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 7
-  completed_plans: 4
+  completed_plans: 5
   percent: 0
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-13)
 ## Current Position
 
 Phase: 01 (deep-code-audit-critical-fixes) — EXECUTING
-Plan: 5 of 7
+Plan: 6 of 7
 Status: Ready to execute
 Last activity: 2026-06-13 -- Phase 01 execution started
 
@@ -56,6 +56,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P02 | 7 | 2 tasks | 5 files |
 | Phase 01 P03 | 9 | 2 tasks | 2 files |
 | Phase 01 P05 | 6 | 1 tasks | 1 files |
+| Phase 01 P04 | 6 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -71,6 +72,7 @@ Recent decisions affecting current work:
 - [Phase ?]: [01-03]: OBO scope-verification checkpoint DEFERRED to Phase 2 INF-06 (staging app registration not yet available); retry logic (scope-independent) proceeded.
 - [Phase ?]: [01-03]: OBO retry added as NEW acquire_obo_graph_token_retrying wrapper preserving the http_post seam; exhaustion RAISES so gateway maps to HTTP 503 (not 502).
 - [Phase 01-05]: F1/Free rejects explicit sku.capacity; single-instance pin carried by gunicorn --workers 1 + load-bearing comment now, explicit capacity=1 deferred to Phase 2 (INF-02, B1).
+- [Phase 01]: 01-04: AUD-07 emit seam is gate-inert and dependency-free; real Azure Monitor exporter deferred to Phase 3 OBS-01 behind the same APPINSIGHTS gate.
 
 ### Pending Todos
 
@@ -98,6 +100,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-13T10:50:42.583Z
-Stopped at: Completed 01-05-PLAN.md
+Last session: 2026-06-13T11:16:30.400Z
+Stopped at: Completed 01-04-PLAN.md
 Resume file: None
