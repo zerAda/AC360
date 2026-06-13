@@ -80,6 +80,9 @@ demo/out/
 # Build de déploiement Function (généré)
 azure_functions/.build/
 
+# ARM JSON compilé depuis Bicep (généré par "az bicep build" sans --outfile)
+infra/main.json
+
 # Export Copilot sensible (régénérable depuis src/copilot/AC360/**)
 .mcs/botdefinition.json
 

@@ -1,18 +1,19 @@
-﻿<#
+<#
 .SYNOPSIS
-Valide hors-ligne la posture de sécurité durcie de l'infrastructure AC360.
+Valide hors-ligne la posture de securite durcie de l'infrastructure AC360.
 
 .DESCRIPTION
-Gate fail-closed, sans `az login`. Compile `infra/main.bicep` via `az bicep build`
-(analyse statique + lint) puis affirme, sur le JSON ARM compilé, les propriétés
-par exigence INF (02, 03, 04, 07, 08, 09) qui sont vérifiables hors-ligne.
+Gate fail-closed, sans "az login". Compile "infra/main.bicep" via "az bicep build"
+(analyse statique + lint) puis affirme, sur le JSON ARM compile, les proprietes
+par exigence INF (02, 03, 04, 07, 08, 09) qui sont verifiables hors-ligne.
 
-Tant que main.bicep n'a pas encore été étendu à la forme PROD (passerelle encore
-sur F1/Y1, pas de B1), le validateur DIFFÈRE les assertions et sort en succès
-(exit 0, message jaune) afin que ce plan Wave-0 passe. Dès que les ressources PROD
-sont présentes (plan B1 détecté), toute violation provoque un échec (exit 1, rouge).
+Tant que main.bicep n'a pas encore ete etendu a la forme PROD (passerelle encore
+sur F1/Y1, pas de B1), le validateur DIFFERE les assertions et sort en succes
+(exit 0, message jaune) afin que ce plan Wave-0 passe. Des que les ressources PROD
+sont presentes (plan B1 detecte), toute violation provoque un echec (exit 1, rouge).
 
 Compatible Windows PowerShell 5.1 et PowerShell Core (Linux CI). N'utilise pas cmd.exe.
+Encode en UTF-8 BOM pour un decodage correct sous PowerShell 5.1.
 #>
 param(
     [string]$BicepFile = "infra/main.bicep"
@@ -24,14 +25,14 @@ Write-Host "=== AC360 Validate Infra (offline, fail-closed) ===" -ForegroundColo
 Write-Host "Bicep : $BicepFile"
 
 # --------------------------------------------------------------------------
-# Étape 1 — Compilation offline (az bicep build). Aucune authentification.
+# Etape 1 - Compilation offline (az bicep build). Aucune authentification.
 # --------------------------------------------------------------------------
 if (-not (Get-Command "az" -ErrorAction SilentlyContinue)) {
-    Write-Host "[ÉCHEC] Azure CLI (az) introuvable — impossible de compiler le Bicep." -ForegroundColor Red
+    Write-Host "[ECHEC] Azure CLI (az) introuvable - impossible de compiler le Bicep." -ForegroundColor Red
     exit 1
 }
 if (-not (Test-Path $BicepFile)) {
-    Write-Host "[ÉCHEC] Fichier Bicep introuvable : $BicepFile" -ForegroundColor Red
+    Write-Host "[ECHEC] Fichier Bicep introuvable : $BicepFile" -ForegroundColor Red
     exit 1
 }
 
@@ -41,12 +42,12 @@ $compiled = Join-Path $tmpDir "ac360_main.json"
 Write-Host "Compilation : az bicep build -f $BicepFile" -ForegroundColor Gray
 $buildOut = az bicep build -f $BicepFile --outfile $compiled 2>&1
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "[ÉCHEC] az bicep build a échoué (build error) :" -ForegroundColor Red
+    Write-Host "[ECHEC] az bicep build a echoue (build error) :" -ForegroundColor Red
     $buildOut | ForEach-Object { Write-Host "  $_" -ForegroundColor Red }
     exit 1
 }
 if (-not (Test-Path $compiled)) {
-    Write-Host "[ÉCHEC] La compilation n'a produit aucun JSON ARM." -ForegroundColor Red
+    Write-Host "[ECHEC] La compilation n'a produit aucun JSON ARM." -ForegroundColor Red
     exit 1
 }
 Write-Host "Build OK." -ForegroundColor Green
@@ -56,20 +57,19 @@ $resources = @($arm.resources)
 $rawJson = Get-Content $compiled -Raw
 
 # --------------------------------------------------------------------------
-# Helpers de sélection sur le JSON ARM compilé.
+# Helpers de selection sur le JSON ARM compile.
 # --------------------------------------------------------------------------
 function Get-ResByType {
     param([object[]]$Res, [string]$Type)
     return @($Res | Where-Object { $_.type -eq $Type })
 }
 
-# Récupère la valeur d'une app-setting par nom dans un site (siteConfig.appSettings
-# OU functionAppConfig). Renvoie $null si absente.
+# Recupere la valeur d'une app-setting par nom dans un site
+# (siteConfig.appSettings). Renvoie $null si absente.
 function Get-AppSetting {
     param($Site, [string]$Name)
     $settings = @()
     if ($Site.properties.siteConfig.appSettings) { $settings += $Site.properties.siteConfig.appSettings }
-    if ($Site.properties.functionAppConfig.runtime) { } # placeholder; settings restent dans siteConfig
     foreach ($s in $settings) { if ($s.name -eq $Name) { return $s.value } }
     return $null
 }
@@ -81,23 +81,23 @@ $cognitive   = Get-ResByType -Res $resources -Type 'Microsoft.CognitiveServices/
 $roleAssigns = Get-ResByType -Res $resources -Type 'Microsoft.Authorization/roleAssignments'
 
 # --------------------------------------------------------------------------
-# Détection de la forme PROD : la passerelle passe à B1 en PROD (staging=F1).
-# Tant qu'aucun plan B1 n'est compilé, les SKUs prod (B1/S0/GRS/FC1) sont posés
-# en littéral par le plan 02-02 ; on diffère les assertions pour ce plan Wave-0.
+# Detection de la forme PROD : la passerelle passe a B1 en PROD (staging=F1).
+# Tant qu'aucun plan B1 n'est compile, les SKUs prod (B1/S0/GRS/FC1) sont poses
+# en litteral par le plan 02-02 ; on differe les assertions pour ce plan Wave-0.
 # --------------------------------------------------------------------------
 $gwPlanB1 = @($serverfarms | Where-Object { $_.sku.name -eq 'B1' })
 $prodShapePresent = $gwPlanB1.Count -gt 0
 
 if (-not $prodShapePresent) {
     Write-Host ""
-    Write-Host "[DIFFÉRÉ] main.bicep pas encore étendu à la forme PROD (aucun plan B1 compilé)." -ForegroundColor Yellow
-    Write-Host "          Les assertions par-INF seront activées une fois les ressources PROD présentes." -ForegroundColor Yellow
+    Write-Host "[DIFFERE] main.bicep pas encore etendu a la forme PROD (aucun plan B1 compile)." -ForegroundColor Yellow
+    Write-Host "          Les assertions par-INF seront activees une fois les ressources PROD presentes." -ForegroundColor Yellow
     Write-Host "[OK] Build vert ; gate Wave-0 satisfait." -ForegroundColor Green
     exit 0
 }
 
 # --------------------------------------------------------------------------
-# Étape 2 — Assertions par-INF (collect-violations, fail-closed).
+# Etape 2 - Assertions par-INF (collect-violations, fail-closed).
 # --------------------------------------------------------------------------
 function Test-InfraAssertions {
     param([object[]]$ServerFarms, [object[]]$Sites, [object[]]$Storages,
@@ -111,7 +111,7 @@ function Test-InfraAssertions {
     else {
         if ($gwPlan.sku.capacity -ne 1) { $violations += "INF-02: gwPlan sku.capacity != 1 (= $($gwPlan.sku.capacity))." }
     }
-    # gatewayApp = site 'app,linux' avec appCommandLine gunicorn
+    # gatewayApp = site avec appCommandLine gunicorn
     $gatewayApp = @($Sites | Where-Object { $_.properties.siteConfig.appCommandLine -match 'gunicorn' }) | Select-Object -First 1
     if (-not $gatewayApp) { $violations += "INF-02: passerelle (appCommandLine gunicorn) introuvable." }
     else {
@@ -144,7 +144,7 @@ function Test-InfraAssertions {
         if ($storage.sku.name -ne 'Standard_GRS') { $violations += "INF-09: storage sku.name != 'Standard_GRS' (= $($storage.sku.name))." }
         if ($storage.properties.allowSharedKeyAccess -ne $false) { $violations += "INF-09: storage allowSharedKeyAccess != false." }
     }
-    # blobServices enfant avec rétention + PITR + versioning + changeFeed
+    # blobServices enfant avec retention + PITR + versioning + changeFeed
     $blobSvc = @($resources | Where-Object { $_.type -eq 'Microsoft.Storage/storageAccounts/blobServices' }) | Select-Object -First 1
     if (-not $blobSvc) { $violations += "INF-09: ressource enfant blobServices introuvable." }
     else {
@@ -155,7 +155,7 @@ function Test-InfraAssertions {
         if ($bp.isVersioningEnabled -ne $true) { $violations += "INF-09: blobServices isVersioningEnabled != true." }
         if (-not $bp.changeFeed) { $violations += "INF-09: blobServices changeFeed absent." }
     }
-    # AzureWebJobsStorage__credential == managedidentity (storage par identité, sans clé)
+    # AzureWebJobsStorage__credential == managedidentity (storage par identite, sans cle)
     $miCred = $null
     foreach ($s in $Sites) {
         $v = Get-AppSetting -Site $s -Name 'AzureWebJobsStorage__credential'
@@ -163,7 +163,7 @@ function Test-InfraAssertions {
     }
     if ($miCred -ne 'managedidentity') { $violations += "INF-09: app-setting AzureWebJobsStorage__credential != 'managedidentity' (= $miCred)." }
 
-    # --- INF-08 : aucun secret littéral ; toute app-setting secrète => @Microsoft.KeyVault( ---
+    # --- INF-08 : aucun secret litteral ; toute app-setting secrete => @Microsoft.KeyVault( ---
     $secretLike = @('SECRET', 'KEY', 'PASSWORD', 'OBO_CLIENT_SECRET', 'OCR', 'FABRIC')
     foreach ($s in $Sites) {
         $appSettings = @()
@@ -173,18 +173,18 @@ function Test-InfraAssertions {
             $isSecret = $false
             foreach ($pat in $secretLike) { if ($nameU -like "*$pat*") { $isSecret = $true; break } }
             if ($nameU -eq 'APPLICATIONINSIGHTS_CONNECTION_STRING') { $isSecret = $true }
-            # AzureWebJobsStorage__credential=managedidentity n'est pas un secret : exempté.
+            # AzureWebJobsStorage__credential=managedidentity n'est pas un secret : exempte.
             if ($nameU -like '*CREDENTIAL*' -and "$($as.value)" -eq 'managedidentity') { $isSecret = $false }
             if ($isSecret) {
                 if ("$($as.value)" -notmatch '^@Microsoft\.KeyVault\(') {
-                    $violations += "INF-08: app-setting secrète '$($as.name)' n'est pas une référence Key Vault (valeur littérale interdite)."
+                    $violations += "INF-08: app-setting secrete '$($as.name)' n'est pas une reference Key Vault (valeur litterale interdite)."
                 }
             }
         }
     }
-    # Private Endpoint vers Key Vault + zone DNS privée privatelink.vaultcore.azure.net
+    # Private Endpoint vers Key Vault + zone DNS privee privatelink.vaultcore.azure.net
     $dnsZone = @($resources | Where-Object { $_.type -eq 'Microsoft.Network/privateDnsZones' -and $_.name -match 'privatelink\.vaultcore\.azure\.net' })
-    if ($dnsZone.Count -eq 0) { $violations += "INF-08: zone DNS privée 'privatelink.vaultcore.azure.net' absente." }
+    if ($dnsZone.Count -eq 0) { $violations += "INF-08: zone DNS privee 'privatelink.vaultcore.azure.net' absente." }
     $pe = @($resources | Where-Object { $_.type -eq 'Microsoft.Network/privateEndpoints' })
     $peKvFound = $false
     foreach ($p in $pe) {
@@ -194,28 +194,28 @@ function Test-InfraAssertions {
     }
     if (-not $peKvFound) { $violations += "INF-08: privateEndpoint avec groupIds contenant 'vault' (Key Vault) absent." }
 
-    # --- INF-07 : trio de rôles Durable (storage) + Cognitive Services User (docIntel) ---
-    # GUIDs intégrés : Storage Blob Data Owner, Storage Queue Data Contributor, Storage Table Data Contributor.
+    # --- INF-07 : trio de roles Durable (storage) + Cognitive Services User (docIntel) ---
+    # GUIDs integres : Storage Blob Data Owner, Storage Queue Data Contributor, Storage Table Data Contributor.
     $durableTrio = @{
-        'Storage Blob Data Owner'          = 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
-        'Storage Queue Data Contributor'   = '974c5e8b-45b9-4653-ba55-5f855dd0fb88'
-        'Storage Table Data Contributor'   = '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
+        'Storage Blob Data Owner'        = 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
+        'Storage Queue Data Contributor' = '974c5e8b-45b9-4653-ba55-5f855dd0fb88'
+        'Storage Table Data Contributor' = '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
     }
     $cogUserRoleId = 'a97b65f3-24c7-4388-baec-2e87135dc908' # Cognitive Services User
-    foreach ($kv in $durableTrio.GetEnumerator()) {
-        if ($RawJson -notmatch [regex]::Escape($kv.Value)) {
-            $violations += "INF-07: rôle '$($kv.Key)' ($($kv.Value)) absent du déploiement (storage Durable)."
+    foreach ($pair in $durableTrio.GetEnumerator()) {
+        if ($RawJson -notmatch [regex]::Escape($pair.Value)) {
+            $violations += "INF-07: role $($pair.Key) ($($pair.Value)) absent du deploiement (storage Durable)."
         }
     }
     if ($RawJson -notmatch [regex]::Escape($cogUserRoleId)) {
-        $violations += "INF-07: rôle 'Cognitive Services User' ($cogUserRoleId) absent (DocIntel Entra-only)."
+        $violations += "INF-07: role Cognitive Services User ($cogUserRoleId) absent (DocIntel Entra-only)."
     }
 
-    # --- INF-07 (négatif) : SharePoint OBO n'est PAS un roleAssignment (consentement délégué) ---
+    # --- INF-07 (negatif) : SharePoint OBO n'est PAS un roleAssignment (consentement delegue) ---
     foreach ($ra in $RoleAssigns) {
         $blob = ($ra | ConvertTo-Json -Depth 8 -Compress)
         if ($blob -match 'SharePoint') {
-            $violations += "INF-07: un roleAssignment référence 'SharePoint' — l'OBO SharePoint doit être un consentement DÉLÉGUÉ, pas un rôle MI."
+            $violations += "INF-07: un roleAssignment reference SharePoint - l'OBO SharePoint doit etre un consentement DELEGUE, pas un role MI."
         }
     }
 
@@ -227,7 +227,7 @@ $violations = Test-InfraAssertions -ServerFarms $serverfarms -Sites $sites -Stor
 
 Write-Host ""
 if ($violations.Count -gt 0) {
-    Write-Host "[ÉCHEC GATE] $($violations.Count) violation(s) de posture PROD :" -ForegroundColor Red
+    Write-Host "[ECHEC GATE] $($violations.Count) violation(s) de posture PROD :" -ForegroundColor Red
     $violations | ForEach-Object { Write-Host "  - $_" -ForegroundColor Red }
     exit 1
 }
