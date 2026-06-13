@@ -60,7 +60,16 @@ Plans:
   3. System-assigned Managed Identity role assignments are wired (Key Vault Secrets User, Storage Data Contributor, Cognitive Services User, Fabric read, SharePoint OBO), and all secrets resolve via Key Vault references + MI with zero cleartext in app settings.
   4. Key Vault has a Private Endpoint behind a minimal VNet; the Storage account has GRS/RA-GRS + blob & container soft-delete + PITR, identity-based `AzureWebJobsStorage` (`allowSharedKeyAccess=false`), and a unique production Task Hub name.
 
-**Plans**: TBD
+**Plans**: 6 plans
+Plans:
+
+- [ ] 02-01-PLAN.md — Wave 1: prod.parameters.json (francecentral + prod opt-ins) + offline static-assertion validator (INF-01)
+- [ ] 02-02-PLAN.md — Wave 1: provision_app_registrations.ps1 — idempotent app-regs + delegated scopes + secret→KV + admin-consent (INF-05/06)
+- [ ] 02-03-PLAN.md — Wave 1: provision.ps1 orchestrator + blocking pre-flight gates, what-if default (INF-01)
+- [ ] 02-04-PLAN.md — Wave 2: extend main.bicep compute — B1+capacity=1+alwaysOn, Flex FC1+functionAppConfig, DocIntel S0 (INF-02/03/04)
+- [ ] 02-05-PLAN.md — Wave 3: extend main.bicep — storage GRS/soft-delete/PITR/identity + Durable role trio + KV PE/VNet + KV refs (INF-07/08/09)
+- [ ] 02-06-PLAN.md — Wave 4: operator checkpoints — residency/region, what-if evidence, OBO admin consent, Fabric grant (INF-06)
+
 **Risks**: EU residency of the M365 tenant geo, Fabric capacity region, and DocIntel Form Recognizer availability in France Central must each be verified against the live GEREP tenant at provisioning time (West Europe is the confirmed DocIntel fallback). In-place Y1→Flex migration is unsupported — a new Functions app must be created.
 
 ### Phase 3: Backend Deploy & Observability
@@ -132,7 +141,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Deep Code Audit & Critical Fixes | 7/7 | Complete   | 2026-06-13 |
-| 2. Production Infrastructure Provisioning | 0/TBD | Not started | - |
+| 2. Production Infrastructure Provisioning | 0/6 | Planned | - |
 | 3. Backend Deploy & Observability | 0/TBD | Not started | - |
 | 4. Copilot Studio Production Publish | 0/TBD | Not started | - |
 | 5. RGPD & Security Evidence Pack | 0/TBD | Not started | - |
