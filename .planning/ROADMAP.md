@@ -13,7 +13,7 @@ This milestone takes the feature-complete, security-hardened AC360 assistant fro
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Deep Code Audit & Critical Fixes** - Re-validate hardening under prod (multi-worker) topology and land launch-blocking code fixes in the repo
+- [x] **Phase 1: Deep Code Audit & Critical Fixes** - Re-validate hardening under prod (multi-worker) topology and land launch-blocking code fixes in the repo (completed 2026-06-13)
 - [ ] **Phase 2: Production Infrastructure Provisioning** - Stand up `rg-ac360-prod` in an EU region with corrected SKUs, identity, secrets, and minimal network hardening
 - [ ] **Phase 3: Backend Deploy & Observability** - Deploy the fixed backend via a real prod CD pipeline with monitoring, alerting, and five solo-operator runbooks live
 - [ ] **Phase 4: Copilot Studio Production Publish** - Publish the hardened agent to Teams 1:1 with rebound prod connections, SSO, and validated live guardrails
@@ -44,7 +44,7 @@ Plans:
 - [x] 01-04-PLAN.md — Wave 2: scripts/audit_trail.py document-access emit seam, 4-field PII-free contract (AUD-07)
 - [x] 01-05-PLAN.md — Wave 1: single-instance gateway pin in infra/main.bicep, documented load-bearing (AUD-04)
 - [x] 01-06-PLAN.md — Wave 3: wire oid owner_hash + authoritative IDOR gate + 503 OBO + redaction + audit emit + locality (AUD-03/05/06/07/08)
-- [ ] 01-07-PLAN.md — Wave 4: AUD-01 full-suite re-validation + written SECURITY_POSTURE.md deliverable (feeds Phase 5)
+- [x] 01-07-PLAN.md — Wave 4: AUD-01 full-suite re-validation + written SECURITY_POSTURE.md deliverable (feeds Phase 5)
 
 **Risks**: Exact OBO delegated Graph scope list must be verified against the live staging app registration before being relied on in fixes/tests.
 
@@ -131,7 +131,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Deep Code Audit & Critical Fixes | 6/7 | In Progress|  |
+| 1. Deep Code Audit & Critical Fixes | 7/7 | Complete   | 2026-06-13 |
 | 2. Production Infrastructure Provisioning | 0/TBD | Not started | - |
 | 3. Backend Deploy & Observability | 0/TBD | Not started | - |
 | 4. Copilot Studio Production Publish | 0/TBD | Not started | - |
