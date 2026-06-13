@@ -63,7 +63,7 @@ Plans:
 **Plans**: 6 plans
 Plans:
 
-- [ ] 02-01-PLAN.md — Wave 1: prod.parameters.json (francecentral + prod opt-ins) + offline static-assertion validator (INF-01)
+- [x] 02-01-PLAN.md — Wave 1: prod.parameters.json (francecentral + prod opt-ins) + offline static-assertion validator (INF-01)
 - [ ] 02-02-PLAN.md — Wave 1: provision_app_registrations.ps1 — idempotent app-regs + delegated scopes + secret→KV + admin-consent (INF-05/06)
 - [ ] 02-03-PLAN.md — Wave 1: provision.ps1 orchestrator + blocking pre-flight gates, what-if default (INF-01)
 - [ ] 02-04-PLAN.md — Wave 2: extend main.bicep compute — B1+capacity=1+alwaysOn, Flex FC1+functionAppConfig, DocIntel S0 (INF-02/03/04)
@@ -141,7 +141,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Deep Code Audit & Critical Fixes | 7/7 | Complete   | 2026-06-13 |
-| 2. Production Infrastructure Provisioning | 0/6 | Planned | - |
+| 2. Production Infrastructure Provisioning | 1/6 | In Progress|  |
 | 3. Backend Deploy & Observability | 0/TBD | Not started | - |
 | 4. Copilot Studio Production Publish | 0/TBD | Not started | - |
 | 5. RGPD & Security Evidence Pack | 0/TBD | Not started | - |

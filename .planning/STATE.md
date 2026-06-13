@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: completed
-stopped_at: Completed 01-04-PLAN.md
-last_updated: "2026-06-13T20:55:57.965Z"
-last_activity: 2026-06-13 -- Phase 01 marked complete
+status: executing
+stopped_at: Completed 02-01-PLAN.md
+last_updated: "2026-06-13T23:14:46.126Z"
+last_activity: 2026-06-13 -- Phase 02 execution started
 progress:
   total_phases: 6
   completed_phases: 1
-  total_plans: 7
-  completed_plans: 7
+  total_plans: 13
+  completed_plans: 8
   percent: 17
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-13)
 
 **Core value:** AC360 is live in production — a 20–100 person team can reliably and compliantly audit client documents from Teams, end-to-end, and one person can operate it with confidence.
-**Current focus:** Phase 01 — deep-code-audit-critical-fixes
+**Current focus:** Phase 02 — production-infrastructure-provisioning
 
 ## Current Position
 
-Phase: 01 — COMPLETE
-Plan: 7 of 7
-Status: Phase 01 complete
-Last activity: 2026-06-13 -- Phase 01 marked complete
+Phase: 02 (production-infrastructure-provisioning) — EXECUTING
+Plan: 2 of 6
+Status: Ready to execute
+Last activity: 2026-06-13 -- Phase 02 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -58,6 +58,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P05 | 6 | 1 tasks | 1 files |
 | Phase 01 P04 | 6 | 1 tasks | 1 files |
 | Phase 01 P06 | 35 | 2 tasks | 9 files |
+| Phase 02 P01 | 14 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -74,6 +75,8 @@ Recent decisions affecting current work:
 - [Phase ?]: [01-03]: OBO retry added as NEW acquire_obo_graph_token_retrying wrapper preserving the http_post seam; exhaustion RAISES so gateway maps to HTTP 503 (not 502).
 - [Phase 01-05]: F1/Free rejects explicit sku.capacity; single-instance pin carried by gunicorn --workers 1 + load-bearing comment now, explicit capacity=1 deferred to Phase 2 (INF-02, B1).
 - [Phase 01]: 01-04: AUD-07 emit seam is gate-inert and dependency-free; real Azure Monitor exporter deferred to Phase 3 OBS-01 behind the same APPINSIGHTS gate.
+- [Phase ?]: [02-01]: docIntelLocation defaults francecentral in prod params; West Europe is operator fallback if EU-residency/DocIntel-S0 checkpoint fails.
+- [Phase ?]: [02-01]: validate_infra.ps1 defers per-INF assertions (exit 0) until prod B1 shape compiled then fails closed; UTF-8+BOM for Windows PowerShell 5.1.
 
 ### Pending Todos
 
@@ -101,6 +104,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-13T12:27:37.005Z
-Stopped at: Completed 01-04-PLAN.md
+Last session: 2026-06-13T23:14:46.116Z
+Stopped at: Completed 02-01-PLAN.md
 Resume file: None
