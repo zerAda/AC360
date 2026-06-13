@@ -31,7 +31,15 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. OBO token exchange retries transient failures with bounded exponential backoff, and client-facing error responses plus App Insights traces are redacted of PII/secrets.
   4. A document-access audit trail (user-id hash, document id, timestamp, verdict) is written to an immutable log.
   5. The download → OCR → compare → FIC chain is confirmed to keep `JOBS_BASE_DIR` artifacts available across the pipeline (single-activity or shared-store), with a written security-posture document feeding Phase 5.
-**Plans**: TBD
+**Plans**: 7 plans
+Plans:
+- [ ] 01-01-PLAN.md — Wave 0: create the AUD-07/AUD-08 failing test scaffolds (audit-trail contract + JOBS_BASE_DIR locality)
+- [ ] 01-02-PLAN.md — Wave 1: oid identity in verify_azure_ad_token (AUD-02) + safe_logger dict-value redaction helper (AUD-06)
+- [ ] 01-03-PLAN.md — Wave 1: bounded-backoff transient-only OBO retry wrapper, 503-on-exhaustion (AUD-05) + OBO scope checkpoint
+- [ ] 01-04-PLAN.md — Wave 2: scripts/audit_trail.py document-access emit seam, 4-field PII-free contract (AUD-07)
+- [ ] 01-05-PLAN.md — Wave 1: single-instance gateway pin in infra/main.bicep, documented load-bearing (AUD-04)
+- [ ] 01-06-PLAN.md — Wave 3: wire oid owner_hash + authoritative IDOR gate + 503 OBO + redaction + audit emit + locality (AUD-03/05/06/07/08)
+- [ ] 01-07-PLAN.md — Wave 4: AUD-01 full-suite re-validation + written SECURITY_POSTURE.md deliverable (feeds Phase 5)
 **Risks**: Exact OBO delegated Graph scope list must be verified against the live staging app registration before being relied on in fixes/tests.
 
 ### Phase 2: Production Infrastructure Provisioning
@@ -102,7 +110,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Deep Code Audit & Critical Fixes | 0/TBD | Not started | - |
+| 1. Deep Code Audit & Critical Fixes | 0/7 | Planned | - |
 | 2. Production Infrastructure Provisioning | 0/TBD | Not started | - |
 | 3. Backend Deploy & Observability | 0/TBD | Not started | - |
 | 4. Copilot Studio Production Publish | 0/TBD | Not started | - |
