@@ -124,9 +124,34 @@ resource funcPlan 'Microsoft.Web/serverfarms@2023-12-01' = {
   properties: { reserved: true }
 }
 
+// --------------------------------------------------------------------------
+// PIN INSTANCE UNIQUE — LOAD-BEARING (AUD-04)
+// --------------------------------------------------------------------------
+// La passerelle FastAPI conserve un état EN MÉMOIRE, propre au processus, qui
+// n'est correct qu'à EXACTEMENT un seul processus / une seule instance :
+//   - le compteur de quota par utilisateur  (api_server.py  _rate_limit_store)
+//   - le cache JWKS                          (auth.py        _JWKS_CACHE)
+//   - la table « propriétaire » de raccourci (api_server.py  _audit_job_owners)
+// Un second worker/instance rendrait ces structures incohérentes :
+//   -> contournement du rate-limit (requêtes réparties sur plusieurs workers),
+//   -> divergence du cache JWKS pendant une rotation de clés,
+//   -> divergence du raccourci IDOR _audit_job_owners (le contrôle durable
+//      owner_hash du Plan 01-06 reste l'autorité, mais le raccourci doit rester
+//      cohérent).
+// Le pin DOIT donc être maintenu : sku.capacity = 1, gunicorn --workers 1, et
+// AUCUNE règle d'autoscale ne doit porter la capacité au-dessus de 1.
+//
+// Note F1/Free : le tier Free est figé à une seule instance et REFUSE un
+// sku.capacity explicite. Le pin capacity=1 explicite est posé en Phase 2
+// (INF-02, plan B1) lors du passage au plan B1. Ici, sur F1, l'instance unique
+// est garantie par le tier ; le pin load-bearing est porté par la commande de
+// démarrage gunicorn --workers 1 ci-dessous (gatewayApp.siteConfig) et par ce
+// commentaire. AUCUN autoscaleSettings ne cible ce plan : n'en ajoutez aucun
+// qui porterait maximum > 1.
 resource gwPlan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: gwPlanName
   location: location
+  // F1/Free : capacité fixée à 1 par le tier ; capacity explicite=1 posé en Phase 2 (INF-02, B1).
   sku: { name: 'F1', tier: 'Free' }
   properties: { reserved: true }
 }
@@ -166,6 +191,11 @@ resource gatewayApp 'Microsoft.Web/sites@2023-12-01' = {
       linuxFxVersion: 'Python|3.12'
       minTlsVersion: '1.2'
       ftpsState: 'Disabled'
+      // PIN INSTANCE UNIQUE — LOAD-BEARING (AUD-04). --workers 1 est obligatoire :
+      // un second worker gunicorn romprait l'état en mémoire de la passerelle
+      // (_rate_limit_store, _JWKS_CACHE, _audit_job_owners). Ne pas augmenter le
+      // nombre de workers et ne laisser aucun défaut plateforme en réintroduire.
+      appCommandLine: 'gunicorn --workers 1 -k uvicorn.workers.UvicornWorker api_server:app'
     }
   }
 }
