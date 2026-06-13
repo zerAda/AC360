@@ -27,19 +27,24 @@ from __future__ import annotations
 
 import re
 import logging
-from typing import Any, Dict, Mapping
+from typing import Any, Dict, Mapping, Optional
 
 
 logger = logging.getLogger("AC360")
 logger.setLevel(logging.INFO)
 
 
-def log_security(level: str, message: str, data: dict = None):
+def log_security(level: str, message: str, data: Optional[dict] = None) -> None:
     """
     Journalise un message de sécurité de manière neutre et sécurisée.
+
+    Le `message` ET les valeurs du dict `data` sont neutralisés via la SEULE
+    surface auditée `redact()` / `redact_mapping()` avant journalisation : aucune
+    PII ni aucun secret ne doit être persisté en clair, quel que soit l'appelant
+    (cf. docstring du module §6.1/§7).
     """
     safe_msg = redact(message)
-    extra_info = f" | {data}" if data else ""
+    extra_info = f" | {redact_mapping(data)}" if data else ""
     full_msg = f"{safe_msg}{extra_info}"
 
     if level == "INFO":
