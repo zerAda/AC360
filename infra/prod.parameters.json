@@ -1,0 +1,24 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "namePrefix": { "value": "ac360" },
+    "environmentName": { "value": "prod" },
+    "location": { "value": "francecentral" },
+    "docIntelLocation": { "value": "francecentral" },
+    "keyVaultPublicNetworkAccess": { "value": "Disabled" },
+    "docIntelDisableLocalAuth": { "value": true },
+    "storageSku": { "value": "Standard_GRS" },
+    "enableIdentityStorage": { "value": true },
+    "enablePrivateNetworking": { "value": true },
+    "funcMaxInstanceCount": { "value": 40 },
+    "funcInstanceMemoryMB": { "value": 2048 },
+    "funcRuntimeVersion": { "value": "3.12" },
+    "deploymentContainerName": { "value": "app-package" },
+    "blobSoftDeleteDays": { "value": 7 },
+    "containerSoftDeleteDays": { "value": 7 },
+    "pointInTimeRestoreDays": { "value": 6 },
+    "keyVaultSecretsReaderPrincipalIds": { "value": [] },
+    "gatewayOutboundIps": { "value": [] }
+  }
+}
