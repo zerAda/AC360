@@ -1,6 +1,7 @@
 """Test du contrôle d'appartenance des jobs d'audit (anti-IDOR) :
 un utilisateur ne peut consulter que le statut/verdict de SES audits.
 """
+import json
 import os
 import sys
 
@@ -86,3 +87,36 @@ def test_durable_owner_uses_oid_hash_not_raw():
     persisted = json.loads(entry["input"])["owner_hash"]
     assert persisted == api_server.hash_id(_OID_ALICE)
     assert persisted != _OID_ALICE  # ce n'est jamais l'oid en clair
+
+
+# --- WR-01 : fail-closed quand owner_hash absent sur un état terminal ----------
+
+
+@pytest.mark.parametrize("terminal_status", ["Completed", "Failed", "Terminated"])
+def test_durable_terminal_without_owner_hash_fails_closed(terminal_status):
+    # Depuis le cutover oid, un job TERMINAL porte toujours un owner_hash. Son
+    # absence sur un état terminal = job legacy ou réponse dégradée -> refus 403
+    # (gate réellement fail-closed, plus de fail-open silencieux).
+    entry = {"runtimeStatus": terminal_status, "input": json.dumps({"document_id": "doc-1"})}
+    with pytest.raises(HTTPException) as exc:
+        api_server._assert_durable_owner(entry, _OID_ALICE)
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.parametrize("terminal_status", ["Completed", "Failed", "Terminated"])
+def test_durable_terminal_with_absent_input_fails_closed(terminal_status):
+    # Aucun input exploitable (input manquant / non décodable) sur un état
+    # terminal -> refus 403.
+    entry = {"runtimeStatus": terminal_status}
+    with pytest.raises(HTTPException) as exc:
+        api_server._assert_durable_owner(entry, _OID_ALICE)
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.parametrize("transient_status", ["Pending", "Running", None])
+def test_durable_non_terminal_without_owner_hash_tolerated(transient_status):
+    # Fenêtre transitoire pré-input (états non terminaux) : on tolère l'absence
+    # d'owner_hash pour ne pas casser les shapes de statut qui ne le portent
+    # légitimement pas encore.
+    entry = {"runtimeStatus": transient_status} if transient_status else {}
+    api_server._assert_durable_owner(entry, _OID_ALICE)  # ne lève pas

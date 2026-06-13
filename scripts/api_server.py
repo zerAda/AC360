@@ -251,11 +251,16 @@ def _assert_durable_owner(data, oid):
     n'est qu'un fast-path/cache. Hard-fail en 403 sur NON-CORRESPONDANCE (la menace
     IDOR réelle : un autre oid lisant le job d'autrui).
 
-    owner_hash ABSENT (job legacy d'avant le cutover oid, ou shape de statut
-    intermédiaire qui n'expose pas encore l'input) -> on n'élève pas ici : le
-    durcissement fail-closed-on-absent est laissé en suivi (Open Q3) pour ne pas
-    rejeter les jobs legacy ni la fenêtre transitoire ; tous les NOUVEAUX jobs
-    portent l'owner_hash et sont donc couverts par la branche de comparaison."""
+    FAIL-CLOSED (WR-01) : depuis le cutover oid (clean-cutover, app jamais
+    déployée), TOUT nouveau job porte un ``owner_hash``. Un job dans un état
+    TERMINAL (``Completed`` / ``Failed`` / ``Terminated``) dont l'``owner_hash``
+    est absent ne peut donc plus être un job légitime en attente de surface :
+    c'est soit un job legacy (inexistant en clean-cutover) soit une réponse de
+    statut dégradée. On refuse alors (403) plutôt que d'accorder l'accès — le
+    gate « autoritaire » est ainsi réellement fail-closed. La fenêtre transitoire
+    PRÉ-input (états non terminaux : ``Pending`` / ``Running``, ou job introuvable
+    sans état) reste tolérée pour ne pas casser les shapes de statut qui ne
+    portent légitimement jamais d'``owner_hash``."""
     import json as _json
     inp = data.get("input")
     if isinstance(inp, str):
@@ -264,9 +269,19 @@ def _assert_durable_owner(data, oid):
         except (ValueError, TypeError):
             inp = None
     owner_hash = inp.get("owner_hash") if isinstance(inp, dict) else None
-    if owner_hash and owner_hash != hash_id(oid):
+    runtime_status = data.get("runtimeStatus")
+    if owner_hash:
+        if owner_hash != hash_id(oid):
+            log_security("WARNING",
+                         "Accès refusé au statut d'audit (owner_hash Durable ne correspond pas)",
+                         {"oid_hash": hash_id(oid)})
+            raise HTTPException(status_code=403, detail="Accès refusé à ce job d'audit.")
+        return
+    # owner_hash absent : on ne tolère que la fenêtre transitoire pré-input
+    # (états non terminaux). Sur un état terminal, refus fail-closed.
+    if runtime_status in ("Completed", "Failed", "Terminated"):
         log_security("WARNING",
-                     "Accès refusé au statut d'audit (owner_hash Durable ne correspond pas)",
+                     "Statut terminal sans owner_hash Durable — refus fail-closed (WR-01)",
                      {"oid_hash": hash_id(oid)})
         raise HTTPException(status_code=403, detail="Accès refusé à ce job d'audit.")
 
