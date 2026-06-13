@@ -135,10 +135,22 @@ def verify_azure_ad_token(credentials: HTTPAuthorizationCredentials = Depends(se
                 log_security("WARNING", f"Missing role: {role}")
                 raise HTTPException(status_code=403, detail=f"Rôle manquant : {role}")
 
-    upn = claims.get("upn") or claims.get("preferred_username")
-    if not upn:
-        log_security("ERROR", "No UPN in claims")
-        raise HTTPException(status_code=401, detail="Le token ne contient pas d'identité.")
+    # Identité = oid (Entra Object ID) : GUID immuable et NON réutilisable,
+    # propre à l'utilisateur dans CE locataire. On l'utilise comme clé
+    # d'appartenance (hash) à la place de l'upn, qui est mutable et peut être
+    # réattribué à une autre personne (cause racine de l'IDOR par réutilisation
+    # d'upn — AUD-02). Un invité/B2B possède aussi un oid par-locataire : il est
+    # donc un utilisateur de plein droit. Les jetons app-only (client_credentials)
+    # sont hors périmètre : AC360 est délégué-utilisateur uniquement (SSO + OBO),
+    # ils n'atteignent pas /api/audit.
+    # Source : https://learn.microsoft.com/entra/identity-platform/id-token-claims-reference
+    oid = claims.get("oid")
+    if not oid:
+        log_security("ERROR", "No oid (object id) in claims")
+        raise HTTPException(status_code=401, detail="Le token ne contient pas d'identité stable.")
 
-    log_security("INFO", f"Token validated for user: {upn}")
-    return upn
+    # upn lu UNIQUEMENT pour une ligne de journal lisible — jamais retourné ni
+    # utilisé comme clé d'identité/d'appartenance.
+    upn = claims.get("upn") or claims.get("preferred_username")
+    log_security("INFO", f"Token validated (oid present) user={upn}")
+    return oid
