@@ -151,8 +151,11 @@ resource funcPlan 'Microsoft.Web/serverfarms@2023-12-01' = {
 resource gwPlan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: gwPlanName
   location: location
-  // F1/Free : capacité fixée à 1 par le tier ; capacity explicite=1 posé en Phase 2 (INF-02, B1).
-  sku: { name: 'F1', tier: 'Free' }
+  // B1/Basic : le pin capacity=1 explicite est désormais POSÉ (INF-02). B1 accepte
+  // un sku.capacity explicite (contrairement à F1/Free qui le refusait en Phase 1) :
+  // c'est le pin load-bearing différé par D-AUD-04, ici landé. AUCUN autoscaleSettings
+  // ne cible ce plan ; n'en ajoutez aucun qui porterait maximum > 1 (briserait AUD-04).
+  sku: { name: 'B1', tier: 'Basic', capacity: 1 }
   properties: { reserved: true }
 }
 
@@ -194,6 +197,7 @@ resource gatewayApp 'Microsoft.Web/sites@2023-12-01' = {
       linuxFxVersion: 'Python|3.12'
       minTlsVersion: '1.2'
       ftpsState: 'Disabled'
+      alwaysOn: true // INF-02 : Always On (B1 le supporte ; maintient le process chaud)
       // PIN INSTANCE UNIQUE — LOAD-BEARING (AUD-04). --workers 1 est obligatoire :
       // un second worker gunicorn romprait l'état en mémoire de la passerelle
       // (_rate_limit_store, _JWKS_CACHE, _audit_job_owners). Ne pas augmenter le
