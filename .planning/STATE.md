@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-01-PLAN.md
-last_updated: "2026-06-14T00:04:18.337Z"
+stopped_at: Completed 02-04-PLAN.md
+last_updated: "2026-06-14T00:43:20.636Z"
 last_activity: 2026-06-14 -- Completed 02-01-PLAN.md (prod params + offline infra validator)
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 13
-  completed_plans: 10
-  percent: 77
+  completed_plans: 11
+  percent: 17
 ---
 
 # Project State
@@ -26,8 +26,8 @@ See: .planning/PROJECT.md (updated 2026-06-13)
 ## Current Position
 
 Phase: 02 (production-infrastructure-provisioning) — EXECUTING
-Plan: 4 of 6
-Status: Executing Phase 02
+Plan: 5 of 6
+Status: Ready to execute
 Last activity: 2026-06-14 -- Completed 02-01-PLAN.md (prod params + offline infra validator)
 
 Progress: [████████░░] 77%
@@ -61,6 +61,7 @@ Progress: [████████░░] 77%
 | Phase 02 P01 | 14 | 2 tasks | 4 files |
 | Phase 02 P02 | 9 | 1 tasks | 1 files |
 | Phase 02 P03 | 12 | 1 tasks | 1 files |
+| Phase 02 P04 | 28 | 3 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -84,6 +85,8 @@ Recent decisions affecting current work:
 - [Phase ?]: [02-03]: provision.ps1 defaults to -WhatIfOnly; live apply/consent/residency/KV-flip are explicit operator checkpoints — nothing live this phase.
 - [Phase ?]: [02-03]: Flex region absence throws (escalate, no silent EU substitution); DocIntel S0 absence surfaces westeurope fallback as operator action; KV flip ordered after PE+VNet (Pitfall 2).
 - [Phase 02-01]: Offline infra validator defers per-INF assertions (exit 0) on the staging baseline and fails closed once a B1 prod plan compiles; validator written ASCII-safe for PowerShell 5.1
+- [Phase ?]: [02-04]: Microsoft.Web/sites@2023-12-01 accepts functionAppConfig; no bump to 2024-04-01 needed (Open Q2 closed)
+- [Phase ?]: [02-04]: Flex functionApp drops linuxFxVersion (runtime in functionAppConfig); gateway keeps Python|3.12; Flex AzureWebJobsStorage MI wiring + Durable role trio deferred to 02-05
 
 ### Pending Todos
 
@@ -111,6 +114,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-14T00:00:46.226Z
-Stopped at: Completed 02-01-PLAN.md
+Last session: 2026-06-14T00:43:20.624Z
+Stopped at: Completed 02-04-PLAN.md
 Resume file: None

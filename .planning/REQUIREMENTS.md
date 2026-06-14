@@ -23,9 +23,9 @@ Go-live gate (P1). Each maps to a roadmap phase.
 ### Infrastructure (prod provisioning)
 
 - [x] **INF-01**: Production resource group provisioned in an EU region with all Bicep `location` params set explicitly
-- [ ] **INF-02**: FastAPI gateway runs on Azure App Service **B1** (replaces dev-tier F1) with Always On
-- [ ] **INF-03**: Durable Functions run on a new **Flex Consumption** Functions app (replaces Y1; no OCR-killing 5-min cap, no cold starts)
-- [ ] **INF-04**: Azure Document Intelligence on **S0** with `disableLocalAuth=true` (replaces F0)
+- [x] **INF-02**: FastAPI gateway runs on Azure App Service **B1** (replaces dev-tier F1) with Always On
+- [x] **INF-03**: Durable Functions run on a new **Flex Consumption** Functions app (replaces Y1; no OCR-killing 5-min cap, no cold starts)
+- [x] **INF-04**: Azure Document Intelligence on **S0** with `disableLocalAuth=true` (replaces F0)
 - [x] **INF-05**: Production app registrations exist (API audience with no secret; OBO confidential client with secret stored in Key Vault)
 - [x] **INF-06**: OBO admin consent granted in the production tenant for required delegated Graph scopes (blocking pre-flight)
 - [ ] **INF-07**: System-assigned Managed Identity role assignments wired (Key Vault Secrets User, Storage Data Contributor, Cognitive Services User, Fabric read, SharePoint OBO)
@@ -126,9 +126,9 @@ Populated during roadmap creation. Every v1 requirement maps to exactly one phas
 | AUD-07 | Phase 1 | Complete |
 | AUD-08 | Phase 1 | Complete |
 | INF-01 | Phase 2 | Complete |
-| INF-02 | Phase 2 | Pending |
-| INF-03 | Phase 2 | Pending |
-| INF-04 | Phase 2 | Pending |
+| INF-02 | Phase 2 | Complete |
+| INF-03 | Phase 2 | Complete |
+| INF-04 | Phase 2 | Complete |
 | INF-05 | Phase 2 | Complete |
 | INF-06 | Phase 2 | Complete |
 | INF-07 | Phase 2 | Pending |
