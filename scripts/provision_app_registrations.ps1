@@ -28,7 +28,10 @@ param(
     [string]$KeyVaultName,
     [string]$ApiAppName = 'AC360-API-prod',
     [string]$OboAppName = 'AC360-OBO-prod',
-    [int]$SecretYears = 1
+    [int]$SecretYears = 1,
+    # WR-06 : login interactif INTERDIT par défaut (fail-closed). L'orchestrateur provision.ps1
+    # authentifie déjà en amont ; ce script ne doit pas relancer un `az login` silencieux en CI.
+    [switch]$Interactive
 )
 
 $ErrorActionPreference = "Stop"
@@ -42,9 +45,14 @@ if (-not (Get-Command "az" -ErrorAction SilentlyContinue)) {
 
 $azAccount = az account show --query "name" -o tsv 2>$null
 if (-not $azAccount) {
-    Write-Host "Vous n'êtes pas connecté à Azure. Lancement de la fenêtre de connexion..." -ForegroundColor Yellow
-    az login | Out-Null
-    $azAccount = az account show --query "name" -o tsv
+    # WR-06 : fail-closed sauf -Interactive (pas de prompt navigateur silencieux en automation).
+    if ($Interactive) {
+        Write-Host "Non authentifié. Lancement du `az login` interactif (-Interactive)..." -ForegroundColor Yellow
+        az login | Out-Null
+        $azAccount = az account show --query "name" -o tsv
+    } else {
+        throw "Non authentifié à Azure. Exécuter 'az login' (tenant PROD) puis relancer, ou passer -Interactive."
+    }
 }
 Write-Host "Connecté à l'abonnement : $azAccount" -ForegroundColor Green
 
@@ -126,27 +134,52 @@ function Get-Scope($v) {
 }
 
 # Scopes délégués least-privilege (T-02-05) : lecture SharePoint, écriture Planner (FIC), refresh OBO, identité.
+#
+# WR-02 — EXCEPTION READ-ONLY DOCUMENTÉE : `Tasks.ReadWrite` est un scope d'ÉCRITURE délégué. La
+# garantie "read-only" d'AC360 porte sur les DONNÉES CLIENT / SharePoint (aucune modification des
+# dossiers client) — PAS sur Microsoft Planner. La création d'une tâche Planner de relance FIC est une
+# action produit DOCUMENTÉE (scripts/planner_integration.py, endpoint /api/planner/task, topic
+# src/copilot/AC360/topics/CreerRelancePlanner.mcs.yml). Ce scope d'écriture DOIT être recensé dans la
+# preuve DPIA/SEC (Phase 5, RGP-01/SEC-03) comme exception explicite au principe read-only.
 $scopes = 'Files.Read.All', 'Sites.Read.All', 'Tasks.ReadWrite', 'offline_access', 'User.Read'
-Write-Host "Résolution + demande des scopes Microsoft Graph délégués..." -ForegroundColor Cyan
+
+# WR-04 : résolution ATOMIQUE — on résout et valide TOUS les GUID d'abord, puis on émet UN SEUL
+# `az ad app permission add` (batch). Si un scope manque, on `throw` AVANT toute mutation, évitant un
+# tenant à demi-provisionné (le message indique quel scope / quel tenant).
+Write-Host "Résolution des scopes Microsoft Graph délégués (atomique)..." -ForegroundColor Cyan
+$resolved = @()
+$missing = @()
 foreach ($s in $scopes) {
     $gid = Get-Scope $s
-    if (-not $gid) {
-        Write-Host "  Erreur : impossible de résoudre le scope délégué '$s' depuis le SP Graph." -ForegroundColor Red
-        exit 1
-    }
-    Write-Host "  -> demande du scope délégué $s" -ForegroundColor Yellow
-    az ad app permission add --id $oboAppId --api $graph --api-permissions "$gid=Scope" --only-show-errors | Out-Null
+    if (-not $gid) { $missing += $s } else { $resolved += "$gid=Scope" }
 }
+if ($missing.Count -gt 0) {
+    throw "Scopes Graph délégués irrésolus dans ce tenant ($azAccount) : $($missing -join ', '). Aucune permission ajoutée (résolution atomique WR-04)."
+}
+Write-Host "  -> demande groupée des scopes : $($scopes -join ', ')" -ForegroundColor Yellow
+az ad app permission add --id $oboAppId --api $graph --api-permissions $resolved --only-show-errors | Out-Null
 
 # Génération du secret OBO et stockage UNIQUEMENT dans Key Vault (jamais dans un fichier ni un log).
 Write-Host "Génération du secret OBO et stockage dans Key Vault ($KeyVaultName)..." -ForegroundColor Cyan
 $secret = az ad app credential reset --id $oboAppId --append --display-name 'obo-prod' --years $SecretYears --query password -o tsv
 
+# WR-01 : $ErrorActionPreference="Stop" ne rend PAS les codes retour non-zéro des commandes natives (az)
+# terminants. Sans cette garde, un `credential reset` échoué/vide écrirait un secret VIDE dans Key Vault
+# (panne d'auth prod silencieuse et difficile à diagnostiquer). Fail-closed AVANT toute écriture KV.
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($secret)) {
+    $secret = $null
+    throw "Echec du reset de credential OBO (code=$LASTEXITCODE) ou secret vide — abandon AVANT l'écriture Key Vault (WR-01)."
+}
+
 # Masquage CI/CD AVANT toute écriture (adapté de deploy_azure_ocr.ps1 lignes 57-61).
 if ($env:GITHUB_ACTIONS -eq "true") {
     Write-Host "::add-mask::$secret"
 }
-Write-Host "##vso[task.setsecret]$secret"  # Azure DevOps mask
+# IN-03 : masque Azure DevOps émis UNIQUEMENT sous Azure DevOps ($env:TF_BUILD='True'), symétrique au
+# garde GitHub — évite de placer la valeur dans un Write-Host hors d'un contexte de masquage réel.
+if ($env:TF_BUILD -eq 'True') {
+    Write-Host "##vso[task.setsecret]$secret"
+}
 
 # Le secret transite UNIQUEMENT vers Key Vault — sortie supprimée, puis variable effacée (T-02-04).
 az keyvault secret set --vault-name $KeyVaultName --name 'OBO-CLIENT-SECRET' --value $secret 1>$null
