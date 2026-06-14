@@ -34,11 +34,11 @@ Go-live gate (P1). Each maps to a roadmap phase.
 
 ### Observability & Monitoring
 
-- [ ] **OBS-01**: Application Insights mandatory and wired on both the gateway and the Functions app
-- [ ] **OBS-02**: Failure alerts fire on Functions/orchestration errors, gateway 5xx, and dependency failures (OCR/Fabric/Graph)
-- [ ] **OBS-03**: `/health` (liveness) and `/ready` (readiness) endpoints exist; a Standard availability test + alert run against them
-- [ ] **OBS-04**: FinOps budget alert is wired to a real notification sink (Teams webhook and/or Azure Cost Management budget)
-- [ ] **OBS-05**: A minimal one-pane ops dashboard shows last-24h audits, error rate, p95 latency, and budget %
+- [x] **OBS-01**: Application Insights mandatory and wired on both the gateway and the Functions app
+- [x] **OBS-02**: Failure alerts fire on Functions/orchestration errors, gateway 5xx, and dependency failures (OCR/Fabric/Graph)
+- [x] **OBS-03**: `/health` (liveness) and `/ready` (readiness) endpoints exist; a Standard availability test + alert run against them
+- [x] **OBS-04**: FinOps budget alert is wired to a real notification sink (Teams webhook and/or Azure Cost Management budget)
+- [x] **OBS-05**: A minimal one-pane ops dashboard shows last-24h audits, error rate, p95 latency, and budget %
 
 ### Deployment (CD)
 
@@ -136,11 +136,11 @@ Populated during roadmap creation. Every v1 requirement maps to exactly one phas
 | INF-09 | Phase 2 | Complete |
 | CD-01 | Phase 3 | Pending |
 | CD-02 | Phase 3 | Pending |
-| OBS-01 | Phase 3 | Pending |
-| OBS-02 | Phase 3 | Pending |
-| OBS-03 | Phase 3 | Pending |
-| OBS-04 | Phase 3 | Pending |
-| OBS-05 | Phase 3 | Pending |
+| OBS-01 | Phase 3 | Complete |
+| OBS-02 | Phase 3 | Complete |
+| OBS-03 | Phase 3 | Complete |
+| OBS-04 | Phase 3 | Complete |
+| OBS-05 | Phase 3 | Complete |
 | OPS-01 | Phase 3 | Pending |
 | OPS-02 | Phase 3 | Pending |
 | OPS-03 | Phase 3 | Pending |
