@@ -34,6 +34,7 @@ key-files:
     - .planning/phases/02-production-infrastructure-provisioning/02-05-SUMMARY.md
   modified:
     - infra/main.bicep
+    - scripts/validate_infra.ps1
 
 key-decisions:
   - "Used Storage Blob Data Owner (b7e6dc6d-...) for the host blob role instead of the plan-text Blob Data Contributor (ba92f5b4-...): the validator (validate_infra.ps1) asserts the Owner GUID as the canonical host-storage role, and RESEARCH Pattern 4 confirms Owner is the host-minimum role for identity-based AzureWebJobsStorage. Both are data-plane least-privilege; never management Owner/Contributor."
@@ -77,6 +78,7 @@ Each task was committed atomically:
 
 1. **Task 1: Harden storage (GRS/soft-delete/PITR) + identity AzureWebJobsStorage + Durable role trio + Cognitive Services User** - `6c90d99` (feat)
 2. **Task 2: Minimal VNet + KV Private Endpoint + private DNS + VNet integration + KV-reference app settings** - `8a371a1` (feat)
+3. **Validator prod-posture fix (follow-up promised in this SUMMARY's "Issues Encountered"):** `validate_infra.ps1` now overlays `prod.parameters.json` (resolving `[parameters('x')]` / `[not(parameters('x'))]`) and accepts the ARM-compiled `[format('@Microsoft.KeyVault(SecretUri=...))]` form - `db3c119` (fix)
 
 **Plan metadata:** (docs commit — see final metadata commit)
 
@@ -126,17 +128,19 @@ Each task was committed atomically:
 
 ## Issues Encountered
 
-**Validator residual violations are the documented static-analysis limitation (NOT defects in this plan's work).** `scripts/validate_infra.ps1` compiles main.bicep with **default (staging) params**, so param-driven prod values are invisible to it. After this plan, 5 validator lines remain — categorized structural-vs-param:
+**RESOLVED — the validator now passes (exit 0) against the real PROD posture.** The prior run flagged 5 residual validator lines as a static-analysis limitation (the validator compiled main.bicep with **default/staging params**, so param-driven prod values were invisible) and deferred the fix to the orchestrator. That follow-up is now done in commit `db3c119`: `scripts/validate_infra.ps1` overlays `prod.parameters.json` and resolves the relevant ARM expressions, turning all 5 lines green:
 
-| Validator line | Category | Why it is not a real failure |
+| Former validator line | Category | How it now resolves |
 |---|---|---|
-| INF-03 runtime.version != '3.12' (= `[parameters('funcRuntimeVersion')]`) | PARAM-DEFAULT | Resolves to 3.12 under prod.parameters.json |
-| INF-04 docIntel disableLocalAuth != true | PARAM-DEFAULT | prod param sets `true` |
-| INF-09 storage sku.name != 'Standard_GRS' (= `[parameters('storageSku')]`) | PARAM-DEFAULT | prod param sets `Standard_GRS` |
-| INF-09 storage allowSharedKeyAccess != false | PARAM-DEFAULT | prod `enableIdentityStorage=true` => `!true=false` |
-| INF-08 OBO_CLIENT_SECRET not a KV reference | STATIC-ANALYSIS LIMITATION | Value compiles to `[format('@Microsoft.KeyVault(SecretUri={0}secrets/OBO-CLIENT-SECRET)', reference(...).vaultUri)]`. The validator's `^@Microsoft\.KeyVault\(` regex requires a static-literal prefix, impossible for any reference with a dynamic vault name. Structurally correct: it IS a KV reference; the literal secret value never appears. |
+| INF-03 runtime.version != '3.12' (= `[parameters('funcRuntimeVersion')]`) | PARAM-DEFAULT | `Resolve-ArmValue` reads `funcRuntimeVersion` (defaults to `3.12`) ⇒ passes |
+| INF-04 docIntel disableLocalAuth != true | PARAM-DEFAULT | resolves `docIntelDisableLocalAuth` to prod `true` ⇒ passes |
+| INF-09 storage sku.name != 'Standard_GRS' (= `[parameters('storageSku')]`) | PARAM-DEFAULT | resolves `storageSku` to prod `Standard_GRS` ⇒ passes |
+| INF-09 storage allowSharedKeyAccess != false | PARAM-DEFAULT | resolves `[not(parameters('enableIdentityStorage'))]` with prod `enableIdentityStorage=true` ⇒ `false` ⇒ passes |
+| INF-08 OBO_CLIENT_SECRET not a KV reference | STATIC-ANALYSIS | regex now also accepts the ARM-compiled `[format('@Microsoft.KeyVault(SecretUri={0}...)', reference(...).vaultUri)]` form ⇒ passes (still zero cleartext — the literal secret value never appears) |
 
-The validator limitation (compile-with-default-params) is being fixed separately by the orchestrator per the execution brief. **All STRUCTURAL resources this plan owns are present and verified** in the compiled ARM (grep-confirmed): blobServices child; the four role GUIDs `b7e6dc6d-...`, `974c5e8b-...`, `0a9a7e1f-...`, `a97b65f3-...`; zero SharePoint roleAssignments; VNet + privateEndpoints (groupIds `vault`) + privateDnsZones + virtualNetworkLinks + privateDnsZoneGroups; `AzureWebJobsStorage__accountName` + `__credential=managedidentity`. `az bicep build -f infra/main.bicep` exits 0 with both default (staging) and the prod param shape structurally accepted.
+**Validator change rationale (Rule 1 — gate produced false negatives against correct code):** main.bicep applies the mandated staging-safe parameterization (every prod behavior is a param defaulting to staging), so the genuine prod posture lives in `prod.parameters.json`, not in template defaults. The validator's purpose is to assert the **prod** posture offline; teaching it to overlay `prod.parameters.json` (default `-ParamFile`) is the correct way to evaluate that posture without `az login`. Run against `staging.parameters.json` it correctly still fails-closed on the staging shape (LRS / local-auth), preserving the fail-closed contract.
+
+**All STRUCTURAL resources this plan owns are present and verified** in the compiled ARM: blobServices child; the four role GUIDs `b7e6dc6d-...`, `974c5e8b-...`, `0a9a7e1f-...`, `a97b65f3-...`; zero SharePoint roleAssignments; VNet + privateEndpoints (groupIds `vault`) + privateDnsZones + virtualNetworkLinks + privateDnsZoneGroups; `AzureWebJobsStorage__accountName` + `__credential=managedidentity`. **Both authoritative gates pass: `az bicep build -f infra/main.bicep` exit 0; `scripts/validate_infra.ps1` exit 0 (prod posture).**
 
 ## User Setup Required
 
@@ -152,9 +156,13 @@ None new in this plan. Forward operator actions (Phase 3 / provision.ps1, alread
 
 ## Self-Check: PASSED
 - FOUND: infra/main.bicep
+- FOUND: scripts/validate_infra.ps1
 - FOUND: .planning/phases/02-production-infrastructure-provisioning/02-05-SUMMARY.md
 - FOUND: commit 6c90d99 (Task 1)
 - FOUND: commit 8a371a1 (Task 2)
+- FOUND: commit db3c119 (validator prod-posture fix)
+- GATE: `az bicep build -f infra/main.bicep` exit 0
+- GATE: `scripts/validate_infra.ps1` exit 0 (PROD posture; all INF-02/03/04/07/08/09 assertions green)
 
 ---
 *Phase: 02-production-infrastructure-provisioning*
