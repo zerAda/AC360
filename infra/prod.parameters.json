@@ -21,6 +21,9 @@
     "containerSoftDeleteDays": { "value": 7 },
     "pointInTimeRestoreDays": { "value": 6 },
     "keyVaultSecretsReaderPrincipalIds": { "value": [] },
-    "gatewayOutboundIps": { "value": [] }
+    "gatewayOutboundIps": { "value": [] },
+    "alertEmails": { "value": [] },
+    "teamsWebhookUrl": { "value": "" },
+    "budgetAmount": { "value": 200 }
   }
 }

@@ -95,6 +95,17 @@ param subnetFxPrefix string = '10.42.0.32/27'
 @description('Sous-réseau passerelle App Service B1 (délégation Microsoft.Web/serverFarms, /28 min).')
 param subnetGwPrefix string = '10.42.0.64/28'
 
+// --------------------------------------------------------------------------
+// Params observabilité (OBS-01..05). Transmis au module observability.bicep.
+// Le budget (OBS-04) est SUBSCRIPTION-scoped et NE vit PAS ici (Pitfall 4) :
+// déployé via infra/budget.bicep + `az deployment sub create` (Plan 04).
+// --------------------------------------------------------------------------
+@description('Adresses email destinataires des alertes et du budget (groupe d\'actions OBS).')
+param alertEmails array = []
+
+@description('URL du webhook Teams pour le groupe d\'actions (sink alertes + budget — OBS-04). Vide => pas de webhook. Power Automate/Workflows (connecteurs O365 legacy en retrait).')
+param teamsWebhookUrl string = ''
+
 var storageName = '${namePrefix}${environmentName}store'
 var kvName = '${namePrefix}-kv-${environmentName}'
 var funcName = '${namePrefix}-func-${environmentName}'
@@ -248,6 +259,19 @@ resource funcKvSecretsUser 'Microsoft.Authorization/roleAssignments@2022-04-01' 
   }
 }
 
+// INF-08 / OBS-01 : la chaîne de connexion App Insights (non high-value — T-03-08) est
+// stockée comme secret Key Vault et consommée par les deux apps via @Microsoft.KeyVault(...),
+// pour respecter l'invariant zéro-cleartext de la posture durcie (validate_infra.ps1 INF-08).
+// La valeur provient de la sortie du module observability ; les apps la référencent par URI
+// déterministe (sans dépendance symbolique => pas de cycle).
+resource appiConnSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: keyVault
+  name: 'APPINSIGHTS-CONNECTION-STRING'
+  properties: {
+    value: observability.outputs.connectionString
+  }
+}
+
 // --------------------------------------------------------------------------
 // Document Intelligence (OCR)
 // --------------------------------------------------------------------------
@@ -366,6 +390,13 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
       appSettings: [
         { name: 'AzureWebJobsStorage__accountName', value: storage.name }
         { name: 'AzureWebJobsStorage__credential', value: 'managedidentity' }
+        // OBS-01 : exporter Azure Monitor via référence Key Vault (zéro cleartext — INF-08).
+        {
+          name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+          value: '@Microsoft.KeyVault(SecretUri=${keyVault.properties.vaultUri}secrets/APPINSIGHTS-CONNECTION-STRING)'
+        }
+        // Pitfall 2 : active la télémétrie worker SANS double-compter les requêtes (l'hôte les émet déjà).
+        { name: 'PYTHON_APPLICATIONINSIGHTS_ENABLE_TELEMETRY', value: 'true' }
       ]
     }
     functionAppConfig: {
@@ -416,6 +447,11 @@ resource gatewayApp 'Microsoft.Web/sites@2023-12-01' = {
         {
           name: 'OBO_CLIENT_SECRET'
           value: '@Microsoft.KeyVault(SecretUri=${keyVault.properties.vaultUri}secrets/OBO-CLIENT-SECRET)'
+        }
+        // OBS-01 : exporter Azure Monitor via référence Key Vault (zéro cleartext — INF-08).
+        {
+          name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+          value: '@Microsoft.KeyVault(SecretUri=${keyVault.properties.vaultUri}secrets/APPINSIGHTS-CONNECTION-STRING)'
         }
       ]
     }
@@ -557,6 +593,34 @@ resource docIntelPeDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGr
   }
 }
 
+// --------------------------------------------------------------------------
+// Observabilité (OBS-01..05) — module dédié. Garde Microsoft.Insights/* HORS de
+// main.bicep (isolation quality-gate). Placé après les apps pour disposer de
+// leurs .id. Le budget (OBS-04) reste subscription-scoped (infra/budget.bicep).
+// --------------------------------------------------------------------------
+// gatewayId/functionId passés via resourceId() calculé (PAS via .id symbolique) pour
+// rompre le cycle : les apps consomment observability.outputs.connectionString en app
+// setting, donc le module ne peut PAS dépendre symboliquement des ressources d'app.
+// Les noms sont déterministes (gatewayName/funcName) -> resourceId() suffit pour le
+// scope des alertes (BCP080 évité).
+module observability 'observability.bicep' = {
+  name: 'observability'
+  params: {
+    location: location
+    namePrefix: namePrefix
+    environmentName: environmentName
+    gatewayId: resourceId('Microsoft.Web/sites', gatewayName)
+    functionId: resourceId('Microsoft.Web/sites', funcName)
+    gatewayName: gatewayName
+    alertEmails: alertEmails
+    teamsWebhookUrl: teamsWebhookUrl
+  }
+}
+
 output functionPrincipalId string = functionApp.identity.principalId
 output gatewayPrincipalId string = gatewayApp.identity.principalId
 output keyVaultName string = keyVault.name
+// OBS-01 : chaîne de connexion App Insights (non high-value — T-03-08) câblée en app
+// setting sur les deux apps. actionGroupId exposé pour le déploiement sub-scoped du budget (Plan 04).
+output appInsightsConnectionString string = observability.outputs.connectionString
+output actionGroupId string = observability.outputs.actionGroupId

@@ -134,6 +134,40 @@ resource gw5xx 'Microsoft.Insights/metricAlerts@2018-03-01' = {
 }
 
 // --------------------------------------------------------------------------
+// Alerte métrique — 5xx Function (OBS-02). Complète la KQL funcErr : la métrique
+// Http5xx du namespace Microsoft.Web/sites scopée sur functionId capte les échecs
+// HTTP de l'app Function (déclencheur d'orchestration) sans dépendre de l'ingestion KQL.
+// --------------------------------------------------------------------------
+resource func5xx 'Microsoft.Insights/metricAlerts@2018-03-01' = {
+  name: '${namePrefix}-func-5xx-${environmentName}'
+  location: 'global'
+  properties: {
+    description: 'Function (worker Durable) : réponses HTTP 5xx au-dessus du seuil.'
+    severity: 1
+    enabled: true
+    scopes: [ functionId ]
+    evaluationFrequency: 'PT1M'
+    windowSize: 'PT5M'
+    criteria: {
+      'odata.type': 'Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria'
+      allOf: [
+        {
+          name: 'http5xx'
+          criterionType: 'StaticThresholdCriterion'
+          metricNamespace: 'Microsoft.Web/sites'
+          metricName: 'Http5xx'
+          operator: 'GreaterThan'
+          threshold: 5
+          timeAggregation: 'Total'
+        }
+      ]
+    }
+    autoMitigate: true
+    actions: [ { actionGroupId: ag.id } ]
+  }
+}
+
+// --------------------------------------------------------------------------
 // Alerte log (KQL) — échecs de dépendance OCR/Fabric/Graph (OBS-02). scheduledQueryRules
 // scopée sur le composant App Insights. Cible les dépendances en échec vers
 // cognitiveservices (Document Intelligence) / fabric / graph.microsoft.com.
