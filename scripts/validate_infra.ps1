@@ -16,7 +16,8 @@ Compatible Windows PowerShell 5.1 et PowerShell Core (Linux CI). N'utilise pas c
 Encode en UTF-8 BOM pour un decodage correct sous PowerShell 5.1.
 #>
 param(
-    [string]$BicepFile = "infra/main.bicep"
+    [string]$BicepFile = "infra/main.bicep",
+    [string]$ParamFile = "infra/prod.parameters.json"
 )
 
 $ErrorActionPreference = "Stop"
@@ -55,6 +56,58 @@ Write-Host "Build OK." -ForegroundColor Green
 $arm = Get-Content $compiled -Raw | ConvertFrom-Json
 $resources = @($arm.resources)
 $rawJson = Get-Content $compiled -Raw
+
+# --------------------------------------------------------------------------
+# Resolution de la posture PROD. main.bicep applique la parametrisation staging-safe
+# (chaque comportement PROD est un param dont le DEFAUT = la forme staging). Les
+# valeurs PROD vivent dans prod.parameters.json, pas dans les defauts du template.
+# Pour affirmer la posture PROD reelle hors-ligne, on resout les expressions ARM
+# [parameters('x')] (et [not(parameters('x'))]) contre prod.parameters.json, avec
+# repli sur le defaultValue du template compile. C'est ce qui permet aux assertions
+# INF-03/04/08/09 dependantes de params de passer sur la forme PROD reelle.
+# --------------------------------------------------------------------------
+$paramDefaults = @{}
+if ($arm.parameters) {
+    foreach ($pn in $arm.parameters.PSObject.Properties.Name) {
+        $paramDefaults[$pn] = $arm.parameters.$pn.defaultValue
+    }
+}
+$prodParams = @{}
+if (Test-Path $ParamFile) {
+    $pj = Get-Content $ParamFile -Raw | ConvertFrom-Json
+    if ($pj.parameters) {
+        foreach ($pn in $pj.parameters.PSObject.Properties.Name) {
+            $prodParams[$pn] = $pj.parameters.$pn.value
+        }
+    }
+    Write-Host "Posture evaluee : PROD (overlay $ParamFile sur les defauts du template)." -ForegroundColor Gray
+} else {
+    Write-Host "Posture evaluee : DEFAUTS du template ($ParamFile absent)." -ForegroundColor Yellow
+}
+
+# Resout une valeur ARM eventuellement exprimee comme [parameters('x')] ou
+# [not(parameters('x'))] contre prod.parameters.json puis le defaultValue. Toute
+# autre expression / valeur litterale est renvoyee telle quelle.
+function Resolve-ArmValue {
+    param($Value)
+    if ($Value -isnot [string]) { return $Value }
+    $m = [regex]::Match($Value, "^\[parameters\('([^']+)'\)\]$")
+    if ($m.Success) {
+        $name = $m.Groups[1].Value
+        if ($prodParams.ContainsKey($name)) { return $prodParams[$name] }
+        if ($paramDefaults.ContainsKey($name)) { return $paramDefaults[$name] }
+        return $Value
+    }
+    $mn = [regex]::Match($Value, "^\[not\(parameters\('([^']+)'\)\)\]$")
+    if ($mn.Success) {
+        $name = $mn.Groups[1].Value
+        $inner = if ($prodParams.ContainsKey($name)) { $prodParams[$name] }
+                 elseif ($paramDefaults.ContainsKey($name)) { $paramDefaults[$name] }
+                 else { return $Value }
+        return -not [bool]$inner
+    }
+    return $Value
+}
 
 # --------------------------------------------------------------------------
 # Helpers de selection sur le JSON ARM compile.
@@ -125,7 +178,7 @@ function Test-InfraAssertions {
     $funcApp = @($Sites | Where-Object { $_.properties.functionAppConfig }) | Select-Object -First 1
     if (-not $funcApp) { $violations += "INF-03: Function app avec functionAppConfig introuvable." }
     else {
-        $rtVer = $funcApp.properties.functionAppConfig.runtime.version
+        $rtVer = Resolve-ArmValue $funcApp.properties.functionAppConfig.runtime.version
         if ($rtVer -ne '3.12') { $violations += "INF-03: functionAppConfig.runtime.version != '3.12' (= $rtVer)." }
     }
 
@@ -134,15 +187,15 @@ function Test-InfraAssertions {
     if (-not $docIntel) { $violations += "INF-04: compte FormRecognizer (DocIntel) introuvable." }
     else {
         if ($docIntel.sku.name -ne 'S0') { $violations += "INF-04: docIntel sku.name != 'S0' (= $($docIntel.sku.name))." }
-        if ($docIntel.properties.disableLocalAuth -ne $true) { $violations += "INF-04: docIntel disableLocalAuth != true." }
+        if ((Resolve-ArmValue $docIntel.properties.disableLocalAuth) -ne $true) { $violations += "INF-04: docIntel disableLocalAuth != true." }
     }
 
     # --- INF-09 : Storage GRS + allowSharedKeyAccess=false + soft-delete/PITR/versioning/changeFeed + MI hub ---
     $storage = @($Storages) | Select-Object -First 1
     if (-not $storage) { $violations += "INF-09: storageAccount introuvable." }
     else {
-        if ($storage.sku.name -ne 'Standard_GRS') { $violations += "INF-09: storage sku.name != 'Standard_GRS' (= $($storage.sku.name))." }
-        if ($storage.properties.allowSharedKeyAccess -ne $false) { $violations += "INF-09: storage allowSharedKeyAccess != false." }
+        if ((Resolve-ArmValue $storage.sku.name) -ne 'Standard_GRS') { $violations += "INF-09: storage sku.name != 'Standard_GRS' (= $(Resolve-ArmValue $storage.sku.name))." }
+        if ((Resolve-ArmValue $storage.properties.allowSharedKeyAccess) -ne $false) { $violations += "INF-09: storage allowSharedKeyAccess != false." }
     }
     # blobServices enfant avec retention + PITR + versioning + changeFeed
     $blobSvc = @($resources | Where-Object { $_.type -eq 'Microsoft.Storage/storageAccounts/blobServices' }) | Select-Object -First 1
@@ -176,7 +229,12 @@ function Test-InfraAssertions {
             # AzureWebJobsStorage__credential=managedidentity n'est pas un secret : exempte.
             if ($nameU -like '*CREDENTIAL*' -and "$($as.value)" -eq 'managedidentity') { $isSecret = $false }
             if ($isSecret) {
-                if ("$($as.value)" -notmatch '^@Microsoft\.KeyVault\(') {
+                # Accepte la forme litterale @Microsoft.KeyVault(SecretUri=...) ET la forme
+                # ARM compilee [format('@Microsoft.KeyVault(SecretUri={0}...', reference(...))]
+                # quand le SecretUri est interpole sur le vaultUri du Key Vault (zero cleartext).
+                $v = "$($as.value)"
+                $isKvRef = ($v -match '^@Microsoft\.KeyVault\(') -or ($v -match "@Microsoft\.KeyVault\(SecretUri=")
+                if (-not $isKvRef) {
                     $violations += "INF-08: app-setting secrete '$($as.name)' n'est pas une reference Key Vault (valeur litterale interdite)."
                 }
             }
