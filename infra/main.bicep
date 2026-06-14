@@ -33,6 +33,22 @@ param docIntelDisableLocalAuth bool = false
 @description('Object IDs (principalId) des identités managées autorisées à lire les secrets du Key Vault.')
 param keyVaultSecretsReaderPrincipalIds array = []
 
+@description('Localisation de Document Intelligence. Par défaut = location ; PROD peut basculer sur westeurope (fallback résidence EU / dispo S0).')
+param docIntelLocation string = location
+
+@description('Plafond d\'instances du plan Flex (scaleAndConcurrency.maximumInstanceCount). Petit pour une seule équipe.')
+param funcMaxInstanceCount int = 40
+
+@description('Mémoire par instance Flex en Mo (scaleAndConcurrency.instanceMemoryMB).')
+@allowed([ 512, 2048, 4096 ])
+param funcInstanceMemoryMB int = 2048
+
+@description('Version du runtime Python du plan Flex (functionAppConfig.runtime.version).')
+param funcRuntimeVersion string = '3.12'
+
+@description('Nom du conteneur Blob hébergeant le package de déploiement Flex (deployment.storage).')
+param deploymentContainerName string = 'app-package'
+
 var storageName = '${namePrefix}${environmentName}store'
 var kvName = '${namePrefix}-kv-${environmentName}'
 var funcName = '${namePrefix}-func-${environmentName}'
@@ -103,8 +119,8 @@ resource kvRoleAssignments 'Microsoft.Authorization/roleAssignments@2022-04-01' 
 // --------------------------------------------------------------------------
 resource docIntel 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
   name: docIntelName
-  location: location
-  sku: { name: 'F0' }
+  location: docIntelLocation
+  sku: { name: 'S0' }
   kind: 'FormRecognizer'
   identity: { type: 'SystemAssigned' }
   properties: {
@@ -120,8 +136,9 @@ resource docIntel 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
 resource funcPlan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: funcPlanName
   location: location
-  sku: { name: 'Y1', tier: 'Dynamic' }
-  properties: { reserved: true }
+  // Flex Consumption (INF-03). Y1->Flex en place est non supporté : c'est un plan/app neufs.
+  sku: { name: 'FC1', tier: 'FlexConsumption' }
+  properties: { reserved: true } // Linux
 }
 
 // --------------------------------------------------------------------------
@@ -171,13 +188,25 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
     serverFarmId: funcPlan.id
     httpsOnly: true
     siteConfig: {
-      linuxFxVersion: 'Python|3.12'
+      // Flex Consumption : NE PAS poser linuxFxVersion ni FUNCTIONS_EXTENSION_VERSION /
+      // WEBSITE_RUN_FROM_PACKAGE (dépréciés/déplacés sur Flex — le runtime vit dans functionAppConfig).
       minTlsVersion: '1.2'
       ftpsState: 'Disabled'
       ipSecurityRestrictions: ipRestrictions
     }
     functionAppConfig: {
-      runtime: { name: 'python', version: '3.12' }
+      deployment: {
+        storage: {
+          type: 'blobContainer'
+          value: '${storage.properties.primaryEndpoints.blob}${deploymentContainerName}'
+          authentication: { type: 'SystemAssignedIdentity' } // pas de chaîne de connexion
+        }
+      }
+      scaleAndConcurrency: {
+        maximumInstanceCount: funcMaxInstanceCount
+        instanceMemoryMB: funcInstanceMemoryMB
+      }
+      runtime: { name: 'python', version: funcRuntimeVersion }
     }
   }
 }
