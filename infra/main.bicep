@@ -67,6 +67,26 @@ param containerSoftDeleteDays int = 7
 @description('Fenêtre Point-in-Time Restore en jours. DOIT être < fenêtre soft-delete (INF-09 / RESEARCH A6).')
 param pointInTimeRestoreDays int = 6
 
+// --------------------------------------------------------------------------
+// Params PROD périmètre réseau (INF-08). Défaut staging-off : la section réseau
+// entière est conditionnée par enablePrivateNetworking (staging reste intact).
+// Les CIDR sont au choix (CONTEXT <decisions> "Claude's Discretion").
+// --------------------------------------------------------------------------
+@description('Active le périmètre privé : VNet + Private Endpoint Key Vault + DNS privé + intégration VNet des apps. PROD=true.')
+param enablePrivateNetworking bool = false
+
+@description('Plage d\'adresses du VNet (INF-08).')
+param vnetAddressPrefix string = '10.42.0.0/24'
+
+@description('Sous-réseau Private Endpoint (policies PE désactivées).')
+param subnetPePrefix string = '10.42.0.0/27'
+
+@description('Sous-réseau Function Flex (délégation Microsoft.App/environments, /27 min).')
+param subnetFxPrefix string = '10.42.0.32/27'
+
+@description('Sous-réseau passerelle App Service B1 (délégation Microsoft.Web/serverFarms, /28 min).')
+param subnetGwPrefix string = '10.42.0.64/28'
+
 var storageName = '${namePrefix}${environmentName}store'
 var kvName = '${namePrefix}-kv-${environmentName}'
 var funcName = '${namePrefix}-func-${environmentName}'
@@ -74,6 +94,15 @@ var gatewayName = '${namePrefix}-gateway-${environmentName}'
 var docIntelName = '${namePrefix}-docintel-${environmentName}'
 var funcPlanName = '${namePrefix}-func-plan'
 var gwPlanName = '${namePrefix}-gw-plan'
+
+// Noms réseau (INF-08). privatelink.vaultcore.azure.net est le SEUL nom littéral obligatoire :
+// il est posé EN DUR sur la ressource privateDnsZones (PATTERNS.md ln 35) — pas via une var, pour
+// que le nom compilé reste un littéral exact (résolution DNS Azure + analyse statique).
+var vnetName = '${namePrefix}-vnet-${environmentName}'
+// IDs de sous-réseaux calculés au début du déploiement (pour virtualNetworkSubnetId des apps,
+// même quand la section réseau est conditionnelle). Vides quand enablePrivateNetworking=false.
+var subnetFxId = enablePrivateNetworking ? resourceId('Microsoft.Network/virtualNetworks/subnets', vnetName, 'snet-fx') : ''
+var subnetGwId = enablePrivateNetworking ? resourceId('Microsoft.Network/virtualNetworks/subnets', vnetName, 'snet-gw') : ''
 
 // Rôle intégré "Key Vault Secrets User".
 var kvSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
@@ -265,6 +294,8 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
   properties: {
     serverFarmId: funcPlan.id
     httpsOnly: true
+    // INF-08 : intégration VNet (sous-réseau délégué Microsoft.App/environments) en PROD ; null en staging.
+    virtualNetworkSubnetId: enablePrivateNetworking ? subnetFxId : null
     siteConfig: {
       // Flex Consumption : NE PAS poser linuxFxVersion ni FUNCTIONS_EXTENSION_VERSION /
       // WEBSITE_RUN_FROM_PACKAGE (dépréciés/déplacés sur Flex — le runtime vit dans functionAppConfig).
@@ -307,6 +338,8 @@ resource gatewayApp 'Microsoft.Web/sites@2023-12-01' = {
   properties: {
     serverFarmId: gwPlan.id
     httpsOnly: true
+    // INF-08 : intégration VNet (sous-réseau délégué Microsoft.Web/serverFarms) en PROD ; null en staging.
+    virtualNetworkSubnetId: enablePrivateNetworking ? subnetGwId : null
     siteConfig: {
       linuxFxVersion: 'Python|3.12'
       minTlsVersion: '1.2'
@@ -317,7 +350,101 @@ resource gatewayApp 'Microsoft.Web/sites@2023-12-01' = {
       // (_rate_limit_store, _JWKS_CACHE, _audit_job_owners). Ne pas augmenter le
       // nombre de workers et ne laisser aucun défaut plateforme en réintroduire.
       appCommandLine: 'gunicorn --workers 1 -k uvicorn.workers.UvicornWorker api_server:app'
+      // INF-08 : ZÉRO secret en clair. Le secret OBO est résolu par la MI via une référence Key Vault.
+      // Le secret lui-même est créé au runtime par provision_app_registrations.ps1 (nom KV : OBO-CLIENT-SECRET).
+      // L'app consomme le nom OBO_CLIENT_SECRET (inchangé, lu par scripts/config.py). SecretUri déterministe
+      // construit sur le vaultUri du Key Vault existant (sans version => dernière version).
+      appSettings: [
+        {
+          name: 'OBO_CLIENT_SECRET'
+          value: '@Microsoft.KeyVault(SecretUri=${keyVault.properties.vaultUri}secrets/OBO-CLIENT-SECRET)'
+        }
+      ]
     }
+  }
+}
+
+// --------------------------------------------------------------------------
+// Périmètre réseau privé (INF-08) — GATED par enablePrivateNetworking.
+// VNet (3 sous-réseaux : PE / Flex / passerelle) + Private Endpoint Key Vault +
+// zone DNS privée privatelink.vaultcore.azure.net (+ link VNet + zone group).
+// Staging (enablePrivateNetworking=false) : aucune de ces ressources n'est déployée.
+// NB ordre opérateur : PE + intégration VNet AVANT le flip publicNetworkAccess=Disabled
+// (provision.ps1 step 6 ; RESEARCH Pitfall 2) — le flip n'est PAS fait ici.
+// --------------------------------------------------------------------------
+resource vnet 'Microsoft.Network/virtualNetworks@2023-11-01' = if (enablePrivateNetworking) {
+  name: vnetName
+  location: location
+  properties: {
+    addressSpace: { addressPrefixes: [ vnetAddressPrefix ] }
+    subnets: [
+      {
+        name: 'snet-pe' // pas d'underscore (Flex/Network) ; policies PE désactivées (requis pour PE)
+        properties: {
+          addressPrefix: subnetPePrefix
+          privateEndpointNetworkPolicies: 'Disabled'
+        }
+      }
+      {
+        name: 'snet-fx' // Function Flex : délégation Microsoft.App/environments (PAS serverFarms)
+        properties: {
+          addressPrefix: subnetFxPrefix
+          delegations: [ { name: 'flexdeleg', properties: { serviceName: 'Microsoft.App/environments' } } ]
+        }
+      }
+      {
+        name: 'snet-gw' // Passerelle App Service B1 : délégation Microsoft.Web/serverFarms
+        properties: {
+          addressPrefix: subnetGwPrefix
+          delegations: [ { name: 'gwdeleg', properties: { serviceName: 'Microsoft.Web/serverFarms' } } ]
+        }
+      }
+    ]
+  }
+}
+
+resource kvDnsZone 'Microsoft.Network/privateDnsZones@2020-06-01' = if (enablePrivateNetworking) {
+  name: 'privatelink.vaultcore.azure.net' // littéral EXACT — obligatoire (PATTERNS.md ln 35)
+  location: 'global'
+}
+
+resource kvDnsLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = if (enablePrivateNetworking) {
+  parent: kvDnsZone
+  name: '${namePrefix}-kvdns-link'
+  location: 'global'
+  properties: {
+    registrationEnabled: false
+    virtualNetwork: { id: vnet.id }
+  }
+}
+
+resource kvPe 'Microsoft.Network/privateEndpoints@2023-11-01' = if (enablePrivateNetworking) {
+  name: '${namePrefix}-kv-pe-${environmentName}'
+  location: location
+  properties: {
+    subnet: { id: resourceId('Microsoft.Network/virtualNetworks/subnets', vnetName, 'snet-pe') }
+    privateLinkServiceConnections: [
+      {
+        name: 'kv-plsc'
+        properties: {
+          privateLinkServiceId: keyVault.id
+          groupIds: [ 'vault' ]
+        }
+      }
+    ]
+  }
+}
+
+resource kvPeDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-11-01' = if (enablePrivateNetworking) {
+  parent: kvPe
+  name: 'default'
+  properties: {
+    privateDnsZoneConfigs: [
+      {
+        name: 'vaultcore'
+        properties: { privateDnsZoneId: kvDnsZone.id }
+      }
+    ]
   }
 }
 
