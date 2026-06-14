@@ -692,21 +692,21 @@ resource wb 'Microsoft.Insights/workbooks@2023-06-01' = {
 | A5 | what-if job OIDC needs its own federated subject (tag/PR), distinct from `:environment:production` | Pitfall 5 | MED — if mis-set, what-if job 401s; resolve in OPS-01 (one decision) |
 | A6 | Connection string treated as non-high-value (plain app setting acceptable; KV-ref optional) | Anti-patterns | LOW — either works; KV-ref aligns with INF-08 preference |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **what-if job authentication subject**
    - Known: deploy job uses `environment: production` → subject `repo:ORG/REPO:environment:production`.
    - Unclear: the what-if job (tag trigger, no environment) needs a different federated subject OR should be run under the same environment.
-   - Recommendation: add a second federated credential for `repo:ORG/REPO:ref:refs/tags/prod-*` (and/or pull_request), documented in OPS-01. Or make what-if a step inside the gated job (cleaner, but loses pre-approval diff visibility). Surface as an OPS-01 decision.
+   - **RESOLVED:** documented as an OPS-01 deploy-runbook decision (Plan 03-05); the operator creates the federated credential(s) (`environment:production` for the gated deploy job, plus a tag/PR subject for the what-if job) at setup. Carried as the OPS-01 federated-credential checkpoint — does not block authoring cd-prod.yml.
 
 2. **Teams webhook mechanism**
    - Known: action group `webhookReceivers` + budget `contactGroups` both route to the action group.
    - Unclear: which Teams webhook type (legacy connector vs Power Automate Workflows) the operator will provision.
-   - Recommendation: author Bicep for `webhookReceivers` (works for any HTTPS sink); document operator step to create a Workflows webhook (connector-agnostic).
+   - **RESOLVED:** Bicep authors `webhookReceivers` (works for any HTTPS sink); creating the actual Teams webhook (Power Automate Workflows recommended) is an operator-provisioning checkpoint (Plan 03-03). The IaC is connector-agnostic.
 
 3. **Budget %-of-budget dashboard panel**
    - Known: 4 panels required (OBS-05); cost data lives in Cost Management, not App Insights.
-   - Recommendation: render budget% as a markdown/link tile to the Cost Management budget, or a separate Cost workbook; keep the other 3 panels as native App Insights KQL.
+   - **RESOLVED:** budget% rendered as a markdown/link tile to the Cost Management budget in the workbook; the other 3 panels (last-24h audits, error rate, p95 latency) are native App Insights KQL (Plan 03-03).
 
 ## Environment Availability
 
