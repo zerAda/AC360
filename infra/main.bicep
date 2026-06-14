@@ -49,6 +49,24 @@ param funcRuntimeVersion string = '3.12'
 @description('Nom du conteneur Blob hébergeant le package de déploiement Flex (deployment.storage).')
 param deploymentContainerName string = 'app-package'
 
+// --------------------------------------------------------------------------
+// Params PROD durcissement storage (INF-09). Défauts = forme staging.
+// --------------------------------------------------------------------------
+@description('SKU du compte de stockage. Standard_LRS en staging ; Standard_GRS en PROD (géo-redondance INF-09).')
+param storageSku string = 'Standard_LRS'
+
+@description('Active le stockage par identité managée (AzureWebJobsStorage sans clé). PROD=true => allowSharedKeyAccess=false.')
+param enableIdentityStorage bool = false
+
+@description('Rétention soft-delete des blobs en jours (INF-09).')
+param blobSoftDeleteDays int = 7
+
+@description('Rétention soft-delete des conteneurs en jours (INF-09).')
+param containerSoftDeleteDays int = 7
+
+@description('Fenêtre Point-in-Time Restore en jours. DOIT être < fenêtre soft-delete (INF-09 / RESEARCH A6).')
+param pointInTimeRestoreDays int = 6
+
 var storageName = '${namePrefix}${environmentName}store'
 var kvName = '${namePrefix}-kv-${environmentName}'
 var funcName = '${namePrefix}-func-${environmentName}'
@@ -59,6 +77,21 @@ var gwPlanName = '${namePrefix}-gw-plan'
 
 // Rôle intégré "Key Vault Secrets User".
 var kvSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
+
+// Rôles DATA-plane (moindre privilège) pour la Managed Identity de la Function (INF-07).
+// Trio Durable (Blob/Queue/Table) scopé au compte de stockage + Cognitive Services User sur DocIntel.
+// NB: le rôle Blob est "Storage Blob Data Owner" (rôle host canonique pour AzureWebJobsStorage par
+// identité ; supersède le Contributor pour l'hôte — RESEARCH Pattern 4 §host-storage). JAMAIS Owner/
+// Contributor de gestion (ne donnent PAS l'accès data-plane).
+var storageBlobDataOwner = 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
+var storageQueueDataContributor = '974c5e8b-45b9-4653-ba55-5f855dd0fb88'
+var storageTableDataContributor = '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
+var cognitiveServicesUserRoleId = 'a97b65f3-24c7-4388-baec-2e87135dc908'
+var funcStorageDataRoles = [
+  storageBlobDataOwner
+  storageQueueDataContributor
+  storageTableDataContributor
+]
 
 var ipRestrictions = [for (ip, i) in gatewayOutboundIps: {
   ipAddress: '${ip}/32'
@@ -73,13 +106,29 @@ var ipRestrictions = [for (ip, i) in gatewayOutboundIps: {
 resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   name: storageName
   location: location
-  sku: { name: 'Standard_LRS' }
+  sku: { name: storageSku } // INF-09 : Standard_GRS en PROD (géo-redondance), Standard_LRS en staging
   kind: 'StorageV2'
   properties: {
     minimumTlsVersion: 'TLS1_2'
     supportsHttpsTrafficOnly: true
     allowBlobPublicAccess: false
-    allowSharedKeyAccess: true // requis par Durable Functions aujourd'hui
+    // INF-09 : les connexions par identité managée (AzureWebJobsStorage__credential=managedidentity)
+    // suppriment le besoin de la clé partagée. PROD => enableIdentityStorage=true => allowSharedKeyAccess=false.
+    allowSharedKeyAccess: !enableIdentityStorage
+  }
+}
+
+// blobServices enfant — soft-delete blob/conteneur + Point-in-Time Restore + versioning + change feed (INF-09).
+// versioning + changeFeed sont des prérequis du PITR ; la fenêtre PITR doit être < fenêtre soft-delete.
+resource blobSvc 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
+  parent: storage
+  name: 'default'
+  properties: {
+    isVersioningEnabled: true
+    changeFeed: { enabled: true }
+    deleteRetentionPolicy: { enabled: true, days: blobSoftDeleteDays }
+    containerDeleteRetentionPolicy: { enabled: true, days: containerSoftDeleteDays }
+    restorePolicy: { enabled: true, days: pointInTimeRestoreDays }
   }
 }
 
@@ -127,6 +176,35 @@ resource docIntel 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
     customSubDomainName: docIntelName
     publicNetworkAccess: 'Enabled'
     disableLocalAuth: docIntelDisableLocalAuth
+  }
+}
+
+// --------------------------------------------------------------------------
+// RBAC data-plane de la Function MI (INF-07) — moindre privilège, scopé par ressource.
+// Trio Durable (Blob Owner / Queue / Table Data) sur le compte de stockage + Cognitive
+// Services User sur DocIntel (OCR Entra-only). AUCUN rôle "SharePoint OBO" : l'accès
+// SharePoint est un consentement DÉLÉGUÉ géré dans le script d'app-reg (RESEARCH ln 462),
+// PAS un rôle de Managed Identity.
+// --------------------------------------------------------------------------
+resource funcStorageRoles 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for r in funcStorageDataRoles: {
+  // Le nom doit être calculable au début du déploiement : on utilise functionApp.id (et non le
+  // principalId, valeur runtime). Le principalId reste consommé dans properties (autorisé).
+  name: guid(storage.id, functionApp.id, r)
+  scope: storage
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', r)
+    principalId: functionApp.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}]
+
+resource funcDocIntelRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(docIntel.id, functionApp.id, cognitiveServicesUserRoleId)
+  scope: docIntel
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', cognitiveServicesUserRoleId)
+    principalId: functionApp.identity.principalId
+    principalType: 'ServicePrincipal'
   }
 }
 
@@ -193,6 +271,13 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
       minTlsVersion: '1.2'
       ftpsState: 'Disabled'
       ipSecurityRestrictions: ipRestrictions
+      // INF-09 : host-storage par identité managée — AUCUNE chaîne de connexion AzureWebJobsStorage.
+      // __accountName + __credential=managedidentity ; les endpoints blob/queue/table sont inférés du
+      // suffixe DNS Azure global. Couplé à allowSharedKeyAccess=false (clé partagée désactivée).
+      appSettings: [
+        { name: 'AzureWebJobsStorage__accountName', value: storage.name }
+        { name: 'AzureWebJobsStorage__credential', value: 'managedidentity' }
+      ]
     }
     functionAppConfig: {
       deployment: {
