@@ -173,6 +173,9 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
       ftpsState: 'Disabled'
       ipSecurityRestrictions: ipRestrictions
     }
+    functionAppConfig: {
+      runtime: { name: 'python', version: '3.12' }
+    }
   }
 }
 
