@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 02-01-PLAN.md
-last_updated: "2026-06-14T00:00:46.235Z"
-last_activity: 2026-06-13 -- Phase 02 execution started
+last_updated: "2026-06-14T00:04:18.337Z"
+last_activity: 2026-06-14 -- Completed 02-01-PLAN.md (prod params + offline infra validator)
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 13
   completed_plans: 10
-  percent: 17
+  percent: 77
 ---
 
 # Project State
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-06-13)
 
 Phase: 02 (production-infrastructure-provisioning) — EXECUTING
 Plan: 4 of 6
-Status: Ready to execute
-Last activity: 2026-06-13 -- Phase 02 execution started
+Status: Executing Phase 02
+Last activity: 2026-06-14 -- Completed 02-01-PLAN.md (prod params + offline infra validator)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [████████░░] 77%
 
 ## Performance Metrics
 
@@ -58,9 +58,8 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P05 | 6 | 1 tasks | 1 files |
 | Phase 01 P04 | 6 | 1 tasks | 1 files |
 | Phase 01 P06 | 35 | 2 tasks | 9 files |
-| Phase 02 P01 | 14 | 2 tasks | 3 files |
-| Phase 02 P02 | 9 | 1 tasks | 1 files |
 | Phase 02 P01 | 14 | 2 tasks | 4 files |
+| Phase 02 P02 | 9 | 1 tasks | 1 files |
 | Phase 02 P03 | 12 | 1 tasks | 1 files |
 
 ## Accumulated Context
@@ -84,6 +83,7 @@ Recent decisions affecting current work:
 - [Phase ?]: [02-02]: API audience app carries NO credential; only the OBO confidential client holds a secret, written exclusively to Key Vault (OBO-CLIENT-SECRET).
 - [Phase ?]: [02-03]: provision.ps1 defaults to -WhatIfOnly; live apply/consent/residency/KV-flip are explicit operator checkpoints — nothing live this phase.
 - [Phase ?]: [02-03]: Flex region absence throws (escalate, no silent EU substitution); DocIntel S0 absence surfaces westeurope fallback as operator action; KV flip ordered after PE+VNet (Pitfall 2).
+- [Phase 02-01]: Offline infra validator defers per-INF assertions (exit 0) on the staging baseline and fails closed once a B1 prod plan compiles; validator written ASCII-safe for PowerShell 5.1
 
 ### Pending Todos
 

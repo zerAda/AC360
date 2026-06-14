@@ -27,12 +27,12 @@ key-files:
     - infra/prod.parameters.json
     - scripts/validate_infra.ps1
     - infra/bicepconfig.json
-  modified: []
+  modified: [.gitignore]
 
 key-decisions:
   - "docIntelLocation defaults to francecentral in prod.parameters.json; West Europe is the operator-applied fallback if the EU-residency/DocIntel-S0-availability checkpoint (INF-01/INF-04) fails at provisioning"
   - "Validator defers per-INF assertions (exit 0) while main.bicep is still the staging baseline (no B1 plan compiled), so this Wave-0 plan's own verify passes; it fails closed once prod resources land"
-  - "validate_infra.ps1 written as UTF-8 with BOM so Windows PowerShell 5.1 parses the French comment-help/strings correctly (Rule 1 fix)"
+  - "validate_infra.ps1 rewritten ASCII-safe (no accented chars/apostrophe-adjacent quotes) so Windows PowerShell 5.1 parses it regardless of codepage/BOM (Rule 1 fix)"
   - "prod.parameters.json declares only the param names plan 02-02 will add to main.bicep; the validator's az bicep build is the intended cross-check against inventing unknown params"
 
 patterns-established:
@@ -69,6 +69,7 @@ Each task was committed atomically:
 
 1. **Task 1: Create infra/prod.parameters.json** - `be75e95` (feat)
 2. **Task 2: Create scripts/validate_infra.ps1 + infra/bicepconfig.json** - `f54b327` (feat)
+3. **Rule 1 fix: ASCII-safe validator + gitignore compiled ARM** - `5438666` (fix)
 
 **Plan metadata:** (final docs commit — see below)
 
@@ -86,22 +87,32 @@ Each task was committed atomically:
 
 ### Auto-fixed Issues
 
-**1. [Rule 1 - Bug] validate_infra.ps1 re-encoded as UTF-8 with BOM**
+**1. [Rule 1 - Bug] validate_infra.ps1 rewritten ASCII-safe for PowerShell 5.1**
 - **Found during:** Task 2 (validator verification run)
-- **Issue:** The pre-existing validator file was UTF-8 without a BOM. The default shell here is Windows PowerShell 5.1, which decodes BOM-less files with the legacy ANSI codepage; the multi-byte French accents/apostrophes in the comment-help and error strings became mojibake and broke the parser (missing-parenthesis / unterminated-string errors), causing `exit 1` before any logic ran.
-- **Fix:** Rewrote the file as UTF-8 **with BOM** (bytes now begin `EF BB BF`) so Windows PowerShell 5.1 parses it as UTF-8. Content unchanged.
+- **Issue:** The validator committed in `f54b327` used French accented characters and apostrophes (e.g. `l'OBO`, `sécurité`, accented comment-help) and was stored without a UTF-8 BOM. The default shell here is Windows PowerShell 5.1, which decodes BOM-less files with the legacy CP1252 codepage; the multi-byte UTF-8 sequences became mojibake and the apostrophe-adjacent quotes broke the tokenizer (`Parenthèse fermante manquante` / unterminated-string parse errors), causing `exit 1` before any logic ran.
+- **Fix:** Rewrote the script with **ASCII-only** text (unaccented French comments/strings, no apostrophes abutting quotes). This is codepage-independent and parses under PS 5.1, PS 7, and Linux CI without relying on a BOM. Assertion logic and structure unchanged.
 - **Files modified:** scripts/validate_infra.ps1
-- **Verification:** `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate_infra.ps1` now runs to completion: "Build OK." + deferred-assertion notice, `VALIDATOR_EXIT=0`.
-- **Committed in:** f54b327 (Task 2 commit)
+- **Verification:** `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate_infra.ps1` runs to completion: "Build OK." + deferred-assertion notice, exit 0. Fail-closed path also verified: a temp B1-shaped bicep (prod shape present, hardening absent) produced 15 violations and exit 1.
+- **Committed in:** `5438666` (fix)
+
+**2. [Rule 1 - Bug] Ignore compiled ARM artifact infra/main.json**
+- **Found during:** Task 2 (post-build git status check)
+- **Issue:** A bare `az bicep build -f infra/main.bicep` (no `--outfile`) writes the compiled ARM to `infra/main.json`, leaving a generated artifact untracked in the working tree.
+- **Fix:** Added `infra/main.json` to `.gitignore` (the validator itself already targets `$TEMP`, so no script change needed) and removed the leaked file.
+- **Files modified:** .gitignore
+- **Committed in:** `5438666` (fix)
 
 ---
 
-**Total deviations:** 1 auto-fixed (1 bug).
-**Impact on plan:** The fix was required for the validator to run at all on Windows PowerShell 5.1. No scope change — content and assertions are exactly as planned.
+**Total deviations:** 2 auto-fixed (2 bugs).
+**Impact on plan:** Fix 1 was required for the validator to run at all on Windows PowerShell 5.1; Fix 2 prevents a generated artifact from polluting the repo. No scope change — content and assertions are exactly as planned.
 
 ## Issues Encountered
-- The three files (`prod.parameters.json`, `validate_infra.ps1`, `bicepconfig.json`) already existed as untracked artifacts in the working tree and matched the plan spec; they were verified and committed rather than re-authored from scratch. The only substantive change made was the encoding fix above.
-- Console output of the validator still renders accents as mojibake at display time (terminal codepage), but this is purely a stdout rendering artifact — the script parses and executes correctly and the exit code (0) is authoritative.
+- The three primary files (`prod.parameters.json`, `validate_infra.ps1`, `bicepconfig.json`) and an earlier draft SUMMARY existed from a prior session (`be75e95`, `f54b327`, `b19d805`). The committed `validate_infra.ps1` (f54b327) still failed to parse under PS 5.1; this session diagnosed and fixed that (commit `5438666`), then corrected the SUMMARY's encoding-fix description (it had claimed a UTF-8-BOM fix that did not resolve the parse failure; the working fix is ASCII-safe content).
+- Console output of the validator renders cleanly now that all text is ASCII.
+
+## Deferred Issues (out of scope for 02-01)
+- An uncommitted `infra/main.bicep` change (a partial Flex `functionAppConfig.runtime python 3.12` addition) was found in the working tree. It belongs to the main.bicep prod-shape extension (plans 02-04/02-05), not to 02-01, so it was **left unstaged** and logged in `.planning/phases/02-production-infrastructure-provisioning/deferred-items.md`. It does not affect this plan's verify — the validator still defers (exit 0) because no B1 plan is compiled.
 
 ## Threat Surface Verification
 - T-02-01 (info disclosure): prod.parameters.json contains zero literal secret values; validator asserts secret app-settings are KV references (INF-08). Mitigated as planned.
@@ -123,7 +134,8 @@ None - no external service configuration required for this Wave-0 file-authoring
 - FOUND: infra/bicepconfig.json
 - FOUND commit be75e95 (Task 1)
 - FOUND commit f54b327 (Task 2)
-- Validator exit 0 against baseline; staging.parameters.json unmodified.
+- FOUND commit 5438666 (Rule 1 fix: ASCII-safe validator + gitignore)
+- Validator exit 0 against baseline; fail-closed exit 1 verified against B1-shaped bicep; staging.parameters.json unmodified.
 
 ---
 *Phase: 02-production-infrastructure-provisioning*
