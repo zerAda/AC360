@@ -1,0 +1,59 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "content": {
+        "json": "## AC360 — Ops (une page)\nVue opérateur unique : audits sur 24h, taux d'erreur, latence p95, et budget. Source : composant App Insights workspace-based."
+      },
+      "name": "header"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "customEvents\n| where name == \"ac360_document_access\"\n| where timestamp > ago(24h)\n| summarize Audits_24h = count()",
+        "size": 3,
+        "title": "Audits sur les dernières 24h",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "tiles"
+      },
+      "name": "panel-audits-24h"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "requests\n| where timestamp > ago(24h)\n| summarize Total = count(), Echecs = countif(success == false)\n| extend Taux_erreur_pct = iff(Total == 0, 0.0, round(100.0 * Echecs / Total, 2))\n| project Total, Echecs, Taux_erreur_pct",
+        "size": 3,
+        "title": "Taux d'erreur des requêtes (24h)",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "tiles"
+      },
+      "name": "panel-error-rate"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "requests\n| where timestamp > ago(24h)\n| summarize p95_latence_ms = percentile(duration, 95)\n| project p95_latence_ms",
+        "size": 3,
+        "title": "Latence p95 des requêtes (24h)",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "tiles"
+      },
+      "name": "panel-p95-latency"
+    },
+    {
+      "type": 1,
+      "content": {
+        "json": "### Budget % (Cost Management)\nLes données de coût ne sont pas interrogeables depuis App Insights. Consulter la consommation du budget mensuel `ac360-prod-monthly` dans le portail Cost Management.\n\n> [Ouvrir le budget Cost Management](https://portal.azure.com/#view/Microsoft_Azure_CostManagement/Menu/~/budgets)\n\n_Opérateur : remplacer le lien ci-dessus par l'URL exacte du blade budget `ac360-prod-monthly` au provisioning (Task 4 / Open Q3)._"
+      },
+      "name": "panel-budget-pct"
+    }
+  ],
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}
