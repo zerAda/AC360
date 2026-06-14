@@ -277,6 +277,36 @@ function Test-InfraAssertions {
         }
     }
 
+    # --- CR-02 : MI passerelle/Function => Key Vault Secrets User present (sinon la reference KV
+    #     @Microsoft.KeyVault(...) de la passerelle ne resout pas et l'app demarre sans secret OBO). ---
+    $kvSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
+    if ($RawJson -notmatch [regex]::Escape($kvSecretsUserRoleId)) {
+        $violations += "CR-02/INF-08: role Key Vault Secrets User ($kvSecretsUserRoleId) absent - la reference KV de la passerelle ne resoudrait pas."
+    }
+
+    # --- CR-03 : DocIntel publicNetworkAccess=Disabled en PROD + Private Endpoint Cognitive Services ---
+    if ($Cognitive) {
+        $di = @($Cognitive | Where-Object { $_.kind -eq 'FormRecognizer' }) | Select-Object -First 1
+        if ($di -and (Resolve-ArmValue $di.properties.publicNetworkAccess) -ne 'Disabled') {
+            $violations += "CR-03: docIntel publicNetworkAccess != 'Disabled' en PROD (= $(Resolve-ArmValue $di.properties.publicNetworkAccess)) - OCR de PII sur endpoint public."
+        }
+    }
+    $docDns = @($resources | Where-Object { $_.type -eq 'Microsoft.Network/privateDnsZones' -and $_.name -match 'privatelink\.cognitiveservices\.azure\.net' })
+    if ($docDns.Count -eq 0) { $violations += "CR-03: zone DNS privee 'privatelink.cognitiveservices.azure.net' absente." }
+    $peAccountFound = $false
+    foreach ($p in @($resources | Where-Object { $_.type -eq 'Microsoft.Network/privateEndpoints' })) {
+        $conns = @()
+        if ($p.properties.privateLinkServiceConnections) { $conns += $p.properties.privateLinkServiceConnections }
+        foreach ($c in $conns) { if (@($c.properties.groupIds) -contains 'account') { $peAccountFound = $true } }
+    }
+    if (-not $peAccountFound) { $violations += "CR-03: privateEndpoint avec groupIds 'account' (Cognitive Services/DocIntel) absent." }
+
+    # --- WR-03 : Storage publicNetworkAccess=Disabled en PROD (data-plane non joignable depuis Internet) ---
+    $st = @($Storages) | Select-Object -First 1
+    if ($st -and (Resolve-ArmValue $st.properties.publicNetworkAccess) -ne 'Disabled') {
+        $violations += "WR-03: storage publicNetworkAccess != 'Disabled' en PROD (= $(Resolve-ArmValue $st.properties.publicNetworkAccess))."
+    }
+
     return $violations
 }
 
