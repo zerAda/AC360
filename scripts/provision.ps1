@@ -47,8 +47,14 @@ param(
     [string]$ExpectedSubscription,
     [string]$BicepFile = 'infra/main.bicep',
     [string]$ParamFile = 'infra/prod.parameters.json',
-    [string]$KeyVaultName = 'kv-ac360-prod',
+    # CR-01 : le nom DOIT suivre la convention Bicep var kvName = '<namePrefix>-kv-<environmentName>'
+    # => 'ac360-kv-prod' (et NON 'kv-ac360-prod'). Après le deploy (4) on le RE-LIT depuis la sortie
+    # keyVaultName du déploiement pour rester la source de vérité même si la convention change.
+    [string]$KeyVaultName = 'ac360-kv-prod',
     [string]$DocIntelLocation = 'francecentral',
+    # WR-06 : login interactif INTERDIT par défaut (fail-closed en automation/CI). Passer -Interactive
+    # explicitement pour autoriser le `az login` interactif en poste opérateur.
+    [switch]$Interactive,
     [switch]$WhatIfOnly = $true
 )
 
@@ -80,14 +86,25 @@ if (-not (Get-Command "az" -ErrorAction SilentlyContinue)) {
 
 $azAccount = az account show --query "name" -o tsv 2>$null
 if (-not $azAccount) {
-    Write-Host "Vous n'êtes pas connecté à Azure. Lancement de la fenêtre de connexion..." -ForegroundColor Yellow
-    az login | Out-Null
-    $azAccount = az account show --query "name" -o tsv
+    # WR-06 : pas de `az login` interactif silencieux. En automation/CI il bloquerait (prompt navigateur)
+    # ou authentifierait un tenant inattendu AVANT la garde d'abonnement. Fail-closed sauf -Interactive.
+    if ($Interactive) {
+        Write-Host "Non authentifié. Lancement du `az login` interactif (-Interactive)..." -ForegroundColor Yellow
+        az login | Out-Null
+        $azAccount = az account show --query "name" -o tsv
+    } else {
+        throw "Non authentifié à Azure. Exécuter 'az login' (et sélectionner le tenant PROD) puis relancer, ou passer -Interactive en poste opérateur."
+    }
 }
 Write-Host "Connecté à l'abonnement : $azAccount" -ForegroundColor Green
 
-# (2) Correspondance d'abonnement optionnelle — fail-closed (T-02-08).
+# (2) Garde d'abonnement — fail-closed (T-02-08).
+# WR-07 : en mode APPLY (-not WhatIfOnly), -ExpectedSubscription est OBLIGATOIRE, sinon la garde est
+# un no-op et un apply pourrait viser le mauvais abonnement. En what-if elle reste optionnelle.
 $sub = az account show --query id -o tsv
+if (-not $WhatIfOnly -and -not $ExpectedSubscription) {
+    throw "Garde d'abonnement requise pour un APPLY : passer -ExpectedSubscription <prod-subscription-id> (WR-07)."
+}
 if ($ExpectedSubscription -and ($sub -ne $ExpectedSubscription)) {
     Write-Host "Mauvais abonnement actif : $sub (attendu : $ExpectedSubscription)" -ForegroundColor Red
     throw "Wrong subscription: $sub (expected $ExpectedSubscription)"
@@ -167,8 +184,20 @@ Write-Host "OPERATOR: review the what-if diff above and attach as evidence." -Fo
 Write-Section "(4) Bicep apply (OPERATOR CHECKPOINT)"
 if (-not $WhatIfOnly) {
     Write-OperatorCheckpoint "Application du déploiement Bicep (création KV, storage, plans, apps, VNet, PE, rôles)."
-    az deployment group create -g $ResourceGroup -f $BicepFile -p "@$ParamFile" | Out-Null
+    az deployment group create -g $ResourceGroup -f $BicepFile -p "@$ParamFile" -n main | Out-Null
     Write-Host "Déploiement Bicep appliqué." -ForegroundColor Green
+    # CR-01 : la sortie keyVaultName du déploiement est la SOURCE DE VÉRITÉ pour le nom du coffre.
+    # On la re-lit et on écrase $KeyVaultName, garantissant que la pose du secret (5) cible bien le
+    # coffre que les apps référencent (évite la divergence ac360-kv-prod vs kv-ac360-prod).
+    $deployedKv = az deployment group show -g $ResourceGroup -n main --query "properties.outputs.keyVaultName.value" -o tsv 2>$null
+    if ($deployedKv) {
+        if ($deployedKv -ne $KeyVaultName) {
+            Write-Host "Nom Key Vault re-lu depuis la sortie du déploiement : '$deployedKv' (paramètre était '$KeyVaultName')." -ForegroundColor Yellow
+        }
+        $KeyVaultName = $deployedKv
+    } else {
+        throw "Impossible de lire keyVaultName depuis la sortie du déploiement — abandon avant la pose du secret OBO (CR-01)."
+    }
 } else {
     Write-Host "[WHAT-IF] az deployment group create -g $ResourceGroup -f $BicepFile -p `@$ParamFile  (apply gardé derrière -not WhatIfOnly)" -ForegroundColor Yellow
 }
