@@ -30,6 +30,10 @@ param keyVaultPublicNetworkAccess string = 'Enabled'
 @description('Désactive l\'auth locale par clé sur Document Intelligence (Entra-only). Passer à true une fois la Managed Identity câblée + rôle Cognitive Services User accordé.')
 param docIntelDisableLocalAuth bool = false
 
+@description('Accès réseau public de Document Intelligence. Enabled en staging ; Disabled + Private Endpoint en PROD (CR-03 : évite l\'OCR de PII sur l\'endpoint public).')
+@allowed([ 'Enabled', 'Disabled' ])
+param docIntelPublicNetworkAccess string = 'Enabled'
+
 @description('Object IDs (principalId) des identités managées autorisées à lire les secrets du Key Vault.')
 param keyVaultSecretsReaderPrincipalIds array = []
 
@@ -57,6 +61,10 @@ param storageSku string = 'Standard_LRS'
 
 @description('Active le stockage par identité managée (AzureWebJobsStorage sans clé). PROD=true => allowSharedKeyAccess=false.')
 param enableIdentityStorage bool = false
+
+@description('Accès réseau public du compte de stockage. Enabled en staging ; Disabled (networkAcls defaultAction=Deny) en PROD (WR-03 : data-plane non joignable depuis l\'Internet public).')
+@allowed([ 'Enabled', 'Disabled' ])
+param storagePublicNetworkAccess string = 'Enabled'
 
 @description('Rétention soft-delete des blobs en jours (INF-09).')
 param blobSoftDeleteDays int = 7
@@ -122,12 +130,26 @@ var funcStorageDataRoles = [
   storageTableDataContributor
 ]
 
-var ipRestrictions = [for (ip, i) in gatewayOutboundIps: {
+var ipAllowRules = [for (ip, i) in gatewayOutboundIps: {
   ipAddress: '${ip}/32'
   action: 'Allow'
   priority: 100 + i
   name: 'allow-gw-${100 + i}'
 }]
+// WR-05 : rendre le Deny-all EXPLICITE dès qu'au moins une règle Allow existe (la « Deny all
+// implicite » d'App Service ne tient que s'il y a >=1 Allow). Tant que gatewayOutboundIps est vide
+// (staging, ou prod avant que les IP sortantes de la passerelle soient connues) on n'ajoute PAS le
+// Deny-all pour ne pas verrouiller toute joignabilité. EN PROD, gatewayOutboundIps DOIT être peuplé
+// avant le go-live (étape opérateur Phase 3 : lire les outboundIpAddresses de la passerelle, puis
+// redéployer) — sinon l'ingress Function reste ouvert. Voir runbook OPS-01.
+var ipRestrictions = empty(gatewayOutboundIps) ? ipAllowRules : concat(ipAllowRules, [
+  {
+    ipAddress: 'Any'
+    action: 'Deny'
+    priority: 2147483647
+    name: 'deny-all'
+  }
+])
 
 // --------------------------------------------------------------------------
 // Storage (Durable + jobs) — durci
@@ -144,6 +166,13 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
     // INF-09 : les connexions par identité managée (AzureWebJobsStorage__credential=managedidentity)
     // suppriment le besoin de la clé partagée. PROD => enableIdentityStorage=true => allowSharedKeyAccess=false.
     allowSharedKeyAccess: !enableIdentityStorage
+    // WR-03 : restriction réseau data-plane. PROD => Disabled + networkAcls Deny (bypass AzureServices
+    // pour laisser la plateforme/Functions par MI joindre le compte). Staging => Enabled/Allow (inchangé).
+    publicNetworkAccess: storagePublicNetworkAccess
+    networkAcls: {
+      bypass: 'AzureServices'
+      defaultAction: storagePublicNetworkAccess == 'Disabled' ? 'Deny' : 'Allow'
+    }
   }
 }
 
@@ -192,6 +221,33 @@ resource kvRoleAssignments 'Microsoft.Authorization/roleAssignments@2022-04-01' 
   }
 }]
 
+// CR-02 : la passerelle consomme @Microsoft.KeyVault(...) pour OBO_CLIENT_SECRET ; sa Managed
+// Identity DOIT donc avoir Key Vault Secrets User sur le coffre, sinon la référence KV ne résout
+// pas et la passerelle démarre sans secret OBO (auth cassée en prod). Le principalId n'étant connu
+// qu'à l'existence de l'app, on l'assigne IN-TEMPLATE (le nom guid() reste calculable via .id).
+resource gwKvSecretsUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(keyVault.id, gatewayApp.id, kvSecretsUserRoleId)
+  scope: keyVault
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', kvSecretsUserRoleId)
+    principalId: gatewayApp.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// CR-02 (Function MI) : la Function peut elle aussi consommer un secret KV (ex. credentials Fabric/OCR
+// migrés en référence KV). On lui accorde le même rôle de lecture des secrets pour éviter une régression
+// symétrique « KV reference not resolved » côté Functions.
+resource funcKvSecretsUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(keyVault.id, functionApp.id, kvSecretsUserRoleId)
+  scope: keyVault
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', kvSecretsUserRoleId)
+    principalId: functionApp.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
 // --------------------------------------------------------------------------
 // Document Intelligence (OCR)
 // --------------------------------------------------------------------------
@@ -203,7 +259,9 @@ resource docIntel 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
   identity: { type: 'SystemAssigned' }
   properties: {
     customSubDomainName: docIntelName
-    publicNetworkAccess: 'Enabled'
+    // CR-03 : PROD => Disabled (PII OCR sur Private Endpoint Entra-only, jamais sur l'Internet public).
+    // Le flip vers Disabled est séquencé APRÈS le PE (provision.ps1 ; même ordre Pitfall 2 que le Key Vault).
+    publicNetworkAccess: docIntelPublicNetworkAccess
     disableLocalAuth: docIntelDisableLocalAuth
   }
 }
@@ -443,6 +501,57 @@ resource kvPeDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2
       {
         name: 'vaultcore'
         properties: { privateDnsZoneId: kvDnsZone.id }
+      }
+    ]
+  }
+}
+
+// --------------------------------------------------------------------------
+// CR-03 : Private Endpoint Document Intelligence (Cognitive Services) — GATED.
+// groupId 'account' + zone DNS privée privatelink.cognitiveservices.azure.net. Avec
+// docIntelPublicNetworkAccess=Disabled (prod), l'OCR de PII ne transite QUE par le PE (Entra-only).
+// Même ordre opérateur que le Key Vault : PE + DNS AVANT le flip publicNetworkAccess=Disabled.
+// --------------------------------------------------------------------------
+resource docIntelDnsZone 'Microsoft.Network/privateDnsZones@2020-06-01' = if (enablePrivateNetworking) {
+  name: 'privatelink.cognitiveservices.azure.net' // littéral EXACT — résolution DNS Azure
+  location: 'global'
+}
+
+resource docIntelDnsLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = if (enablePrivateNetworking) {
+  parent: docIntelDnsZone
+  name: '${namePrefix}-docinteldns-link'
+  location: 'global'
+  properties: {
+    registrationEnabled: false
+    virtualNetwork: { id: vnet.id }
+  }
+}
+
+resource docIntelPe 'Microsoft.Network/privateEndpoints@2023-11-01' = if (enablePrivateNetworking) {
+  name: '${namePrefix}-docintel-pe-${environmentName}'
+  location: location
+  properties: {
+    subnet: { id: resourceId('Microsoft.Network/virtualNetworks/subnets', vnetName, 'snet-pe') }
+    privateLinkServiceConnections: [
+      {
+        name: 'docintel-plsc'
+        properties: {
+          privateLinkServiceId: docIntel.id
+          groupIds: [ 'account' ]
+        }
+      }
+    ]
+  }
+}
+
+resource docIntelPeDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-11-01' = if (enablePrivateNetworking) {
+  parent: docIntelPe
+  name: 'default'
+  properties: {
+    privateDnsZoneConfigs: [
+      {
+        name: 'cognitiveservices'
+        properties: { privateDnsZoneId: docIntelDnsZone.id }
       }
     ]
   }
