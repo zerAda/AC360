@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 02-01-PLAN.md
-last_updated: "2026-06-13T23:48:43.050Z"
+last_updated: "2026-06-14T00:00:46.235Z"
 last_activity: 2026-06-13 -- Phase 02 execution started
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 13
-  completed_plans: 9
+  completed_plans: 10
   percent: 17
 ---
 
@@ -60,6 +60,8 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P06 | 35 | 2 tasks | 9 files |
 | Phase 02 P01 | 14 | 2 tasks | 3 files |
 | Phase 02 P02 | 9 | 1 tasks | 1 files |
+| Phase 02 P01 | 14 | 2 tasks | 4 files |
+| Phase 02 P03 | 12 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -80,6 +82,8 @@ Recent decisions affecting current work:
 - [Phase ?]: [02-01]: validate_infra.ps1 defers per-INF assertions (exit 0) until prod B1 shape compiled then fails closed; UTF-8+BOM for Windows PowerShell 5.1.
 - [Phase ?]: [02-02]: Delegated Graph scope GUIDs resolved at runtime from the live Graph SP (Get-Scope), never hardcoded; live scope-set operator-verified at 02-04.
 - [Phase ?]: [02-02]: API audience app carries NO credential; only the OBO confidential client holds a secret, written exclusively to Key Vault (OBO-CLIENT-SECRET).
+- [Phase ?]: [02-03]: provision.ps1 defaults to -WhatIfOnly; live apply/consent/residency/KV-flip are explicit operator checkpoints — nothing live this phase.
+- [Phase ?]: [02-03]: Flex region absence throws (escalate, no silent EU substitution); DocIntel S0 absence surfaces westeurope fallback as operator action; KV flip ordered after PE+VNet (Pitfall 2).
 
 ### Pending Todos
 
@@ -107,6 +111,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-13T23:48:23.087Z
+Last session: 2026-06-14T00:00:46.226Z
 Stopped at: Completed 02-01-PLAN.md
 Resume file: None
