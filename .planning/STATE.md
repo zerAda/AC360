@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 02-04-PLAN.md
-last_updated: "2026-06-14T00:43:20.636Z"
+last_updated: "2026-06-14T01:23:15.347Z"
 last_activity: 2026-06-14 -- Completed 02-01-PLAN.md (prod params + offline infra validator)
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 13
-  completed_plans: 11
+  completed_plans: 12
   percent: 17
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-13)
 ## Current Position
 
 Phase: 02 (production-infrastructure-provisioning) — EXECUTING
-Plan: 5 of 6
+Plan: 6 of 6
 Status: Ready to execute
 Last activity: 2026-06-14 -- Completed 02-01-PLAN.md (prod params + offline infra validator)
 
@@ -62,6 +62,7 @@ Progress: [████████░░] 77%
 | Phase 02 P02 | 9 | 1 tasks | 1 files |
 | Phase 02 P03 | 12 | 1 tasks | 1 files |
 | Phase 02 P04 | 28 | 3 tasks | 1 files |
+| Phase 02 P05 | 18min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -87,6 +88,9 @@ Recent decisions affecting current work:
 - [Phase 02-01]: Offline infra validator defers per-INF assertions (exit 0) on the staging baseline and fails closed once a B1 prod plan compiles; validator written ASCII-safe for PowerShell 5.1
 - [Phase ?]: [02-04]: Microsoft.Web/sites@2023-12-01 accepts functionAppConfig; no bump to 2024-04-01 needed (Open Q2 closed)
 - [Phase ?]: [02-04]: Flex functionApp drops linuxFxVersion (runtime in functionAppConfig); gateway keeps Python|3.12; Flex AzureWebJobsStorage MI wiring + Durable role trio deferred to 02-05
+- [Phase ?]: 02-05: Prod Durable Task Hub name = ac360prodhub (distinct from staging); set in host.json Phase 3
+- [Phase ?]: 02-05: Functions MI host blob role = Storage Blob Data Owner (b7e6dc6d) per validator + RESEARCH host-minimum; Queue+Table Data Contributor + Cognitive Services User; SharePoint OBO is delegated consent not an MI role
+- [Phase ?]: 02-05: KV publicNetworkAccess flip deferred to operator (final step after PE + VNet integration); network section gated by enablePrivateNetworking
 
 ### Pending Todos
 
@@ -114,6 +118,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-14T00:43:20.624Z
+Last session: 2026-06-14T01:22:15.923Z
 Stopped at: Completed 02-04-PLAN.md
 Resume file: None

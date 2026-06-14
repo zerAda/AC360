@@ -28,9 +28,9 @@ Go-live gate (P1). Each maps to a roadmap phase.
 - [x] **INF-04**: Azure Document Intelligence on **S0** with `disableLocalAuth=true` (replaces F0)
 - [x] **INF-05**: Production app registrations exist (API audience with no secret; OBO confidential client with secret stored in Key Vault)
 - [x] **INF-06**: OBO admin consent granted in the production tenant for required delegated Graph scopes (blocking pre-flight)
-- [ ] **INF-07**: System-assigned Managed Identity role assignments wired (Key Vault Secrets User, Storage Data Contributor, Cognitive Services User, Fabric read, SharePoint OBO)
-- [ ] **INF-08**: All secrets in Key Vault via Key Vault references + MI; Key Vault Private Endpoint + minimal VNet; zero cleartext secrets in app settings
-- [ ] **INF-09**: Storage account has GRS/RA-GRS + blob & container soft-delete + point-in-time restore; identity-based `AzureWebJobsStorage` (`allowSharedKeyAccess=false`); unique production Task Hub name
+- [x] **INF-07**: System-assigned Managed Identity role assignments wired (Key Vault Secrets User, Storage Data Contributor, Cognitive Services User, Fabric read, SharePoint OBO)
+- [x] **INF-08**: All secrets in Key Vault via Key Vault references + MI; Key Vault Private Endpoint + minimal VNet; zero cleartext secrets in app settings
+- [x] **INF-09**: Storage account has GRS/RA-GRS + blob & container soft-delete + point-in-time restore; identity-based `AzureWebJobsStorage` (`allowSharedKeyAccess=false`); unique production Task Hub name
 
 ### Observability & Monitoring
 
@@ -131,9 +131,9 @@ Populated during roadmap creation. Every v1 requirement maps to exactly one phas
 | INF-04 | Phase 2 | Complete |
 | INF-05 | Phase 2 | Complete |
 | INF-06 | Phase 2 | Complete |
-| INF-07 | Phase 2 | Pending |
-| INF-08 | Phase 2 | Pending |
-| INF-09 | Phase 2 | Pending |
+| INF-07 | Phase 2 | Complete |
+| INF-08 | Phase 2 | Complete |
+| INF-09 | Phase 2 | Complete |
 | CD-01 | Phase 3 | Pending |
 | CD-02 | Phase 3 | Pending |
 | OBS-01 | Phase 3 | Pending |
