@@ -90,7 +90,7 @@ Plans:
 - [x] 03-01-PLAN.md — Wave 1: telemetry.py RedactingSpanProcessor + /ready & redaction test scaffolds + azure-monitor-opentelemetry pins (OBS-01/03)
 - [ ] 03-02-PLAN.md — Wave 2: wire setup_telemetry + Entra-gated /ready in api_server; function_app/host.json OpenTelemetry (OBS-01/03)
 - [x] 03-03-PLAN.md — Wave 1: observability.bicep (App Insights+LAW+alerts+webtest+workbook) + budget.bicep + main.bicep app-setting wiring (OBS-01..05)
-- [ ] 03-04-PLAN.md — Wave 1: cd-prod.yml OIDC + what-if gate + production-Environment approval + Flex/App Service deploy (CD-01/02)
+- [x] 03-04-PLAN.md — Wave 1: cd-prod.yml OIDC + what-if gate + production-Environment approval + Flex/App Service deploy (CD-01/02)
 - [ ] 03-05-PLAN.md — Wave 3: five solo-operator runbooks (deploy/rollback/rotation/triage/kill-switch) with offline dry-run sections (OPS-01..05)
 
 **Risks**: `cd-staging.yml` does NOT deploy to Azure (packages a zip only) — the prod CD pipeline is greenfield and must not be assumed to be an adaptation of staging.
@@ -150,7 +150,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 |-------|----------------|--------|-----------|
 | 1. Deep Code Audit & Critical Fixes | 7/7 | Complete   | 2026-06-13 |
 | 2. Production Infrastructure Provisioning | 6/6 | Complete   | 2026-06-14 |
-| 3. Backend Deploy & Observability | 2/5 | In Progress|  |
+| 3. Backend Deploy & Observability | 3/5 | In Progress|  |
 | 4. Copilot Studio Production Publish | 0/TBD | Not started | - |
 | 5. RGPD & Security Evidence Pack | 0/TBD | Not started | - |
 | 6. Controlled E2E, Go/No-Go & Team Rollout | 0/TBD | Not started | - |

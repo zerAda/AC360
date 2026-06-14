@@ -42,8 +42,8 @@ Go-live gate (P1). Each maps to a roadmap phase.
 
 ### Deployment (CD)
 
-- [ ] **CD-01**: A real `cd-prod.yml` pipeline exists (OIDC federated credentials, `production` GitHub Environment with manual approval, Bicep what-if gate before apply)
-- [ ] **CD-02**: The fixed backend (gateway + Functions) is deployed to production via the pipeline
+- [x] **CD-01**: A real `cd-prod.yml` pipeline exists (OIDC federated credentials, `production` GitHub Environment with manual approval, Bicep what-if gate before apply)
+- [x] **CD-02**: The fixed backend (gateway + Functions) is deployed to production via the pipeline
 
 ### Operability (runbooks for a solo operator)
 
@@ -134,8 +134,8 @@ Populated during roadmap creation. Every v1 requirement maps to exactly one phas
 | INF-07 | Phase 2 | Complete |
 | INF-08 | Phase 2 | Complete |
 | INF-09 | Phase 2 | Complete |
-| CD-01 | Phase 3 | Pending |
-| CD-02 | Phase 3 | Pending |
+| CD-01 | Phase 3 | Complete |
+| CD-02 | Phase 3 | Complete |
 | OBS-01 | Phase 3 | Complete |
 | OBS-02 | Phase 3 | Complete |
 | OBS-03 | Phase 3 | Complete |
