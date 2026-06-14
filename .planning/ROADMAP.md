@@ -14,7 +14,7 @@ This milestone takes the feature-complete, security-hardened AC360 assistant fro
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Deep Code Audit & Critical Fixes** - Re-validate hardening under prod (multi-worker) topology and land launch-blocking code fixes in the repo (completed 2026-06-13)
-- [ ] **Phase 2: Production Infrastructure Provisioning** - Stand up `rg-ac360-prod` in an EU region with corrected SKUs, identity, secrets, and minimal network hardening
+- [x] **Phase 2: Production Infrastructure Provisioning** - Stand up `rg-ac360-prod` in an EU region with corrected SKUs, identity, secrets, and minimal network hardening (completed 2026-06-14)
 - [ ] **Phase 3: Backend Deploy & Observability** - Deploy the fixed backend via a real prod CD pipeline with monitoring, alerting, and five solo-operator runbooks live
 - [ ] **Phase 4: Copilot Studio Production Publish** - Publish the hardened agent to Teams 1:1 with rebound prod connections, SSO, and validated live guardrails
 - [ ] **Phase 5: RGPD & Security Evidence Pack** - Produce the compliance and security-review evidence required before any real user or client data
@@ -68,7 +68,7 @@ Plans:
 - [x] 02-03-PLAN.md — Wave 1: provision.ps1 orchestrator + blocking pre-flight gates, what-if default (INF-01)
 - [x] 02-04-PLAN.md — Wave 2: extend main.bicep compute — B1+capacity=1+alwaysOn, Flex FC1+functionAppConfig, DocIntel S0 (INF-02/03/04)
 - [x] 02-05-PLAN.md — Wave 3: extend main.bicep — storage GRS/soft-delete/PITR/identity + Durable role trio + KV PE/VNet + KV refs (INF-07/08/09)
-- [ ] 02-06-PLAN.md — Wave 4: operator checkpoints — residency/region, what-if evidence, OBO admin consent, Fabric grant (INF-06)
+- [x] 02-06-PLAN.md — Wave 4: operator checkpoints — residency/region, what-if evidence, OBO admin consent, Fabric grant (INF-06)
 
 **Risks**: EU residency of the M365 tenant geo, Fabric capacity region, and DocIntel Form Recognizer availability in France Central must each be verified against the live GEREP tenant at provisioning time (West Europe is the confirmed DocIntel fallback). In-place Y1→Flex migration is unsupported — a new Functions app must be created.
 
@@ -141,7 +141,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Deep Code Audit & Critical Fixes | 7/7 | Complete   | 2026-06-13 |
-| 2. Production Infrastructure Provisioning | 5/6 | In Progress|  |
+| 2. Production Infrastructure Provisioning | 6/6 | Complete   | 2026-06-14 |
 | 3. Backend Deploy & Observability | 0/TBD | Not started | - |
 | 4. Copilot Studio Production Publish | 0/TBD | Not started | - |
 | 5. RGPD & Security Evidence Pack | 0/TBD | Not started | - |
