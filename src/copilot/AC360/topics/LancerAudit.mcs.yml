@@ -29,7 +29,7 @@ beginDialog:
     - kind: HttpRequestAction
       id: http_resolve_doc
       method: Post
-      url: https://ac360-gateway-staging.azurewebsites.net/api/documents/resolve
+      url: https://ac360-gateway-prod.azurewebsites.net/api/documents/resolve
       headers:
         Authorization: ="Bearer " & System.User.AccessToken
       body:
@@ -78,7 +78,7 @@ beginDialog:
             - kind: HttpRequestAction
               id: http_resolve_choice
               method: Post
-              url: https://ac360-gateway-staging.azurewebsites.net/api/documents/resolve
+              url: https://ac360-gateway-prod.azurewebsites.net/api/documents/resolve
               headers:
                 Authorization: ="Bearer " & System.User.AccessToken
               body:
@@ -135,7 +135,7 @@ beginDialog:
     - kind: HttpRequestAction
       id: http_audit_trigger
       method: Post
-      url: https://ac360-gateway-staging.azurewebsites.net/api/audit
+      url: https://ac360-gateway-prod.azurewebsites.net/api/audit
       headers:
         Authorization: ="Bearer " & System.User.AccessToken
       body:
@@ -168,7 +168,7 @@ beginDialog:
             - kind: HttpRequestAction
               id: http_audit_status
               method: Get
-              url: ="https://ac360-gateway-staging.azurewebsites.net/api/audit/" & Global.AuditJobId & "/status"
+              url: ="https://ac360-gateway-prod.azurewebsites.net/api/audit/" & Global.AuditJobId & "/status"
               headers:
                 Authorization: ="Bearer " & System.User.AccessToken
               responseStringVariable: Topic.AuditStatusResponse

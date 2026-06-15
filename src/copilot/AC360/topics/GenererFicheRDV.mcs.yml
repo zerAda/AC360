@@ -28,7 +28,7 @@ beginDialog:
     - kind: HttpRequestAction
       id: http_fiche_rdv
       method: Post
-      url: https://ac360-gateway-staging.azurewebsites.net/api/generate-fiche-rdv
+      url: https://ac360-gateway-prod.azurewebsites.net/api/generate-fiche-rdv
       headers:
         Authorization: ="Bearer " & System.User.AccessToken
       body:

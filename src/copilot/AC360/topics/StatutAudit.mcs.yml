@@ -28,7 +28,7 @@ beginDialog:
             - kind: HttpRequestAction
               id: http_status_recheck
               method: Get
-              url: ="https://ac360-gateway-staging.azurewebsites.net/api/audit/" & Global.AuditJobId & "/status"
+              url: ="https://ac360-gateway-prod.azurewebsites.net/api/audit/" & Global.AuditJobId & "/status"
               headers:
                 Authorization: ="Bearer " & System.User.AccessToken
               responseStringVariable: Topic.StatusResponse
