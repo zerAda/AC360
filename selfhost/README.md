@@ -72,11 +72,17 @@ toutes les briques de données restent sur le **réseau Docker interne**.
 ```bash
 cd selfhost
 
-make detect     # 1. Diagnostic CPU/RAM/GPU → valeurs .env recommandées
-make secrets    # 2. Crée .env + génère des secrets forts (chmod 600)
+make tune       # 1. Détecte CPU/RAM/GPU et ÉCRIT les réglages optimaux dans .env
+make secrets    # 2. Génère des secrets forts (chmod 600)
 make up         # 3. Démarre la stack + pré-télécharge les modèles Ollama
+                #    (GPU=1 si GPU NVIDIA ; PERF=1 si machine confortable)
 make verify     # 4. Contrôle santé + câblage Onyx↔Ollama + test de génération
 ```
+
+> `make tune` exploite au mieux votre matériel (plus gros modèle qui tient,
+> limites proportionnelles à la RAM, Flash Attention + cache KV q8_0) tout en
+> gardant une marge OS. Détails et compromis : [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
+> Aperçu sans rien écrire : `make detect`.
 
 Puis ouvrez **http://localhost:3000**. Le **premier compte créé devient
 administrateur**.
@@ -123,7 +129,8 @@ Baseline complète et checklist : [`docs/SECURITY.md`](docs/SECURITY.md).
 | Mettre à jour (tag épinglé) | `make update` |
 | Sauvegarder / restaurer | `make backup` / `make restore DIR=backups/…` |
 | Tout arrêter | `make down` |
-| Profil GPU NVIDIA | `make up GPU=1` |
+| (Re)calibrer pour le matériel | `make tune` — voir [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) |
+| Profil GPU NVIDIA / haut débit | `make up GPU=1` / `make up PERF=1` |
 
 Runbook détaillé (upgrade, incidents, scaling, Ollama natif) : [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
 
@@ -135,12 +142,13 @@ Runbook détaillé (upgrade, incidents, scaling, Ollama natif) : [`docs/RUNBOOK.
 selfhost/
 ├── docker-compose.yml        # stack complète durcie (fichier unique auditable)
 ├── docker-compose.gpu.yml    # override GPU NVIDIA (optionnel)
+├── docker-compose.performance.yml  # override haut débit (indexation dédiée)
 ├── env.template              # gabarit → copié en .env (gitignoré)
 ├── Makefile                  # pilotage une-commande
 ├── nginx/onyx.conf           # reverse proxy maison (localhost)
 ├── scripts/
-│   ├── detect-hardware.sh    # diagnostic matériel (Linux/macOS)
-│   ├── detect-hardware.ps1   # diagnostic matériel (Windows)
+│   ├── detect-hardware.sh    # diagnostic + auto-tuning (Linux/macOS)
+│   ├── detect-hardware.ps1   # diagnostic (Windows)
 │   ├── gen-secrets.sh        # génération des secrets
 │   ├── pull-models.sh        # téléchargement des modèles Ollama
 │   ├── verify.sh             # vérification de bout en bout
@@ -148,6 +156,7 @@ selfhost/
 └── docs/
     ├── ARCHITECTURE.md       # composants, flux, modèle de menace
     ├── SECURITY.md           # baseline + checklist de durcissement
+    ├── PERFORMANCE.md        # auto-tuning, réglages perf, compromis
     ├── RUNBOOK.md            # exploitation, upgrade, dépannage, scaling
     └── RGPD.md               # souveraineté & protection des données
 ```

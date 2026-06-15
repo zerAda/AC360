@@ -1,8 +1,9 @@
 # =============================================================================
 # AC360 — Stack IA privée (Onyx + Ollama). Pilotage en une commande.
-#   make detect    diagnostic matériel (CPU/RAM/GPU) + reco .env
+#   make detect    diagnostic matériel (CPU/RAM/GPU) — lecture seule
+#   make tune      AUTO-TUNING : écrit les réglages optimaux dans .env
 #   make secrets   génère les secrets forts dans .env
-#   make up        démarre tout (ajouter GPU=1 pour le profil GPU NVIDIA)
+#   make up        démarre tout (GPU=1 = profil GPU NVIDIA ; PERF=1 = haut débit)
 #   make models    (pré)télécharge les modèles Ollama
 #   make verify    contrôle de bout en bout (santé + câblage + génération)
 #   make logs / ps / stats / down / restart / update / backup / restore / destroy
@@ -14,18 +15,24 @@ COMPOSE := docker compose -f docker-compose.yml
 ifdef GPU
 COMPOSE += -f docker-compose.gpu.yml
 endif
+ifdef PERF
+COMPOSE += -f docker-compose.performance.yml
+endif
 PORT = $$(sed -n 's/^ONYX_HOST_PORT=//p' .env 2>/dev/null | head -n1); PORT=$${PORT:-3000}
 
 .DEFAULT_GOAL := help
-.PHONY: help detect secrets up down restart ps stats logs models verify config update backup restore destroy
+.PHONY: help detect tune secrets up down restart ps stats logs models verify config update backup restore destroy
 
 help:
 	@grep -E '^#   make' Makefile | sed 's/^#   /  /'
 	@echo ""
-	@echo "  Démarrage type :  make detect  →  make secrets  →  make up  →  make verify"
+	@echo "  Démarrage type :  make tune  →  make secrets  →  make up  →  make verify"
 
 detect:
 	@bash scripts/detect-hardware.sh
+
+tune:
+	@bash scripts/detect-hardware.sh --apply
 
 secrets:
 	@bash scripts/gen-secrets.sh

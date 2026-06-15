@@ -62,9 +62,18 @@ Write-Host "  NOTE Windows : le GPU NVIDIA n'est exploitable par Docker que via 
 Write-Host "  backend WSL2 (Docker Desktop) avec les pilotes NVIDIA pour WSL installés."
 Line
 Write-Host "  VERDICT : profil recommandé = $profile" -ForegroundColor Green
+$keepAlive = if ($ramGB -ge 12) { "-1" } else { "5m" }
+$nPar      = if ($ramGB -ge 16) { 2 } else { 1 }
+$maxLoad   = if ($ramGB -ge 16) { 2 } else { 1 }
 Write-Host "  Valeurs à reporter dans .env :"
 Write-Host ""
 Write-Host "    OLLAMA_MODELS_TO_PULL=$model nomic-embed-text"
+Write-Host "    OLLAMA_FLASH_ATTENTION=1"
+Write-Host "    OLLAMA_KV_CACHE_TYPE=q8_0"
+Write-Host "    OLLAMA_KEEP_ALIVE=$keepAlive"
+Write-Host "    OLLAMA_NUM_PARALLEL=$nPar"
+Write-Host "    OLLAMA_MAX_LOADED_MODELS=$maxLoad"
+Write-Host "    OLLAMA_CPU_LIMIT=$cpuCores"
 Write-Host "    OPENSEARCH_HEAP=$heap"
 Write-Host "    OPENSEARCH_MEM_LIMIT=$osLimit"
 Write-Host "    INFERENCE_MEM_LIMIT=$infer"
@@ -72,4 +81,5 @@ Write-Host "    BACKGROUND_MEM_LIMIT=$bg"
 Write-Host "    OLLAMA_MEM_LIMIT=$ollama"
 if ($gpuHint) { Write-Host ""; Write-Host "  $gpuHint" }
 Line
-Write-Host "  Étapes suivantes (depuis selfhost/) : make secrets ; make up ; make verify"
+Write-Host "  NB : sous WSL2 vous pouvez utiliser directement 'make tune' (écrit .env)."
+Write-Host "  Étapes (depuis selfhost/) : make secrets ; make up ; make verify"

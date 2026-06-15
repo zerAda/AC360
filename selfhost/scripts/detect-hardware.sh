@@ -1,136 +1,162 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Diagnostic matériel (Linux / macOS) : CPU, RAM, GPU et aptitude Docker-GPU.
-# Imprime un VERDICT et les valeurs .env recommandées (modèle Ollama, heap, etc.).
-# 100 % lecture seule : ne modifie rien. (Windows : voir detect-hardware.ps1)
+# Diagnostic + AUTO-TUNING matériel (Linux / macOS) : CPU, RAM, GPU.
 #
-# Pourquoi ce script ? L'assistant ne peut pas inspecter votre poste depuis son
-# sandbox cloud : exécutez ceci SUR la machine cible pour calibrer la stack.
+#   ./detect-hardware.sh            → RAPPORT (lecture seule) + valeurs conseillées
+#   ./detect-hardware.sh --apply    → ÉCRIT les valeurs optimales dans .env  (= make tune)
+#
+# Objectif : exploiter au mieux la machine (gros modèle qui tient, limites
+# proportionnelles à la RAM, réglages perf Ollama) TOUT en gardant une marge OS
+# (jamais 100 % → sinon gel/OOM). Les secrets ne sont pas touchés.
+#
+# Pourquoi ? L'assistant ne peut pas inspecter votre poste depuis son sandbox
+# cloud : exécutez ceci SUR la machine cible.
 # =============================================================================
-# Pas de 'set -e' : diagnostic en lecture seule, on ne veut jamais qu'il
-# s'interrompe au milieu du rapport si une commande optionnelle échoue.
 set -uo pipefail
+cd "$(dirname "$0")/.."
+
+APPLY=0; [ "${1:-}" = "--apply" ] && APPLY=1
+ENV_FILE=".env"; TEMPLATE="env.template"
 
 bold() { printf '\033[1m%s\033[0m\n' "$1"; }
 line() { printf -- '----------------------------------------------------------------\n'; }
+clamp() { v=$1; [ "$v" -lt "$2" ] && v=$2; [ "$v" -gt "$3" ] && v=$3; echo "$v"; }
 
-OS="$(uname -s)"
-ARCH="$(uname -m)"
-CPU_MODEL="inconnu"; CPU_CORES="?"; RAM_GB=0
-GPU_KIND="none"; GPU_NAME=""; VRAM_GB=0
-DOCKER_GPU="non"
+# ---- Détection --------------------------------------------------------------
+OS="$(uname -s)"; ARCH="$(uname -m)"
+CPU_MODEL="inconnu"; CORES=1; RAM_GB=0
+GPU_KIND="none"; GPU_NAME=""; VRAM_GB=0; DOCKER_GPU="non"
 
-# ---- CPU / RAM --------------------------------------------------------------
 case "$OS" in
   Linux)
-    CPU_CORES="$(nproc 2>/dev/null || echo '?')"
+    CORES="$(nproc 2>/dev/null || echo 1)"
     CPU_MODEL="$(sed -n 's/^model name[[:space:]]*: //p' /proc/cpuinfo 2>/dev/null | head -n1)"
     [ -z "$CPU_MODEL" ] && CPU_MODEL="$(uname -p)"
-    if [ -r /proc/meminfo ]; then
-      kb="$(sed -n 's/^MemTotal:[[:space:]]*\([0-9]*\).*/\1/p' /proc/meminfo)"
-      RAM_GB=$(( kb / 1024 / 1024 ))
-    fi
-    ;;
+    kb="$(sed -n 's/^MemTotal:[[:space:]]*\([0-9]*\).*/\1/p' /proc/meminfo 2>/dev/null)"
+    [ -n "$kb" ] && RAM_GB=$(( kb / 1024 / 1024 )) ;;
   Darwin)
-    CPU_CORES="$(sysctl -n hw.ncpu 2>/dev/null || echo '?')"
-    CPU_MODEL="$(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'Apple')"
+    CORES="$(sysctl -n hw.ncpu 2>/dev/null || echo 1)"
+    CPU_MODEL="$(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo Apple)"
     bytes="$(sysctl -n hw.memsize 2>/dev/null || echo 0)"
-    RAM_GB=$(( bytes / 1024 / 1024 / 1024 ))
-    ;;
-  *) echo "OS non géré ($OS). Utilisez detect-hardware.ps1 sous Windows."; exit 1 ;;
+    RAM_GB=$(( bytes / 1024 / 1024 / 1024 )) ;;
+  *) echo "OS non géré ($OS). Sous Windows : detect-hardware.ps1"; exit 1 ;;
 esac
+[ "$RAM_GB" -lt 1 ] && RAM_GB=1; [ "$CORES" -lt 1 ] && CORES=1
 
-# ---- GPU --------------------------------------------------------------------
 if command -v nvidia-smi >/dev/null 2>&1; then
   GPU_KIND="nvidia"
   GPU_NAME="$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -n1)"
   vram_mb="$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -n1)"
   [ -n "${vram_mb:-}" ] && VRAM_GB=$(( vram_mb / 1024 ))
 elif [ "$OS" = "Darwin" ] && [ "$ARCH" = "arm64" ]; then
-  GPU_KIND="apple"
-  GPU_NAME="Apple Silicon (GPU Metal intégré)"
+  GPU_KIND="apple"; GPU_NAME="Apple Silicon (GPU Metal — inaccessible depuis Docker)"
 elif command -v lspci >/dev/null 2>&1 && lspci 2>/dev/null | grep -qiE 'amd/ati|radeon'; then
-  GPU_KIND="amd"
-  GPU_NAME="$(lspci 2>/dev/null | grep -iE 'vga|3d|display' | grep -iE 'amd|radeon' | head -n1 | cut -d: -f3-)"
+  GPU_KIND="amd"; GPU_NAME="$(lspci 2>/dev/null | grep -iE 'vga|3d|display' | grep -iE 'amd|radeon' | head -n1 | cut -d: -f3-)"
 fi
-
-# ---- Docker + aptitude GPU --------------------------------------------------
-DOCKER_OK="non"
 if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-  DOCKER_OK="oui"
-  if [ "$GPU_KIND" = "nvidia" ] && docker info 2>/dev/null | grep -qi 'Runtimes:.*nvidia\|nvidia'; then
-    DOCKER_GPU="oui (runtime nvidia détecté)"
-  elif [ "$GPU_KIND" = "nvidia" ] && command -v nvidia-ctk >/dev/null 2>&1; then
-    DOCKER_GPU="probable (nvidia-ctk présent — vérifier le runtime)"
-  fi
+  if [ "$GPU_KIND" = nvidia ] && docker info 2>/dev/null | grep -qi 'nvidia'; then DOCKER_GPU="oui"
+  elif [ "$GPU_KIND" = nvidia ] && command -v nvidia-ctk >/dev/null 2>&1; then DOCKER_GPU="probable (nvidia-ctk présent)"; fi
 fi
 
-# ---- vm.max_map_count (Linux, requis par OpenSearch) ------------------------
-MMC_NOTE=""
-if [ "$OS" = "Linux" ]; then
-  mmc="$(sysctl -n vm.max_map_count 2>/dev/null || echo 0)"
-  if [ "${mmc:-0}" -lt 262144 ]; then
-    MMC_NOTE="⚠ vm.max_map_count=$mmc (<262144) → OpenSearch peut échouer. Corriger :
-     sudo sysctl -w vm.max_map_count=262144
-     (persistant : echo 'vm.max_map_count=262144' | sudo tee /etc/sysctl.d/99-onyx.conf)"
+# ---- Calcul du profil optimal (marge OS réservée) ---------------------------
+RES=$(clamp $(( RAM_GB / 8 )) 2 8)          # RAM réservée à l'OS
+AVAIL=$(( RAM_GB - RES )); [ "$AVAIL" -lt 1 ] && AVAIL=1
+USE_GPU=0
+[ "$GPU_KIND" = nvidia ] && [ "$VRAM_GB" -ge 6 ] && USE_GPU=1
+
+# Choix du plus gros modèle qui tient (use-all-resources, raisonné).
+pick_model() {
+  if [ "$USE_GPU" = 1 ]; then
+    if   [ "$VRAM_GB" -ge 24 ]; then echo "qwen2.5:32b-instruct 24"
+    elif [ "$VRAM_GB" -ge 12 ]; then echo "qwen2.5:14b-instruct 14"
+    elif [ "$VRAM_GB" -ge 8 ];  then echo "llama3.1:8b 9"
+    else echo "llama3.2:3b 5"; fi
   else
-    MMC_NOTE="✓ vm.max_map_count=$mmc (OK pour OpenSearch)"
+    if   [ "$AVAIL" -ge 24 ]; then echo "qwen2.5:14b-instruct 13"
+    elif [ "$AVAIL" -ge 12 ]; then echo "llama3.1:8b 9"
+    elif [ "$AVAIL" -ge 7 ];  then echo "qwen2.5:7b-instruct 8"
+    else echo "llama3.2:3b 5"; fi
   fi
-fi
+}
+read -r MODEL OLLAMA_MEM <<EOF
+$(pick_model)
+EOF
+[ "$USE_GPU" = 1 ] && OLLAMA_MEM=4          # poids en VRAM → peu de RAM hôte
 
-# ---- Recommandation ---------------------------------------------------------
-REC_PROFILE="CPU"; REC_MODEL="llama3.2:3b"; REC_HEAP="1g"
-REC_OS_LIMIT="2g"; REC_INFER="4g"; REC_BG="5g"; REC_OLLAMA="6g"; GPU_HINT=""
-
-if [ "$GPU_KIND" = "nvidia" ] && [ "$VRAM_GB" -ge 8 ]; then
-  REC_PROFILE="GPU NVIDIA"
-  if   [ "$VRAM_GB" -ge 16 ]; then REC_MODEL="qwen2.5:14b-instruct"
-  else REC_MODEL="llama3.1:8b"; fi
-  REC_OLLAMA="$(( VRAM_GB > 12 ? 12 : VRAM_GB ))g"
-  GPU_HINT="Lancer avec le profil GPU :  make up GPU=1   (nécessite nvidia-container-toolkit)"
-elif [ "$RAM_GB" -gt 0 ] && [ "$RAM_GB" -lt 12 ]; then
-  REC_PROFILE="CPU (RAM limitée)"; REC_MODEL="llama3.2:1b"
-  REC_HEAP="512m"; REC_OS_LIMIT="1g"; REC_INFER="3g"; REC_BG="3g"; REC_OLLAMA="3g"
-elif [ "$RAM_GB" -ge 24 ]; then
-  REC_PROFILE="CPU (confortable)"; REC_MODEL="qwen2.5:7b-instruct"
-  REC_HEAP="2g"; REC_OS_LIMIT="3g"; REC_INFER="5g"; REC_BG="6g"; REC_OLLAMA="8g"
-fi
+HEAP=$(clamp $(( RAM_GB * 20 / 100 )) 1 8)
+OS_MEM=$(clamp $(( HEAP * 2 )) 2 16)
+INFER_MEM=$(clamp $(( RAM_GB * 25 / 100 )) 3 8)
+BG_MEM=$(clamp $(( RAM_GB * 30 / 100 )) 3 10)
+API_MEM=$(clamp $(( RAM_GB * 20 / 100 )) 2 6)
+KEEP_ALIVE=$([ "$AVAIL" -ge 12 ] && echo "-1" || echo "5m")    # -1 = toujours chargé
+MAXLOAD=$([ "$AVAIL" -ge 16 ] && echo 2 || echo 1)
+if [ "$USE_GPU" = 1 ]; then NPAR=$([ "$VRAM_GB" -ge 12 ] && echo 4 || echo 2)
+else NPAR=$([ "$AVAIL" -ge 16 ] && echo 2 || echo 1); fi
+PERF_OK=$([ "$RAM_GB" -ge 32 ] || { [ "$USE_GPU" = 1 ] && [ "$RAM_GB" -ge 24 ]; } && echo 1 || echo 0)
 
 # ---- Rapport ----------------------------------------------------------------
-line; bold "  DIAGNOSTIC MATÉRIEL — AC360 stack IA locale"; line
+line; bold "  DIAGNOSTIC & TUNING — AC360 stack IA locale"; line
 printf "  OS / Arch     : %s / %s\n" "$OS" "$ARCH"
-printf "  CPU           : %s (%s cœurs)\n" "${CPU_MODEL:-inconnu}" "$CPU_CORES"
-printf "  RAM totale    : %s Go\n" "$RAM_GB"
-printf "  GPU           : %s\n" "$([ "$GPU_KIND" = none ] && echo 'aucun GPU dédié détecté' || echo "$GPU_NAME")"
+printf "  CPU           : %s (%s threads)\n" "${CPU_MODEL:-inconnu}" "$CORES"
+printf "  RAM totale    : %s Go  (réserve OS %s Go → dispo ~%s Go)\n" "$RAM_GB" "$RES" "$AVAIL"
+printf "  GPU           : %s\n" "$([ "$GPU_KIND" = none ] && echo 'aucun GPU dédié' || echo "$GPU_NAME")"
 [ "$VRAM_GB" -gt 0 ] && printf "  VRAM          : %s Go\n" "$VRAM_GB"
-printf "  Docker        : %s\n" "$DOCKER_OK"
 printf "  Docker + GPU  : %s\n" "$DOCKER_GPU"
-[ -n "$MMC_NOTE" ] && printf "  OpenSearch    : %s\n" "$MMC_NOTE"
+if [ "$OS" = Linux ]; then
+  mmc="$(sysctl -n vm.max_map_count 2>/dev/null || echo 0)"
+  [ "${mmc:-0}" -ge 262144 ] && printf "  OpenSearch    : vm.max_map_count=%s ✓\n" "$mmc" \
+    || printf "  OpenSearch    : ⚠ vm.max_map_count=%s (<262144) → sudo sysctl -w vm.max_map_count=262144\n" "$mmc"
+fi
+line
+[ "$GPU_KIND" = apple ] && { bold "  macOS : Docker n'accède pas au GPU → CPU en conteneur."; echo "  Pour le GPU Metal, lancez Ollama en NATIF (cf. docs/RUNBOOK.md)."; line; }
+[ "$USE_GPU" = 1 ] && bold "  PROFIL : GPU NVIDIA — lancez : make up GPU=1" || bold "  PROFIL : CPU"
+[ "$PERF_OK" = 1 ] && echo "  Ressources confortables → indexation dédiée possible : make up PERF=1"
 line
 
-# Avertissements ciblés (anti-réserves)
-if [ "$GPU_KIND" = "apple" ]; then
-  bold "  NOTE macOS / Apple Silicon"
-  echo "  Docker Desktop n'accède PAS au GPU (Metal). En conteneur, Ollama tourne"
-  echo "  en CPU. Pour exploiter le GPU : installer Ollama en NATIF et brancher Onyx"
-  echo "  dessus (cf. docs/RUNBOOK.md § Ollama natif). Sinon, restez en CPU."
-  line
-fi
-if [ "$RAM_GB" -gt 0 ] && [ "$RAM_GB" -lt 16 ]; then
-  bold "  ⚠ RAM < 16 Go : stack complète serrée."
-  echo "  Le profil ci-dessous réduit l'empreinte. Surveillez la mémoire (make stats)."
-  line
+emit() { printf '    %s=%s\n' "$1" "$2"; }
+echo "  Réglages optimaux pour CETTE machine :"; echo
+emit OLLAMA_MODELS_TO_PULL "$MODEL nomic-embed-text"
+emit OLLAMA_FLASH_ATTENTION 1
+emit OLLAMA_KV_CACHE_TYPE q8_0
+emit OLLAMA_KEEP_ALIVE "$KEEP_ALIVE"
+emit OLLAMA_NUM_PARALLEL "$NPAR"
+emit OLLAMA_MAX_LOADED_MODELS "$MAXLOAD"
+emit OLLAMA_CPU_LIMIT "$CORES"
+emit OLLAMA_MEM_LIMIT "${OLLAMA_MEM}g"
+emit OPENSEARCH_HEAP "${HEAP}g"
+emit OPENSEARCH_MEM_LIMIT "${OS_MEM}g"
+emit INFERENCE_MEM_LIMIT "${INFER_MEM}g"
+emit BACKGROUND_MEM_LIMIT "${BG_MEM}g"
+emit BACKGROUND_CPU_LIMIT "$CORES"
+emit API_SERVER_MEM_LIMIT "${API_MEM}g"
+line
+
+# ---- Application -------------------------------------------------------------
+if [ "$APPLY" != 1 ]; then
+  echo "  Pour écrire ces valeurs dans .env :  make tune   (ou ./scripts/detect-hardware.sh --apply)"
+  exit 0
 fi
 
-bold "  VERDICT : profil recommandé = $REC_PROFILE"
-echo "  Valeurs à reporter dans .env :"
-echo
-printf '    OLLAMA_MODELS_TO_PULL=%s nomic-embed-text\n' "$REC_MODEL"
-printf '    OPENSEARCH_HEAP=%s\n'        "$REC_HEAP"
-printf '    OPENSEARCH_MEM_LIMIT=%s\n'   "$REC_OS_LIMIT"
-printf '    INFERENCE_MEM_LIMIT=%s\n'    "$REC_INFER"
-printf '    BACKGROUND_MEM_LIMIT=%s\n'   "$REC_BG"
-printf '    OLLAMA_MEM_LIMIT=%s\n'       "$REC_OLLAMA"
-[ -n "$GPU_HINT" ] && { echo; printf '  %s\n' "$GPU_HINT"; }
-line
-echo "  Étapes suivantes :  make secrets  &&  make up  &&  make verify"
+[ -f "$ENV_FILE" ] || cp "$TEMPLATE" "$ENV_FILE"
+set_force() { # set_force KEY VALUE (remplace ou ajoute ; secrets non touchés)
+  if grep -q "^$1=" "$ENV_FILE"; then
+    awk -v k="$1" -v v="$2" -F= '$1==k{print k"="v; next}{print}' "$ENV_FILE" > "$ENV_FILE.tmp" && mv "$ENV_FILE.tmp" "$ENV_FILE"
+  else printf '%s=%s\n' "$1" "$2" >> "$ENV_FILE"; fi
+}
+set_force OLLAMA_MODELS_TO_PULL "$MODEL nomic-embed-text"
+set_force OLLAMA_FLASH_ATTENTION 1
+set_force OLLAMA_KV_CACHE_TYPE q8_0
+set_force OLLAMA_KEEP_ALIVE "$KEEP_ALIVE"
+set_force OLLAMA_NUM_PARALLEL "$NPAR"
+set_force OLLAMA_MAX_LOADED_MODELS "$MAXLOAD"
+set_force OLLAMA_CPU_LIMIT "$CORES"
+set_force OLLAMA_MEM_LIMIT "${OLLAMA_MEM}g"
+set_force OPENSEARCH_HEAP "${HEAP}g"
+set_force OPENSEARCH_MEM_LIMIT "${OS_MEM}g"
+set_force INFERENCE_MEM_LIMIT "${INFER_MEM}g"
+set_force BACKGROUND_MEM_LIMIT "${BG_MEM}g"
+set_force BACKGROUND_CPU_LIMIT "$CORES"
+set_force API_SERVER_MEM_LIMIT "${API_MEM}g"
+[ -f "$ENV_FILE" ] && chmod 600 "$ENV_FILE"
+bold "  ✓ .env mis à jour avec le profil optimal."
+echo "  Étapes : make secrets (si pas fait)  →  make up$([ "$PERF_OK" = 1 ] && echo ' PERF=1')$([ "$USE_GPU" = 1 ] && echo ' GPU=1')  →  make verify"
