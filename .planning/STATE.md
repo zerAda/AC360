@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 03-05-PLAN.md (Task 3 live execution = deferred operator checkpoint)
-last_updated: "2026-06-15T05:26:10.371Z"
-last_activity: 2026-06-15 -- Phase 04 execution started
+last_updated: "2026-06-15T08:12:40.350Z"
+last_activity: 2026-06-15 -- Phase 05 execution started
 progress:
   total_phases: 6
-  completed_phases: 3
-  total_plans: 20
-  completed_plans: 18
-  percent: 50
+  completed_phases: 4
+  total_plans: 26
+  completed_plans: 20
+  percent: 67
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-13)
 
 **Core value:** AC360 is live in production — a 20–100 person team can reliably and compliantly audit client documents from Teams, end-to-end, and one person can operate it with confidence.
-**Current focus:** Phase 04 — copilot-studio-production-publish
+**Current focus:** Phase 05 — rgpd-security-evidence-pack
 
 ## Current Position
 
-Phase: 04 (copilot-studio-production-publish) — EXECUTING
-Plan: 1 of 2
-Status: Executing Phase 04
-Last activity: 2026-06-15 -- Phase 04 execution started
+Phase: 05 (rgpd-security-evidence-pack) — EXECUTING
+Plan: 1 of 6
+Status: Executing Phase 05
+Last activity: 2026-06-15 -- Phase 05 execution started
 
 Progress: [█████████░] 95%
 
