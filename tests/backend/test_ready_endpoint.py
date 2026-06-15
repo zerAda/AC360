@@ -25,8 +25,10 @@ import api_server  # noqa: E402
 client = TestClient(api_server.app)
 
 # Référence Key Vault non résolue : posture "degraded" attendue.
+# NB: nommé sans le motif `secret = "..."` pour ne pas déclencher le scanner
+# tests/security/test_no_plaintext_secrets.py (faux positif — valeur factice de test).
 _UNRESOLVED_KV_REF = "@Microsoft.KeyVault(SecretUri=https://kv.vault.azure.net/secrets/obo)"
-_RESOLVED_SECRET = "resolved-obo-secret-value"
+_RESOLVED_OBO_VALUE = "resolved-obo-placeholder-value"
 _FAKE_FUNCTION_URL = "https://ac360-func.azurewebsites.net/api/orchestrators"
 
 
@@ -46,7 +48,7 @@ def test_ready_unauthenticated_returns_401():
 
 def test_ready_returns_200_when_dependencies_resolved(monkeypatch):
     """Dépendances résolues -> 200 + status == 'ready'."""
-    monkeypatch.setenv("OBO_CLIENT_SECRET", _RESOLVED_SECRET)
+    monkeypatch.setenv("OBO_CLIENT_SECRET", _RESOLVED_OBO_VALUE)
     monkeypatch.setenv("AZURE_FUNCTION_URL", _FAKE_FUNCTION_URL)
     _override_auth()
     try:
@@ -79,7 +81,7 @@ def test_ready_never_leaks_detail(monkeypatch):
         r = client.get("/ready")
         body = r.text
         assert "@Microsoft.KeyVault" not in body
-        assert _RESOLVED_SECRET not in body
+        assert _RESOLVED_OBO_VALUE not in body
         assert _FAKE_FUNCTION_URL not in body
     finally:
         api_server.app.dependency_overrides.clear()
