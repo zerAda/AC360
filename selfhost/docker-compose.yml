@@ -51,6 +51,7 @@ services:
       - USER_DIRECTORY_ADMIN_ONLY=${USER_DIRECTORY_ADMIN_ONLY:-true}
       - REQUIRE_EMAIL_VERIFICATION=${REQUIRE_EMAIL_VERIFICATION:-false}
       - SECRET=${SECRET:?Lancez scripts/gen-secrets.sh pour generer les secrets}
+      - USER_AUTH_SECRET=${USER_AUTH_SECRET:?Lancez scripts/gen-secrets.sh pour generer les secrets}
       - WEB_DOMAIN=${WEB_DOMAIN:-http://localhost:3000}
       # Confidentialité : aucune télémétrie sortante.
       - DISABLE_TELEMETRY=${DISABLE_TELEMETRY:-true}

@@ -74,6 +74,20 @@ make restart
 - `make stats` pour repérer le service gourmand ; ajuster les `*_MEM_LIMIT`.
 - Ollama décharge le modèle après `OLLAMA_KEEP_ALIVE` (défaut 5 min) → RAM libérée.
 
+### OpenSearch en lecture seule / indexation bloquée (« create-index blocked », disque plein)
+Si les logs montrent `index_create_block_exception` ou `read-only-allow-delete`,
+le **disque a dépassé 95 %** (watermark flood-stage d'OpenSearch). Libérez de
+l'espace (images Docker inutiles : `docker image prune -af`) **puis** levez les
+blocs déjà posés :
+```bash
+SH=selfhost; PASS=$(sed -n 's/^OPENSEARCH_ADMIN_PASSWORD=//p' $SH/.env)
+docker compose -f $SH/docker-compose.yml exec -T opensearch \
+  curl -sk -u "admin:$PASS" -X PUT "https://localhost:9200/*/_settings?expand_wildcards=all" \
+  -H 'Content-Type: application/json' -d '{"index.blocks.read_only_allow_delete":null}'
+docker compose -f $SH/docker-compose.yml restart opensearch api_server background
+```
+Prévoir ~20 Go de disque libre (les images, dont le model-server, sont volumineuses).
+
 ### Port 3000 déjà utilisé
 Changer `ONYX_HOST_PORT` dans `.env` puis `make up`.
 

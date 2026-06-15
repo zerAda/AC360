@@ -52,6 +52,7 @@ ensure() { # ensure KEY GENERATOR [ARGS...]
 
 echo "Génération des secrets dans $ENV_FILE :"
 ensure SECRET                rand 48
+ensure USER_AUTH_SECRET      rand 48
 ensure POSTGRES_PASSWORD     rand 32
 ensure DB_READONLY_PASSWORD  rand 32
 ensure OPENSEARCH_ADMIN_PASSWORD gen_os_pass

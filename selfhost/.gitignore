@@ -4,3 +4,6 @@
 
 # Sauvegardes locales (scripts/backup.sh)
 backups/
+
+# Override de test sandbox (proxy TLS) — purement local, jamais livré
+docker-compose.sandbox.yml
