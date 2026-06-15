@@ -47,11 +47,11 @@ Go-live gate (P1). Each maps to a roadmap phase.
 
 ### Operability (runbooks for a solo operator)
 
-- [ ] **OPS-01**: Deploy runbook (Bicep apply + Functions + App Service + Copilot publish, with MI / Key Vault-reference verification steps)
-- [ ] **OPS-02**: Rollback runbook (<10-minute path back, defined trigger and known-good marker)
-- [ ] **OPS-03**: Secret-rotation runbook (per secret, including OBO app-registration steps; expiry dates tracked)
-- [ ] **OPS-04**: Incident-triage runbook (alert → likely cause → first action decision tree)
-- [ ] **OPS-05**: Feature-flag kill-switch runbook (disable audit/OCR/RAG or block a user/team instantly)
+- [x] **OPS-01**: Deploy runbook (Bicep apply + Functions + App Service + Copilot publish, with MI / Key Vault-reference verification steps)
+- [x] **OPS-02**: Rollback runbook (<10-minute path back, defined trigger and known-good marker)
+- [x] **OPS-03**: Secret-rotation runbook (per secret, including OBO app-registration steps; expiry dates tracked)
+- [x] **OPS-04**: Incident-triage runbook (alert → likely cause → first action decision tree)
+- [x] **OPS-05**: Feature-flag kill-switch runbook (disable audit/OCR/RAG or block a user/team instantly)
 
 ### Copilot Studio Production Publish
 
@@ -141,11 +141,11 @@ Populated during roadmap creation. Every v1 requirement maps to exactly one phas
 | OBS-03 | Phase 3 | Complete |
 | OBS-04 | Phase 3 | Complete |
 | OBS-05 | Phase 3 | Complete |
-| OPS-01 | Phase 3 | Pending |
-| OPS-02 | Phase 3 | Pending |
-| OPS-03 | Phase 3 | Pending |
-| OPS-04 | Phase 3 | Pending |
-| OPS-05 | Phase 3 | Pending |
+| OPS-01 | Phase 3 | Complete (03-05; live exec deferred to operator) |
+| OPS-02 | Phase 3 | Complete (03-05; live exec deferred to operator) |
+| OPS-03 | Phase 3 | Complete (03-05; live exec deferred to operator) |
+| OPS-04 | Phase 3 | Complete (03-05; live exec deferred to operator) |
+| OPS-05 | Phase 3 | Complete (03-05; live exec deferred to operator) |
 | PUB-01 | Phase 4 | Pending |
 | PUB-02 | Phase 4 | Pending |
 | PUB-03 | Phase 4 | Pending |

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-04-PLAN.md
-last_updated: "2026-06-14T21:32:37.357Z"
-last_activity: 2026-06-14 -- Phase 03 execution started
+stopped_at: Completed 03-05-PLAN.md
+last_updated: "2026-06-15T00:00:00.000Z"
+last_activity: 2026-06-15 -- Phase 03 Plan 05 (runbooks OPS-01..05) executed
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 18
-  completed_plans: 16
-  percent: 33
+  completed_plans: 17
+  percent: 35
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-13)
 ## Current Position
 
 Phase: 03 (backend-deploy-observability) — EXECUTING
-Plan: 4 of 5
-Status: Ready to execute
-Last activity: 2026-06-14 -- Phase 03 execution started
+Plan: 5 of 5
+Status: Plan 05 complete (runbooks); Task 3 live execution deferred to operator
+Last activity: 2026-06-15 -- Phase 03 Plan 05 (runbooks OPS-01..05) executed
 
-Progress: [████████░░] 77%
+Progress: [█████████░] 95%
 
 ## Performance Metrics
 
@@ -65,6 +65,7 @@ Progress: [████████░░] 77%
 | Phase 02 P05 | 18min | 2 tasks | 1 files |
 | Phase 03 P03 | 18 | 3 tasks | 5 files |
 | Phase 03 P04 | 12m | 1 tasks | 1 files |
+| Phase 03 P05 | 15m | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -93,6 +94,8 @@ Recent decisions affecting current work:
 - [Phase ?]: 02-05: Prod Durable Task Hub name = ac360prodhub (distinct from staging); set in host.json Phase 3
 - [Phase ?]: 02-05: Functions MI host blob role = Storage Blob Data Owner (b7e6dc6d) per validator + RESEARCH host-minimum; Queue+Table Data Contributor + Cognitive Services User; SharePoint OBO is delegated consent not an MI role
 - [Phase ?]: 02-05: KV publicNetworkAccess flip deferred to operator (final step after PE + VNet integration); network section gated by enablePrivateNetworking
+- [Phase ?]: 03-05: OPS-01 / Pitfall 5 RESOLVED — TWO federated credentials (deploy=:environment:production, whatif=:ref:refs/tags/prod-*); what-if kept as a separate pre-approval job to preserve diff visibility before manual approval.
+- [Phase ?]: 03-05: Rollback = tag-redeploy (re-run cd-prod.yml on previous prod-* tag), NOT slot-swap — B1 has no slots (slots need S1+ → breaks AUD-04 single-instance pin).
 
 ### Pending Todos
 
@@ -120,6 +123,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-14T21:27:13.376Z
-Stopped at: Completed 02-04-PLAN.md
+Last session: 2026-06-15T00:00:00.000Z
+Stopped at: Completed 03-05-PLAN.md (Task 3 live execution = deferred operator checkpoint)
 Resume file: None
