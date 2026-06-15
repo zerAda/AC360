@@ -157,5 +157,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 2. Production Infrastructure Provisioning | 6/6 | Complete   | 2026-06-14 |
 | 3. Backend Deploy & Observability | 5/5 | Complete   | 2026-06-15 |
 | 4. Copilot Studio Production Publish | 2/2 | Complete   | 2026-06-15 |
-| 5. RGPD & Security Evidence Pack | 1/6 | In Progress|  |
+| 5. RGPD & Security Evidence Pack | 2/6 | In Progress|  |
 | 6. Controlled E2E, Go/No-Go & Team Rollout | 0/TBD | Not started | - |
