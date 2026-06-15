@@ -112,6 +112,9 @@ param alertEmails array = []
 @description('URL du webhook Teams pour le groupe d\'actions (sink alertes + budget — OBS-04). Vide => pas de webhook. Power Automate/Workflows (connecteurs O365 legacy en retrait).')
 param teamsWebhookUrl string = ''
 
+@description('RGP-04 : rétention Log Analytics (jours), transmise au module observability. Courte EU-region délibérée (data-minimization). 90 j par défaut.')
+param logAnalyticsRetentionDays int = 90
+
 var storageName = '${namePrefix}${environmentName}store'
 var kvName = '${namePrefix}-kv-${environmentName}'
 var funcName = '${namePrefix}-func-${environmentName}'
@@ -652,6 +655,7 @@ module observability 'observability.bicep' = {
     gatewayName: gatewayName
     alertEmails: alertEmails
     teamsWebhookUrl: teamsWebhookUrl
+    logAnalyticsRetentionDays: logAnalyticsRetentionDays
   }
 }
 

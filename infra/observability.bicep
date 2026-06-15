@@ -38,6 +38,11 @@ param alertEmails array = []
 @description('URL du webhook Teams (sink FinOps + alertes — OBS-04). Power Automate / Workflows (les connecteurs O365 legacy sont en cours de retrait). Vide => pas de webhookReceiver.')
 param teamsWebhookUrl string = ''
 
+@description('RGP-04 : rétention Log Analytics (jours). Courte EU-region délibérée (data-minimization). 90 j par défaut.')
+@minValue(30)
+@maxValue(730)
+param logAnalyticsRetentionDays int = 90
+
 // Noms de ressources — convention main.bicep (var <name> = '${namePrefix}-<kind>-${environmentName}').
 var lawName = '${namePrefix}-law-${environmentName}'
 var appiName = '${namePrefix}-appi-${environmentName}'
@@ -52,7 +57,7 @@ resource law 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   location: location
   properties: {
     sku: { name: 'PerGB2018' }
-    retentionInDays: 30 // RGP-04 : rétention EU courte délibérée
+    retentionInDays: logAnalyticsRetentionDays // RGP-04 : rétention EU courte délibérée (défaut 90 j)
   }
 }
 
