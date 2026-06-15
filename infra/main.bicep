@@ -75,6 +75,12 @@ param containerSoftDeleteDays int = 7
 @description('Fenêtre Point-in-Time Restore en jours. DOIT être < fenêtre soft-delete (INF-09 / RESEARCH A6).')
 param pointInTimeRestoreDays int = 6
 
+@description('RGP-03 : rétention (jours) des artefacts job/OCR/FIC avant suppression serveur (lifecycle).')
+param jobRetentionDays int = 30
+
+@description('RGP-03 : préfixes blob des artefacts job/OCR/FIC ciblés par la règle de suppression. Scopé pour NE JAMAIS toucher les blobs de contrôle Durable.')
+param jobBlobPrefixes array = [ 'jobs/' ]
+
 // --------------------------------------------------------------------------
 // Params PROD périmètre réseau (INF-08). Défaut staging-off : la section réseau
 // entière est conditionnée par enablePrivateNetworking (staging reste intact).
@@ -198,6 +204,38 @@ resource blobSvc 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
     deleteRetentionPolicy: { enabled: true, days: blobSoftDeleteDays }
     containerDeleteRetentionPolicy: { enabled: true, days: containerSoftDeleteDays }
     restorePolicy: { enabled: true, days: pointInTimeRestoreDays }
+  }
+}
+
+// RGP-03 : suppression serveur des artefacts job/OCR/FIC à jobRetentionDays jours.
+// prefixMatch SCOPE la règle aux seuls blobs d'artefacts (jamais les blobs de contrôle
+// /lease Durable du même compte — RESEARCH Pitfall 3). name DOIT valoir 'default'.
+// Coexiste avec blobSvc (soft-delete/PITR/versioning) ; les actions snapshot/version
+// purgent aussi les copies retenues à la même fenêtre.
+resource storageLifecycle 'Microsoft.Storage/storageAccounts/managementPolicies@2023-05-01' = {
+  parent: storage
+  name: 'default'
+  properties: {
+    policy: {
+      rules: [
+        {
+          enabled: true
+          name: 'rgp03-delete-job-artifacts'
+          type: 'Lifecycle'
+          definition: {
+            filters: {
+              blobTypes: [ 'blockBlob' ]
+              prefixMatch: jobBlobPrefixes
+            }
+            actions: {
+              baseBlob: { delete: { daysAfterModificationGreaterThan: jobRetentionDays } }
+              snapshot: { delete: { daysAfterCreationGreaterThan: jobRetentionDays } }
+              version: { delete: { daysAfterCreationGreaterThan: jobRetentionDays } }
+            }
+          }
+        }
+      ]
+    }
   }
 }
 

@@ -291,3 +291,19 @@ if _DURABLE_AVAILABLE:
     @app.activity_trigger(input_name="payload")
     def activity_run_audit(payload: dict) -> dict:
         return _run_activity(payload)
+
+    @app.timer_trigger(schedule="0 0 2 * * *", arg_name="timer", run_on_startup=False)
+    def prune_job_artifacts(timer) -> None:
+        """RGP-03 — purge quotidienne (02:00 UTC) des artefacts locaux JOBS_BASE_DIR.
+
+        Les règles de cycle de vie du Storage ne touchent pas le FS local de la VM ;
+        cette purge âgée supprime les documents/OCR/FIC > JOB_RETENTION_DAYS jours.
+        Voir docs/governance/RGP-03-retention-policy.md.
+        """
+        from jobs_ttl import prune_jobs_dir
+
+        base = os.environ.get("JOBS_BASE_DIR", "jobs")
+        days = int(os.environ.get("JOB_RETENTION_DAYS", "30"))
+        deleted = prune_jobs_dir(base, max_age_seconds=days * 86400)
+        logging.info("RGP-03 prune: %d artefact(s) supprimé(s) (> %d j) sous %s",
+                     len(deleted), days, base)
