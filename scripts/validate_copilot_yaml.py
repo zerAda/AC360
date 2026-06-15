@@ -20,6 +20,13 @@ RAG_REQUIRED_MODERATION = "High"
 # Artefacts dev/POC interdits dans les instructions de nœud d'un produit premium.
 DEV_ARTIFACT_MARKERS = ("- dev", "dans ce poc", "client alpha", "client beta", "client gamma")
 
+# Garde-fous agent (PUB-04) : assertions hors-ligne sur settings.mcs.yml.
+SETTINGS_FILE = "settings.mcs.yml"
+# Bascule staging→prod (PUB-02) : hôte prod déterministe (infra/main.bicep:112
+# + prod.parameters.json). L'hôte staging est interdit après la bascule.
+PROD_GATEWAY_HOST = "ac360-gateway-prod.azurewebsites.net"
+STAGING_GATEWAY_HOST = "ac360-gateway-staging.azurewebsites.net"
+
 
 def _walk_actions(actions):
     for act in actions or []:
@@ -99,6 +106,12 @@ def find_wiring_issues(data):
             for bad in KNOWN_BAD_GATEWAY_HOSTS:
                 if bad in url:
                     issues.append(f"HttpRequestAction vise un hôte mort/placeholder : {bad}")
+            # Fail-closed bascule (PUB-02) : aucun hôte staging résiduel en prod.
+            if STAGING_GATEWAY_HOST in url:
+                issues.append(
+                    "HttpRequestAction vise encore l'hôte staging "
+                    f"({STAGING_GATEWAY_HOST}) — bascule prod incomplète"
+                )
         elif kind == "SendActivity":
             text = str(act.get("activity", "")).lower()
             for marker in STUB_MARKERS:
@@ -137,11 +150,44 @@ def find_rag_node_issues(data):
     return issues
 
 
+def find_agent_guardrail_issues(data, filename):
+    """Garde-fous agent (PUB-04), uniquement sur settings.mcs.yml.
+
+    Exige, dans configuration.aISettings :
+    - useModelKnowledge explicitement False (absent/None = échec : la mise à la
+      terre « sources configurées uniquement » doit être déclarée, pas implicite).
+      Réf. : learn.microsoft.com/microsoft-copilot-studio/knowledge-copilot-studio
+    - contentModeration == High (filtre Responsible-AI plein débit sur entrée
+      ET sortie). Réf. : .../faqs-generative-answers
+
+    Liste vide = OK. N'analyse que SETTINGS_FILE ; tout autre fichier renvoie [].
+    """
+    if filename != SETTINGS_FILE or not isinstance(data, dict):
+        return []
+    issues = []
+    ai = (data.get("configuration") or {}).get("aISettings") or {}
+    if not isinstance(ai, dict):
+        return ["configuration.aISettings absent ou mal formé dans settings.mcs.yml"]
+    if ai.get("useModelKnowledge") is not False:
+        issues.append(
+            "useModelKnowledge doit être explicitement false "
+            "(mise à la terre sur les sources configurées uniquement)"
+        )
+    moderation = str(ai.get("contentModeration", "")).strip()
+    if moderation != RAG_REQUIRED_MODERATION:
+        issues.append(
+            f"contentModeration agent = '{moderation}' "
+            f"(exigé : {RAG_REQUIRED_MODERATION})"
+        )
+    return issues
+
+
 def validate_all():
     ok, ko = [], []
     rag_ko = []  # (filename, variable, issue)
     wiring_ko = []  # (filename, issue)
     moderation_ko = []  # (filename, issue)
+    guardrail_ko = []  # (filename, issue)
     if not COPILOT_ROOT.exists():
         print(f"[ECHEC] Le répertoire {COPILOT_ROOT} n'existe pas.")
         sys.exit(1)
@@ -160,6 +206,8 @@ def validate_all():
                     wiring_ko.append((yml_file.name, issue))
                 for issue in find_rag_node_issues(data):
                     moderation_ko.append((yml_file.name, issue))
+                for issue in find_agent_guardrail_issues(data, yml_file.name):
+                    guardrail_ko.append((yml_file.name, issue))
         except yaml.YAMLError as e:
             ko.append((yml_file.name, str(e)[:120]))
         except Exception as e:
@@ -205,7 +253,17 @@ def validate_all():
     print("")
     print(f"Résultat modération : {len(moderation_ko)} KO")
 
-    if ko or rag_ko or wiring_ko or moderation_ko:
+    print("")
+    print("=== Contrôle garde-fous agent (useModelKnowledge / contentModeration) ===")
+    if guardrail_ko:
+        for name, issue in guardrail_ko:
+            print(f"  [KO]  {name} -> {issue}")
+    else:
+        print("  [OK]  Garde-fous agent conformes (useModelKnowledge=false, modération High).")
+    print("")
+    print(f"Résultat garde-fous : {len(guardrail_ko)} KO")
+
+    if ko or rag_ko or wiring_ko or moderation_ko or guardrail_ko:
         print("\n[ECHEC] Validation Copilot Studio en échec.")
         sys.exit(1)
     elif not ok:
