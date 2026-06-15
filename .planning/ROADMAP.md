@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Deep Code Audit & Critical Fixes** - Re-validate hardening under prod (multi-worker) topology and land launch-blocking code fixes in the repo (completed 2026-06-13)
 - [x] **Phase 2: Production Infrastructure Provisioning** - Stand up `rg-ac360-prod` in an EU region with corrected SKUs, identity, secrets, and minimal network hardening (completed 2026-06-14)
 - [x] **Phase 3: Backend Deploy & Observability** - Deploy the fixed backend via a real prod CD pipeline with monitoring, alerting, and five solo-operator runbooks live (completed 2026-06-15)
-- [ ] **Phase 4: Copilot Studio Production Publish** - Publish the hardened agent to Teams 1:1 with rebound prod connections, SSO, and validated live guardrails
+- [x] **Phase 4: Copilot Studio Production Publish** - Publish the hardened agent to Teams 1:1 with rebound prod connections, SSO, and validated live guardrails (completed 2026-06-15)
 - [ ] **Phase 5: RGPD & Security Evidence Pack** - Produce the compliance and security-review evidence required before any real user or client data
 - [ ] **Phase 6: Controlled E2E, Go/No-Go & Team Rollout** - Prove the full stack against real services on synthetic data, then gate and roll out to the team
 
@@ -111,7 +111,7 @@ Plans:
 Plans:
 
 - [x] 04-01-PLAN.md — Wave 1 (Wave 0 RED first): pytest file + 3 offline validator assertions (useModelKnowledge=false, agent contentModeration=High, staging-host fail-closed) + rebind 7 gateway URLs staging→prod (PUB-02, PUB-04)
-- [ ] 04-02-PLAN.md — Wave 2: publish runbook (manual Entra V2 + Teams SSO, connection rebind, 1:1-only) + GUARDRAILS_VALIDATION.md evidence doc + blocking operator checkpoint for the live publish/SSO/install/known-blocked-prompt (PUB-01/02/03/04/05)
+- [x] 04-02-PLAN.md — Wave 2: publish runbook (manual Entra V2 + Teams SSO, connection rebind, 1:1-only) + GUARDRAILS_VALIDATION.md evidence doc + blocking operator checkpoint for the live publish/SSO/install/known-blocked-prompt (PUB-01/02/03/04/05)
 
 **UI hint**: yes
 **Risks**: Copilot Studio publish UI changes fast (MEDIUM research confidence) — validate the publish checklist against current Microsoft Learn at execution time; SSO changes can take hours to propagate, so publish off-hours.
@@ -156,6 +156,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 1. Deep Code Audit & Critical Fixes | 7/7 | Complete   | 2026-06-13 |
 | 2. Production Infrastructure Provisioning | 6/6 | Complete   | 2026-06-14 |
 | 3. Backend Deploy & Observability | 5/5 | Complete   | 2026-06-15 |
-| 4. Copilot Studio Production Publish | 1/2 | In Progress|  |
+| 4. Copilot Studio Production Publish | 2/2 | Complete   | 2026-06-15 |
 | 5. RGPD & Security Evidence Pack | 0/TBD | Not started | - |
 | 6. Controlled E2E, Go/No-Go & Team Rollout | 0/TBD | Not started | - |

@@ -55,11 +55,11 @@ Go-live gate (P1). Each maps to a roadmap phase.
 
 ### Copilot Studio Production Publish
 
-- [ ] **PUB-01**: Production Copilot Studio environment confirmed in an EU region
+- [x] **PUB-01**: Production Copilot Studio environment confirmed in an EU region
 - [x] **PUB-02**: Connection references rebound to prod endpoints; action endpoint set to the prod gateway URL with the prod API audience
-- [ ] **PUB-03**: Teams SSO reconfigured and the agent republished
+- [x] **PUB-03**: Teams SSO reconfigured and the agent republished
 - [x] **PUB-04**: Live guardrails validated against the hardened repo (`useModelKnowledge=false`, uniform High moderation, validator gate)
-- [ ] **PUB-05**: Agent published to Teams for the target team as a 1:1 personal install (OBO + SharePoint RAG require 1:1 chats)
+- [x] **PUB-05**: Agent published to Teams for the target team as a 1:1 personal install (OBO + SharePoint RAG require 1:1 chats)
 
 ### Security Review Evidence
 
