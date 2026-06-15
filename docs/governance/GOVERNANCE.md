@@ -32,6 +32,6 @@ La cible de posture de sécurité d'AC360 (à atteindre avant production) exige 
 
 ## 4. Politique de Traitement des Données (RGPD)
 
-- **Pas de Rétention** : Les documents téléchargés localement pour traitement (OCR) sont effacés immédiatement à la fin du pipeline (`run_audit_pipeline.ps1` Phase 5).
+- **Rétention bornée (30 jours)** : Les artefacts contenant potentiellement de la PII (documents téléchargés pour OCR, sorties OCR, brouillons FIC) sont conservés **30 jours** puis supprimés, à deux points d'application : la politique de cycle de vie Storage côté serveur (`managementPolicies`, `infra/main.bicep`) et le timer Functions `prune_jobs_dir`. Les journaux/télémétrie sont conservés **90 jours** (Log Analytics). La **fenêtre d'effacement effective est d'environ 37 jours** (soft-delete/versioning, arbitrage sécurité-opérationnelle assumé). **Sources canoniques** : `docs/governance/RGP-03-retention-policy.md` (artefacts) et `docs/governance/RGP-04-pii-in-logs-statement.md` (journaux) — ce document s'y réfère et n'introduit aucune autre valeur de rétention.
 - **Logs Anonymisés** : L'API FastAPI utilise `safe_logger.py` pour masquer tout numéro de sécurité sociale ou donnée financière potentiellement captée.
 - **Accès Délégué (Entra ID)** : L'IA ne voit *jamais* de documents que l'utilisateur n'aurait pas le droit d'ouvrir lui-même.
