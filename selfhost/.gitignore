@@ -1,0 +1,6 @@
+# Secrets locaux (générés par scripts/gen-secrets.sh) — NE JAMAIS committer.
+.env
+.env.nginx
+
+# Sauvegardes locales (scripts/backup.sh)
+backups/
