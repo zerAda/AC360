@@ -396,7 +396,12 @@ Thread `logAnalyticsRetentionDays` from `main.bicep` into the `observability` mo
 | A4 | 90-day Log Analytics retention is within the free workspace allowance and acceptable to the DPO as "deliberately short EU retention" | RGP-04 | If DPO wants shorter/longer or per-table differentiation, adjust the param / add a tables resource |
 | A5 | Webtest `Locations` EU IDs in observability.bicep are correct EU points | RGP-06 | Already flagged `[ASSUMED]` in-repo; operator verifies at provisioning |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> All three are dispositioned in the plans; none block the autonomous artifacts.
+> - Q1 RESOLVED: parameterize `jobBlobPrefixes` (Plan 05-01); the timer cleaner `prune_jobs_dir` is the primary RGP-03 control for VM-local artifacts; the storage `managementPolicies` rule (prefixMatch-scoped, never Durable control blobs) covers blob-persisted output. Exact prefix confirmed at provisioning.
+> - Q2 RESOLVED: ship workspace 90-day retention now (Plan 05-02); per-table override documented as a DPO option (RGP-04).
+> - Q3 RESOLVED: DPIA + Art. 30 drafted autonomously (Plan 05-05); DPO sign-off is the locked external checkpoint (hard gate before Phase 6).
 
 1. **Actual job-artifact blob container/prefix** — What container/prefix do job/OCR/FIC blobs land in (vs. Durable control blobs)? Needed to scope `prefixMatch` correctly.
    - What we know: artifacts are written to `JOBS_BASE_DIR` (local FS) by `function_app.py`; Durable uses the same account for state.
