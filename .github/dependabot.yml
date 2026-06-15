@@ -9,6 +9,12 @@ updates:
     labels:
       - "dependencies"
       - "security"
+    # SEC-04 : regrouper les mises à jour de sécurité pour traitement prioritaire
+    groups:
+      security:
+        applies-to: security-updates
+        patterns:
+          - "*"
 
   - package-ecosystem: "pip"
     directory: "/azure_functions"
@@ -17,6 +23,11 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
+    groups:
+      security:
+        applies-to: security-updates
+        patterns:
+          - "*"
 
   - package-ecosystem: "pip"
     directory: "/scripts"
@@ -26,6 +37,11 @@ updates:
     labels:
       - "dependencies"
       - "security"
+    groups:
+      security:
+        applies-to: security-updates
+        patterns:
+          - "*"
 
   # Actions GitHub (CI/CD)
   - package-ecosystem: "github-actions"
