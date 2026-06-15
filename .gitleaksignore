@@ -1,0 +1,15 @@
+# Faux positifs VÉRIFIÉS, mis en baseline pour le scan secrets (gitleaks).
+# En mode CI (`--no-git`), l'empreinte est : chemin:règle:ligne.
+# Chaque entrée est un NON-secret confirmé ; tout le reste reste scanné.
+
+# GUID PUBLIC du rôle intégré Azure « Key Vault Secrets User » (constante documentée
+# par Microsoft, identique dans tous les tenants — ce n'est pas un secret).
+infra/main.bicep:generic-api-key:45
+
+# Valeur FACTICE de test : TENANT_ID tout-à-zéro (cf. commentaire « Valeurs factices »
+# dans conftest) servant uniquement à satisfaire le fail-fast à l'import.
+tests/backend/conftest.py:entra-tenant-id:23
+
+# Secret FACTICE volontaire servant à tester la redaction des logs
+# (variable nommée FAKE_SECRET_VALUE).
+tests/backend/test_safe_logger_redaction.py:generic-api-key:23

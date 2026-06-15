@@ -61,9 +61,12 @@ regexes = [
   '''TODO'''
 ]
 
+# NB : dans gitleaks, les entrées de `paths` sont des EXPRESSIONS RÉGULIÈRES
+# (pas des globs). "*.md" est un regex invalide (répétition sans atome) et fait
+# planter gitleaks (exit 2). On utilise donc la forme regex "\.md$".
 paths = [
-  ".git",
-  "node_modules",
-  "*.md",
-  "tests/red_team"
+  '''\.git''',
+  '''node_modules''',
+  '''\.md$''',
+  '''tests/red_team'''
 ]
