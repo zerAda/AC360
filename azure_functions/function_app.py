@@ -45,6 +45,18 @@ from audit_pipeline import AuditDeps, run_audit  # noqa: E402
 # l'orchestration). Voir Plan 01-06 / RESEARCH §AUD-07 (Open Q2).
 from audit_trail import emit_document_access as _emit_document_access  # noqa: E402,F401
 
+# OBS-01 — exportateur Azure Monitor (OpenTelemetry) côté worker Functions, via la
+# MÊME fabrique gatée que la passerelle (scripts/telemetry.setup_telemetry) : elle
+# est inerte hors prod (early-return quand le gate AppInsights est fermé), lazy-import
+# du SDK (n'échoue pas si azure-monitor-opentelemetry est absent), et conserve la
+# redaction AUD-06 via RedactingSpanProcessor. host.json telemetryMode=OpenTelemetry +
+# l'app-setting PYTHON_APPLICATIONINSIGHTS_ENABLE_TELEMETRY (main.bicep) complètent le câblage.
+try:  # pragma: no cover - filet défensif ; jamais lever à l'import du worker
+    from telemetry import setup_telemetry as _setup_telemetry  # noqa: E402
+    _setup_telemetry()
+except Exception:  # pragma: no cover
+    pass
+
 
 # ---------------------------------------------------------------------------
 # Implémentations réelles des I/O (exécutées côté activités Durable uniquement)
