@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Depends, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
@@ -20,6 +20,7 @@ from feature_flags import is_allowed, blocked_message, hash_id
 from usage_tracker import track
 from graph_obo import acquire_obo_graph_token_retrying, obo_configured
 from audit_trail import emit_document_access
+from telemetry import setup_telemetry
 
 
 def _redacted_detail(generic: str, *sensitive: object) -> str:
@@ -80,6 +81,18 @@ if AZURE_FUNCTION_HOST.endswith("/api"):
     AZURE_FUNCTION_HOST = AZURE_FUNCTION_HOST[: -len("/api")]
 AZURE_DURABLE_KEY = os.environ.get("AZURE_DURABLE_KEY", "") or AZURE_FUNCTION_KEY
 http_client = httpx.AsyncClient(limits=httpx.Limits(max_keepalive_connections=50, max_connections=200))
+
+
+@app.on_event("startup")
+async def startup_event():
+    # Câble l'exportateur Azure Monitor UNE SEULE FOIS au démarrage, avant de
+    # servir le trafic (OBS-01). setup_telemetry est gate-inerte hors prod
+    # (early-return quand le gate AppInsights est fermé) ; on l'enveloppe malgré
+    # tout dans try/except pour qu'une misconfig ne lève JAMAIS dans le démarrage.
+    try:
+        setup_telemetry()
+    except Exception:  # pragma: no cover - filet défensif au démarrage
+        pass
 
 
 @app.on_event("shutdown")
@@ -677,6 +690,31 @@ def health_check():
         "auth": "entra-id-jwt",
         "orchestration": "azure-durable-functions"
     }
+
+
+@app.get("/ready")
+async def readiness(oid: str = Depends(verify_azure_ad_token)):
+    """Sonde de disponibilité Entra-gatée (OBS-03).
+
+    Distincte de ``/health`` (liveness anonyme 200, cible du test de
+    disponibilité Standard). ``/ready`` exige un jeton Entra valide (401 sinon),
+    et NE retourne QUE des booléens coarse + une chaîne de statut coarse :
+    aucune valeur de secret, aucune chaîne d'exception ne fuit dans le corps
+    (même posture que ``_redacted_detail`` — T-03-04). 200 quand toutes les
+    dépendances sont résolues, 503 (status "degraded") sinon.
+    """
+    checks: dict[str, bool] = {}
+    # 1) Référence Key Vault résolue ? Le secret OBO ne doit PLUS être le
+    #    littéral @Microsoft.KeyVault(...) au runtime.
+    obo = os.environ.get("OBO_CLIENT_SECRET", "")
+    checks["keyvault_ref"] = bool(obo) and not obo.startswith("@Microsoft.KeyVault")
+    # 2) Accessibilité aval — booléen coarse uniquement, aucune PII, aucun secret.
+    checks["function_host"] = bool(os.environ.get("AZURE_FUNCTION_URL"))
+    ready = all(checks.values())
+    return JSONResponse(
+        status_code=200 if ready else 503,
+        content={"status": "ready" if ready else "degraded", "checks": checks},
+    )
 
 
 @app.get("/api/audit/{job_id}/status")
