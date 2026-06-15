@@ -50,7 +50,15 @@ regex = '''(?i)(AccountKey|storageKey).*[A-Za-z0-9+/]{86}=='''
 tags = ["azure", "storage"]
 
 [allowlist]
+description = "Faux positifs vérifiés + placeholders + fichiers non scannés"
+
+# `regexTarget = "line"` : les regex ci-dessous sont confrontées à la LIGNE
+# complète du finding (et non au seul `secret` extrait). Cela permet de cibler
+# précisément une VALEUR non-secrète, où qu'elle apparaisse, sans avoir à
+# aveugler un fichier entier ni à dépendre d'une empreinte fragile.
+regexTarget = "line"
 regexes = [
+  # --- Placeholders / gabarits (jamais de vrai secret) ---
   '''\$\{.*\}''',
   '''placeholder''',
   '''votre-''',
@@ -58,7 +66,21 @@ regexes = [
   '''\*\*\*''',
   '''example\.com''',
   '''<REPLACE_ME>''',
-  '''TODO'''
+  '''TODO''',
+
+  # --- FAUX POSITIFS VÉRIFIÉS (remplacent l'ancien .gitleaksignore) ----------
+  # Chaque valeur ci-dessous est un NON-secret confirmé ; tout le reste de ces
+  # fichiers reste scanné normalement. La suppression est donc explicite et
+  # auditable (pas de baseline/empreinte opaque).
+  #
+  # 1) GUID PUBLIC du rôle Azure intégré « Key Vault Secrets User » : constante
+  #    documentée par Microsoft, identique dans tous les tenants (infra/main.bicep).
+  '''4633458b-17de-408a-b874-0445c86b69e6''',
+  # 2) TENANT_ID FACTICE tout-à-zéro, sert au fail-fast à l'import (tests/backend/conftest.py).
+  '''00000000-0000-0000-0000-000000000000''',
+  # 3) Secret FACTICE volontaire pour tester la redaction des logs
+  #    (variable FAKE_SECRET_VALUE — tests/backend/test_safe_logger_redaction.py).
+  '''A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S9t0''',
 ]
 
 # NB : dans gitleaks, les entrées de `paths` sont des EXPRESSIONS RÉGULIÈRES
@@ -68,5 +90,11 @@ paths = [
   '''\.git''',
   '''node_modules''',
   '''\.md$''',
-  '''tests/red_team'''
+  '''tests/red_team''',
+  # Fichiers d'environnement : NE JAMAIS scanner. En mode CI (`--no-git`) le
+  # scan parcourt le système de fichiers ; sans cette règle le `.env` LOCAL d'un
+  # développeur (gitignoré, mais présent sur disque) remonterait en "fuite".
+  # Couvre .env, .env.local, .env.nginx, selfhost/.env, etc. (les gabarits
+  # `env.template` / `.env.example` ne contiennent que des placeholders).
+  '''(^|/)\.env(\..*)?$''',
 ]
