@@ -110,7 +110,7 @@ Plans:
 **Plans**: 2 plans
 Plans:
 
-- [ ] 04-01-PLAN.md — Wave 1 (Wave 0 RED first): pytest file + 3 offline validator assertions (useModelKnowledge=false, agent contentModeration=High, staging-host fail-closed) + rebind 7 gateway URLs staging→prod (PUB-02, PUB-04)
+- [x] 04-01-PLAN.md — Wave 1 (Wave 0 RED first): pytest file + 3 offline validator assertions (useModelKnowledge=false, agent contentModeration=High, staging-host fail-closed) + rebind 7 gateway URLs staging→prod (PUB-02, PUB-04)
 - [ ] 04-02-PLAN.md — Wave 2: publish runbook (manual Entra V2 + Teams SSO, connection rebind, 1:1-only) + GUARDRAILS_VALIDATION.md evidence doc + blocking operator checkpoint for the live publish/SSO/install/known-blocked-prompt (PUB-01/02/03/04/05)
 
 **UI hint**: yes
@@ -156,6 +156,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 1. Deep Code Audit & Critical Fixes | 7/7 | Complete   | 2026-06-13 |
 | 2. Production Infrastructure Provisioning | 6/6 | Complete   | 2026-06-14 |
 | 3. Backend Deploy & Observability | 5/5 | Complete   | 2026-06-15 |
-| 4. Copilot Studio Production Publish | 0/2 | Not started | - |
+| 4. Copilot Studio Production Publish | 1/2 | In Progress|  |
 | 5. RGPD & Security Evidence Pack | 0/TBD | Not started | - |
 | 6. Controlled E2E, Go/No-Go & Team Rollout | 0/TBD | Not started | - |
