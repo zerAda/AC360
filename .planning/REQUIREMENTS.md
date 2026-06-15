@@ -63,20 +63,20 @@ Go-live gate (P1). Each maps to a roadmap phase.
 
 ### Security Review Evidence
 
-- [ ] **SEC-01**: Architecture + data-flow diagram showing PII flow and trust boundaries
-- [ ] **SEC-02**: AuthN/AuthZ description (Entra SSO, JWT RS256/JWKS, OBO scope, IDOR, read-only) linked to existing tests
-- [ ] **SEC-03**: Threat-coverage matrix mapping OWASP/LLM risks → mitigation → test
-- [ ] **SEC-04**: Dependency/vuln posture documented (Dependabot enabled; PyJWT/deltalake pin policy)
-- [ ] **SEC-05**: Accepted-risk / known-issues register (CONCERNS.md items classified must-fix vs accepted)
+- [x] **SEC-01**: Architecture + data-flow diagram showing PII flow and trust boundaries
+- [x] **SEC-02**: AuthN/AuthZ description (Entra SSO, JWT RS256/JWKS, OBO scope, IDOR, read-only) linked to existing tests
+- [x] **SEC-03**: Threat-coverage matrix mapping OWASP/LLM risks → mitigation → test
+- [x] **SEC-04**: Dependency/vuln posture documented (Dependabot enabled; PyJWT/deltalake pin policy)
+- [x] **SEC-05**: Accepted-risk / known-issues register (CONCERNS.md items classified must-fix vs accepted)
 
 ### RGPD / Compliance Evidence
 
 - [ ] **RGP-01**: Record of processing (Art. 30 entry) created with the DPO
 - [ ] **RGP-02**: DPIA completed, or a documented reasoned decision not to (CNIL ≥2-of-9 criteria assessment)
-- [ ] **RGP-03**: Data-retention policy for jobs/OCR/FIC artifacts, with enforcement (Storage lifecycle rule + `JOBS_BASE_DIR` TTL cleanup)
-- [ ] **RGP-04**: PII-in-logs handling statement + App Insights telemetry processor; deliberate short EU-region log retention
-- [ ] **RGP-05**: Data-subject request (DSR) procedure documented
-- [ ] **RGP-06**: EU data-residency confirmed (Fabric capacity region, M365 tenant geo, Power Platform env region, Bicep locations)
+- [x] **RGP-03**: Data-retention policy for jobs/OCR/FIC artifacts, with enforcement (Storage lifecycle rule + `JOBS_BASE_DIR` TTL cleanup)
+- [x] **RGP-04**: PII-in-logs handling statement + App Insights telemetry processor; deliberate short EU-region log retention
+- [x] **RGP-05**: Data-subject request (DSR) procedure documented
+- [x] **RGP-06**: EU data-residency confirmed (Fabric capacity region, M365 tenant geo, Power Platform env region, Bicep locations)
 
 ### Controlled Go-Live
 
