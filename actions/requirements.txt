@@ -25,7 +25,10 @@ slowapi==0.1.9
 # Vérification de JWT OIDC (RS256/ES256 + JWKS) pour l'identité d'appelant
 # fédérée (ex. Entra ID). Optionnel : la voie HS256 est gérée nativement sans
 # dépendance ; PyJWT n'est requis QUE pour les signatures asymétriques.
-PyJWT==2.10.1
+# Intégration : relevé de 2.10.1 (proposé par WS2) à 2.13.0 pour purger 12 CVE
+# disclosed depuis (PYSEC-2025-183, PYSEC-2026-120/175/176/177/178/179) — gate
+# pip-audit --strict = 0 CVE. API compatible (vérif JWT inchangée).
+PyJWT==2.13.0
 # --- Intégration (câblage WS6 ↔ WS2) -----------------------------------------
 # Endpoint /metrics Prometheus dans actions/app/main.py (cf. docs/OBSERVABILITY.md
 # §5). Pin sûr (0 CVE connue). Permet l'instrumentation HTTP + FinOps + kill-switch.
