@@ -82,6 +82,20 @@ if [ -z "$(get_val S3_AWS_SECRET_ACCESS_KEY)" ]; then
   set_val S3_AWS_SECRET_ACCESS_KEY "$(get_val MINIO_ROOT_PASSWORD)"; echo "  + S3_AWS_SECRET_ACCESS_KEY = MINIO_ROOT_PASSWORD"
 fi
 
+# --- WS2 ---
+# Secrets de la couche sécurité/RGPD d'onix-actions (cf. docs/SECURITY_RGPD_ACTIONS.md).
+echo "Génération des secrets WS2 (sécurité/RGPD onix-actions) :"
+# Clé ADMIN distincte (en-tête X-Admin-Key) : OBLIGATOIRE par défaut (fail-closed)
+# pour /admin/*. Séparer la clé admin de la clé de service évite qu'une fuite de
+# la clé d'appel donne le contrôle d'administration (kill-switch, blocage).
+ensure ONIX_ACTIONS_ADMIN_KEY          rand 48
+# Secret HMAC d'identité d'appelant (signature par appel : X-Onix-Signature).
+# Lie identité + horodatage + requête -> ni rejouable, ni transférable.
+ensure ONIX_ACTIONS_CALLER_HMAC_SECRET rand 48
+# Clé HMAC de chaînage du journal d'audit (admin_audit tamper-evident). Toute
+# altération d'une ligne casse la chaîne et devient détectable (/admin/audit/verify).
+ensure ONIX_ACTIONS_AUDIT_HMAC_KEY     rand 48
+
 chmod 600 "$ENV_FILE"
 echo "✓ Secrets prêts. Permissions $ENV_FILE → 600 (lecture/écriture propriétaire uniquement)."
 echo "  Sauvegardez ces secrets dans votre coffre (ex: Azure Key Vault / gestionnaire de mots de passe)."
