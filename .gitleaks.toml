@@ -13,6 +13,9 @@ paths = [
   '''(^|/)\.venv/''',          # virtualenv local de actions/ (gitignoré)
   '''(^|/)__pycache__/''',
   '''\.pyc$''',
+  # Overlay smoke-test kind mono-nœud : valeurs factices `dev*` documentées,
+  # JAMAIS utilisées en prod (le chart prod génère les secrets). Cf. HA_ACCEPTANCE.md.
+  '''deploy/k8s/onix-ha/values-kind-smoke\.yaml$''',
 ]
 # Valeur FACTICE de test (actions/tests/conftest.py) — non-secret confirmé.
 regexes = [

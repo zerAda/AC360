@@ -30,7 +30,7 @@ dimensions au vert** (3 avec astérisque honnête — détails et preuves :
 - 📊 **Observabilité** : `monitoring/` (Prometheus/Grafana + alertes) + CI bloquante (pytest/bandit/pip-audit/trivy) — [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md)
 - 🧪 **Garde-fous** : `tests/rag/` (red-team + éval + anti-régression du prompt) — [`docs/QA_GUARDRAILS.md`](docs/QA_GUARDRAILS.md)
 
-> Validation : **217 tests · red-team live 17/21 (qwen2.5:7b) · HA multi-réplica prouvée (PG/MinIO/Celery) · bandit 0 · pip-audit 0 CVE · gitleaks 0 · helm lint 0 · caddy validate OK**. Clôture des 3 réserves : [`docs/PARITE_ENTREPRISE.md`](docs/PARITE_ENTREPRISE.md).
+> Validation : **red-team live 21/21 (qwen2.5:7b, post-filtre déterministe) · HA multi-réplica prouvée + manifests validés server-side (vrai kube-apiserver) · pip-audit 0 CVE · bandit 0 · gitleaks 0 · helm lint 0 · caddy validate OK**. Clôture des 3 réserves : [`docs/PARITE_ENTREPRISE.md`](docs/PARITE_ENTREPRISE.md).
 
 ---
 

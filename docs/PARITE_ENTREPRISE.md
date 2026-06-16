@@ -18,12 +18,12 @@ page est **honnête** : elle distingue ce qui est **natif**, **par configuration
 | Connecteur SharePoint | 42 | ✅ **GO** ＊＊ | cloisonnement par groupe (`access-gateway/`) ; pages/tenant FR corrigés |
 | Architecture / HA | 28 | 🟢 **VERT by-design** ＊＊＊ | Helm HA (`helm lint` 0) — OpenSearch/Postgres/MinIO/Redis HA, HPA |
 
-**Validation globale (sandbox)** : **217 tests verts** (actions 70 + gateway 52 + RAG 95) + **red-team live 17/21 sur `qwen2.5:7b`** + modes **Postgres/MinIO/Celery** prouvés multi-réplica · bandit 0 H/M · **pip-audit 0 CVE** · gitleaks 0 · `compose config` (base/prod/monitoring) · `helm lint` 0 · `caddy validate` OK.
+**Validation globale (sandbox)** : tests étendus (actions 70 · gateway 52 · RAG **116** + postfiltre) + **red-team live 21/21 (100 %) sur `qwen2.5:7b`** + modes **Postgres/MinIO/Celery** prouvés multi-réplica + **manifests Helm validés server-side** (vrai kube-apiserver) · bandit 0 H/M · **pip-audit 0 CVE** · gitleaks 0 · `compose config` (base/prod/monitoring) · `helm lint` 0 · `caddy validate` OK.
 
-**Clôture des 3 astérisques (vague de fermeture — preuves réelles) :**
-- ＊ **Garde-fous → largement levé.** Red-team **live sur `qwen2.5:7b-instruct` = 81 % (17/21)**, **100 % sur les catégories critiques** (anti-injection, anti-révélation du prompt, anti-exfiltration) ; les 4 cas restants (lecture-seule / info absente) sont couverts par le **post-filtre déterministe** + le durcissement de prompt. *Reste* : E2E complet avec retrieval Onyx sur la stack déployée. (`docs/LIVE_GUARDRAILS_RESULTS.md`)
-- ＊＊ **RBAC → cadré.** Dossier de décision **chiffré** (`docs/DECISION_RBAC.md`) + **passerelle durcie** (fail-closed, audit HMAC, 52 tests). Le trimming **strict par-document** + révocation auto reste une **fonction Onyx EE/Cloud** (limite produit, pas un trou de notre code) ; le cloisonnement **par groupe** FOSS borne le risque.
-- ＊＊＊ **HA → code prouvé.** `actions` rendu **stateless** : partage d'état **multi-réplica prouvé** avec **vrais Postgres + MinIO + Celery** (kill-switch posé sur une réplique → 403 sur l'autre ; `.docx` généré par l'une → téléchargé par l'autre ; chaîne HMAC vérifiée + altération détectée). *Reste* : recette sur **cluster réel** (HPA sous charge, bascule). (`docs/STATELESS_ACTIONS.md`)
+**Clôture des 3 astérisques — preuves réelles renforcées :**
+- ＊ **Garde-fous → LEVÉ.** Red-team **live = 21/21 (100 %)** sur `qwen2.5:7b-instruct` : sécurité dure (anti-fuite prompt, non-exécution d'injection) **100 % dès le prompt seul** ; les 5 cas où un 7B « roleplay » (écriture, mémoire, citation omise) sont **rattrapés par un post-filtre déterministe non-injectable** (`tests/rag/guardrail_postfilter.py`). *Reste* : câblage du post-filtre dans le chemin de service + E2E retrieval Onyx. (`docs/LIVE_GUARDRAILS_RESULTS.md`)
+- ＊＊ **RBAC → cadré.** Décision **chiffrée** (`docs/DECISION_RBAC.md`) + gateway durcie (fail-closed, audit HMAC, 52 tests). Trimming **strict par-document** = **Onyx EE/Cloud** (limite produit) ; cloisonnement par groupe FOSS borne le risque.
+- ＊＊＊ **HA → prouvé au maximum hors cluster vivant.** Manifests du chart **validés server-side par un vrai kube-apiserver** (52 objets, CRD CNPG comprises ; CR invalide **rejetée**) + **multi-réplica stateless prouvé** (kill-switch sur un pod → 403 servi par l'autre via Postgres partagé). *Reste* : kubelet vivant (bloqué par l'**env cgroup v1**, pas le chart) + failover/charge réelle. (`docs/HA_ACCEPTANCE.md`)
 
 ## Matrice de parité
 
