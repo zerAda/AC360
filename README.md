@@ -16,6 +16,24 @@ Ce module est un **kit clé en main, auto-contenu et épinglé** : un seul fichi
 
 ---
 
+## Niveau entreprise — readiness (après remédiation par 6 workstreams)
+
+onix vise la **parité+ entreprise** avec un assistant commercial cloud (type
+Copilot Studio sur SharePoint), **en local et souverain**. Re-scoring : **8/8
+dimensions au vert** (3 avec astérisque honnête — détails et preuves :
+[`docs/PARITE_ENTREPRISE.md`](docs/PARITE_ENTREPRISE.md)).
+
+- 🔐 **Sécurité / RGPD** : authz par appel, redaction PII, DLP + anti-SSRF, audit HMAC, rétention/effacement art.17 — [`docs/SECURITY_RGPD_ACTIONS.md`](docs/SECURITY_RGPD_ACTIONS.md)
+- 🏢 **Prod / TLS** : `deploy/prod/` (Caddy HTTPS auto + OIDC Entra forcé + démarrage défaut-sûr) — [`docs/DEPLOY_PROD.md`](docs/DEPLOY_PROD.md)
+- ☸️ **HA / scale** : `deploy/k8s/onix-ha/` (Helm — OpenSearch/Postgres/MinIO/Redis HA, HPA, file Celery) — [`docs/HA_SCALING.md`](docs/HA_SCALING.md)
+- 🛡️ **RBAC** : `access-gateway/` (groupes Entra → Document Sets, deny-by-default) — [`docs/RBAC.md`](docs/RBAC.md)
+- 📊 **Observabilité** : `monitoring/` (Prometheus/Grafana + alertes) + CI bloquante (pytest/bandit/pip-audit/trivy) — [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md)
+- 🧪 **Garde-fous** : `tests/rag/` (red-team + éval + anti-régression du prompt) — [`docs/QA_GUARDRAILS.md`](docs/QA_GUARDRAILS.md)
+
+> Validation : **194 tests · bandit 0 · pip-audit 0 CVE · gitleaks 0 · helm lint 0 · caddy validate OK**.
+
+---
+
 ## Architecture
 
 ```

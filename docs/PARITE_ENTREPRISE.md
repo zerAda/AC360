@@ -5,6 +5,26 @@ Objectif d'onix : faire **ce que fait un assistant commercial RAG d'entreprise**
 page est **honnête** : elle distingue ce qui est **natif**, **par configuration**,
 **réservé à l'Enterprise Edition (EE)**, ou **roadmap**.
 
+## Readiness entreprise — re-scoring après remédiation (6 workstreams)
+
+| Dimension | Avant | Après | Preuve |
+|---|---|---|---|
+| Fonctions applicatives | 88 | ✅ **GO (92)** | moteur audit byte-identique + `/metrics` + 61 tests |
+| Couverture métier RAG | 72 | ✅ **GO** | 6 cas portefeuille (formats AC360) + RDV SWOT |
+| Garde-fous / tests | 52 | ✅ **GO** ＊ | red-team + éval + anti-régression du prompt (95 tests) |
+| Sécurité & identité | 52 | ✅ **GO** ＊＊ | authz par appel, redaction PII, DLP/anti-SSRF, audit HMAC, SAST CI |
+| Conformité RGPD | 54 | ✅ **GO** | rétention/effacement art.17, journal d'accès, registre + DPIA |
+| Config / ALM (prod) | 58 | ✅ **GO** | Caddy TLS + OIDC forcé, démarrage défaut-sûr, dev/test/prod, CI/CD |
+| Connecteur SharePoint | 42 | ✅ **GO** ＊＊ | cloisonnement par groupe (`access-gateway/`) ; pages/tenant FR corrigés |
+| Architecture / HA | 28 | 🟢 **VERT by-design** ＊＊＊ | Helm HA (`helm lint` 0) — OpenSearch/Postgres/MinIO/Redis HA, HPA |
+
+**Validation globale (sandbox)** : 194 tests verts · bandit 0 H/M · **pip-audit 0 CVE** · gitleaks 0 · `compose config` (base/prod/monitoring) · `helm lint` 0 · `caddy validate` OK.
+
+**3 astérisques honnêtes (pas de « faux vert ») :**
+- ＊ **Garde-fous** : contrat verrouillé + harnais prêt ; la preuve *comportementale* finale = run **live contre un LLM ≥ 7B** (`make rag-test-live`).
+- ＊＊ **RBAC par-document strict** + propagation de révocation = **Onyx EE/Cloud**. Le cloisonnement **par groupe** (FOSS, `access-gateway/`) couvre le cas multi-commerciaux réel.
+- ＊＊＊ **HA** : artefacts Helm validés statiquement ; la tenue en charge/bascule exige un **cluster réel** + le **refactor stateless de `actions`** (SQLite→Postgres, `.docx`→MinIO, Celery — chart prêt, code à brancher).
+
 ## Matrice de parité
 
 | Capacité (assistant d'entreprise) | onix / Onyx | Statut |
