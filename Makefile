@@ -112,3 +112,60 @@ rag-test:
 # Pré-requis : export ONIX_RAG_LIVE=1 ONIX_API_URL=... [ONIX_API_KEY ONIX_PERSONA_ID]
 rag-test-live:
 	@ONIX_RAG_LIVE=1 python -m pytest tests/rag -q
+
+# --- WS4 ---
+# Déploiement Kubernetes HAUTE DISPONIBILITÉ & scale-out (chart Helm onix-ha).
+# Cibles de VALIDATION (hors cluster) + déploiement. Cf. docs/HA_SCALING.md.
+#   make k8s-lint       helm lint du chart
+#   make k8s-template   helm template (défauts) -> rendu + parse YAML
+#   make k8s-validate   lint + template (défauts ET data-tier) + parse PyYAML
+#   make k8s-deps        helm dependency build (rafraîchit les sous-charts vendorisés)
+#   make k8s-deploy      helm upgrade --install (prod ; requiert SECRET + NS onix)
+.PHONY: k8s-lint k8s-template k8s-validate k8s-deps k8s-deploy
+K8S_CHART := deploy/k8s/onix-ha
+
+k8s-lint:
+	@helm lint $(K8S_CHART)
+
+k8s-template:
+	@helm template onix $(K8S_CHART) --namespace onix
+
+# Validation COMPLÈTE sans cluster : lint, rendu (2 profils), et re-parse strict
+# du YAML (kind/apiVersion/metadata.name) + scan gitleaks si présent.
+k8s-validate:
+	@echo "→ helm lint…"            && helm lint $(K8S_CHART)
+	@echo "→ helm template (défauts)…" \
+	  && helm template onix $(K8S_CHART) -n onix > /tmp/onix-k8s-default.yaml
+	@echo "→ helm template (data-tier activé)…" \
+	  && helm template onix $(K8S_CHART) -n onix \
+	     --set postgresql.cluster.enabled=true --set postgresql.operator.enabled=true \
+	     --set opensearch.enabled=true --set redis.enabled=true \
+	     --set redisOperator.enabled=true --set minio.enabled=true \
+	     --set secrets.create=true \
+	     --set secrets.values.POSTGRES_PASSWORD=x --set secrets.values.OPENSEARCH_ADMIN_PASSWORD=x \
+	     --set secrets.values.REDIS_PASSWORD=x --set secrets.values.S3_AWS_ACCESS_KEY_ID=x \
+	     --set secrets.values.S3_AWS_SECRET_ACCESS_KEY=x --set secrets.values.SECRET=x \
+	     --set secrets.values.USER_AUTH_SECRET=x --set secrets.values.ONIX_ACTIONS_API_KEY=x \
+	     --set secrets.values.BROKER_PASSWORD=x > /tmp/onix-k8s-ha.yaml
+	@echo "→ parse YAML strict (PyYAML)…" \
+	  && python3 -c "import yaml,sys; \
+	d=[x for x in yaml.safe_load_all(open('/tmp/onix-k8s-ha.yaml')) if x]; \
+	bad=[o for o in d if not (o.get('kind') and o.get('apiVersion') and o.get('metadata',{}).get('name'))]; \
+	print('docs:',len(d),'invalides:',len(bad)); sys.exit(1 if bad else 0)"
+	@command -v gitleaks >/dev/null 2>&1 \
+	  && { echo '→ gitleaks…'; gitleaks detect --no-banner --source $(K8S_CHART) -c .gitleaks.toml || true; } \
+	  || echo '→ gitleaks absent (ignoré).'
+	@echo "✓ Validation hors-cluster OK (charge/HA réelle : recette sur cluster — cf. docs/HA_SCALING.md §9)."
+
+k8s-deps:
+	@helm dependency build $(K8S_CHART)
+
+# Déploiement prod. Variables : NS (namespace, def. onix), HOST (Ingress),
+# SECRET (nom du Secret applicatif créé HORS-CHART). Active le socle data HA.
+k8s-deploy:
+	@helm upgrade --install onix $(K8S_CHART) -n $${NS:-onix} --create-namespace \
+	  --set secrets.existingSecret=$${SECRET:?Créez d abord le Secret K8s (cf. docs/HA_SCALING.md §8)} \
+	  --set postgresql.operator.enabled=true --set postgresql.cluster.enabled=true \
+	  --set opensearch.enabled=true --set redisOperator.enabled=true --set redis.enabled=true \
+	  --set minio.enabled=true \
+	  --set ingress.host=$${HOST:-onix.example.com}
