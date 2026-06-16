@@ -128,7 +128,16 @@ Plans:
   3. A data-retention policy for jobs/OCR/FIC artifacts is defined and enforced (Storage lifecycle rule + `JOBS_BASE_DIR` TTL cleanup), and a PII-in-logs handling statement plus App Insights telemetry processor with short EU-region retention is in place.
   4. A data-subject request (DSR) procedure is documented, and EU data-residency is confirmed across Fabric capacity region, M365 tenant geo, Power Platform env region, and Bicep locations.
 
-**Plans**: TBD
+**Plans**: 6 plans
+Plans:
+
+- [x] 05-01-PLAN.md — RGP-03 retention enforcement: JOBS_BASE_DIR TTL pruner + Storage managementPolicies delete rule + retention-policy doc
+- [x] 05-02-PLAN.md — RGP-04 PII-in-logs handling statement + App Insights telemetry processor (short EU-region retention)
+- [x] 05-03-PLAN.md — SEC-01 architecture + data-flow diagram (Mermaid, trust boundaries) + SEC-02 authN/authZ linked to existing tests
+- [x] 05-04-PLAN.md — SEC-03 threat-coverage matrix (OWASP LLM) + SEC-04 dependency posture (Dependabot/pin policy) + SEC-05 accepted-risk register
+- [x] 05-05-PLAN.md — RGP-02 DPIA (EDPB/WP248 9-criteria) + RGP-01 Art. 30 record (DPO sign-off deferred) + GOVERNANCE §4 retention fix
+- [x] 05-06-PLAN.md — RGP-05 DSR procedure + RGP-06 EU residency (Bicep verified; tenant residency = operator checkpoint)
+
 **Risks**: DPIA/record-of-processing is the long-pole docs item (depends on the DPO, external to the operator) — engage day one. EU-residency confirmation (Fabric capacity, M365 tenant geo) cannot be verified from research alone and must be checked against the live tenant.
 
 ### Phase 6: Controlled E2E, Go/No-Go & Team Rollout
@@ -142,7 +151,14 @@ Plans:
   2. Feature-flag gating restricts access to exactly the target team at launch, and a Go/No-Go checklist is signed by the operator.
   3. A gradual rollout is executed: a pilot cohort of 2–5 users, then the full team after a 24–48h clean signal.
 
-**Plans**: TBD
+**Plans**: 4 plans
+Plans:
+
+- [ ] 06-01-PLAN.md — Wave 0 RED: failing allowlist fail-safe spec + E2E-harness spec (mocked HTTP, no live call) (GO-01, GO-02)
+- [ ] 06-02-PLAN.md — Wave 1: allowlist mode in feature_flags.py — AC360_ALLOWED_TEAMS/USERS_HASHED, deny-by-default when set, no-restriction when unset (GO-02)
+- [ ] 06-03-PLAN.md — Wave 1: scripts/e2e_smoke.py synthetic E2E driver (audit→status→result, 5 scenarios, injectable HTTP, no-PII KQL → GUARDRAILS_VALIDATION §2) (GO-01)
+- [ ] 06-04-PLAN.md — Wave 2: Go/No-Go checklist (07) + gradual-rollout runbook (08) + blocking operator checkpoint for live E2E / sign-off / rollout (GO-01/02/03/04)
+
 **Risks**: The E2E must use synthetic (not real-client) data and must restart the Functions app between download and FIC retrieval to prove cross-instance file durability; skipping failure paths or using real PII before the DPIA exists would invalidate the gate.
 
 ## Progress
@@ -158,4 +174,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 3. Backend Deploy & Observability | 5/5 | Complete   | 2026-06-15 |
 | 4. Copilot Studio Production Publish | 2/2 | Complete   | 2026-06-15 |
 | 5. RGPD & Security Evidence Pack | 6/6 | Complete   | 2026-06-15 |
-| 6. Controlled E2E, Go/No-Go & Team Rollout | 0/TBD | Not started | - |
+| 6. Controlled E2E, Go/No-Go & Team Rollout | 0/4 | Not started | - |
