@@ -15,6 +15,7 @@ contrôles admin) en la généricisant intégralement.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
@@ -31,8 +32,28 @@ from .audit_engine import audit as run_audit
 from .audit_engine import extract_canonical_fields
 from .security import require_admin, require_api_key, validate_upload
 
+_logger = logging.getLogger("onix.actions")
+
+
+def _configure_logging() -> None:
+    """Configure le logging applicatif (niveau via ONIX_LOG_LEVEL) si aucun
+    handler n'est déjà posé — permet de VOIR le mode d'extraction réellement
+    utilisé (llm vs heuristique) et les avertissements notify/llm. Idempotent et
+    non destructif vis-à-vis d'une configuration existante (ex: uvicorn)."""
+    level_name = os.environ.get("ONIX_LOG_LEVEL", "INFO").upper()
+    level = getattr(logging, level_name, logging.INFO)
+    app_logger = logging.getLogger("onix.actions")
+    app_logger.setLevel(level)
+    if not app_logger.handlers and not logging.getLogger().handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
+        app_logger.addHandler(handler)
+        app_logger.propagate = False
+
+
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
+    _configure_logging()
     admin_state.init_db()
     usage_tracker.init_db()
     tasks_mod.init_db()
@@ -221,11 +242,17 @@ def health() -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 def _resolve_document_fields(
     document: Optional[dict], text: Optional[str], use_llm: bool
-) -> Dict[str, Any]:
+) -> tuple[Dict[str, Any], str]:
     """Construit les champs canoniques du document à partir d'un dict déjà
-    extrait, ou d'un texte brut (LLM si demandé, sinon heuristique OCR-like)."""
+    extrait, ou d'un texte brut (LLM si demandé, sinon heuristique OCR-like).
+
+    Retourne (champs, mode) où `mode` est le chemin RÉELLEMENT utilisé :
+      * "provided"  : document déjà extrait fourni ;
+      * "llm"       : extraction par Ollama réussie ;
+      * "heuristic" : extraction « clé: valeur » (par défaut OU repli si LLM raté).
+    Le mode est journalisé pour l'observabilité (LLM réel vs repli)."""
     if document:
-        return document
+        return document, "provided"
     if not text:
         raise HTTPException(status_code=400, detail="Fournir 'document' ou 'text'.")
     if use_llm:
@@ -234,15 +261,18 @@ def _resolve_document_fields(
             from .llm import extract_fields_llm
 
             fields = extract_fields_llm(text)
-            usage_tracker.track("backend_action_called", action_name="llm_extract")
             if fields:
-                return fields
-        except Exception:
-            # Repli silencieux sur l'heuristique : « en mieux » mais jamais bloquant.
-            pass
+                usage_tracker.track("backend_action_called", action_name="llm_extract")
+                _logger.info("Extraction document via LLM (mode=llm, champs=%d)", len(fields))
+                return fields, "llm"
+            # JSON valide mais aucun champ exploitable -> repli heuristique propre.
+            _logger.info("LLM sans champ exploitable -> repli heuristique.")
+        except Exception as e:
+            # Repli propre sur l'heuristique : « en mieux » mais jamais bloquant.
+            _logger.warning("Extraction LLM échouée (%s) -> repli heuristique.", type(e).__name__)
     # Heuristique locale : libellés "clé: valeur" -> champs canoniques.
     pseudo_ocr = {"fields": ocr_mod._kv_pairs_from_text(text), "tables": []}
-    return extract_canonical_fields(pseudo_ocr)
+    return extract_canonical_fields(pseudo_ocr), "heuristic"
 
 
 @app.post("/audit")
@@ -251,9 +281,10 @@ def audit_endpoint(req: AuditRequest, _: str = Depends(require_api_key)) -> Dict
     usage_tracker.track(
         "audit_documentaire_started", user_id=req.caller_id, action_name="audit"
     )
-    document = _resolve_document_fields(req.document, req.text, req.use_llm)
+    document, mode = _resolve_document_fields(req.document, req.text, req.use_llm)
     reference = _load_reference(req.reference, req.reference_path, req.client_key)
     result = run_audit({"document": document, "reference": reference})
+    result["_extraction_mode"] = mode
     usage_tracker.track(
         "audit_documentaire_completed",
         user_id=req.caller_id,
@@ -301,7 +332,7 @@ async def audit_file_endpoint(
 
     # Champs : LLM sur le texte si demandé, sinon extraction canonique OCR.
     if use_llm and ocr_out.get("text"):
-        document = _resolve_document_fields(None, ocr_out["text"], True)
+        document, _extract_mode = _resolve_document_fields(None, ocr_out["text"], True)
     else:
         document = extract_canonical_fields(ocr_out)
 

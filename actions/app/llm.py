@@ -4,16 +4,27 @@
 brut par un LLM LOCAL (Ollama, http://ollama:11434), sans aucun appel cloud.
 
 Dégrade proprement : si Ollama est injoignable ou répond mal, on lève une erreur
-claire que l'endpoint /audit convertit en repli (extraction heuristique).
+claire que l'endpoint /audit convertit en repli (extraction heuristique). Le mode
+réellement utilisé (« llm » / « heuristic ») est journalisé.
+
+Durcissements :
+  * timeouts EXPLICITES (connexion + lecture) → pas de blocage indéfini si Ollama
+    est lent ou ne répond plus ;
+  * parsing JSON ROBUSTE aux réponses bruitées (fences ```json, prose autour,
+    objet imbriqué le plus à l'extérieur) ;
+  * repli HEURISTIQUE propre côté endpoint si Ollama est indisponible/raté.
 """
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from typing import Any, Dict, Optional
 
 import httpx
+
+logger = logging.getLogger("onix.actions.llm")
 
 CANONICAL_FIELDS = (
     "nom_client",
@@ -23,13 +34,27 @@ CANONICAL_FIELDS = (
     "motif_operation",
 )
 
+# Prompt few-shot : un exemple concret améliore NETTEMENT l'extraction par les
+# petits modèles locaux (un modèle ~1B renvoie sinon le schéma à vide). L'exemple
+# est volontairement générique (aucun lien avec les données réelles).
 _PROMPT = (
     "Tu es un extracteur de données. À partir du TEXTE, renvoie UNIQUEMENT un objet "
     "JSON valide (aucun texte autour) avec EXACTEMENT ces clés : "
     + ", ".join(CANONICAL_FIELDS)
     + ". Mets null si une information est absente. Ne réécris pas les valeurs, "
-    "recopie-les telles quelles.\n\nTEXTE:\n{texte}\n\nJSON:"
+    "recopie-les telles quelles.\n\n"
+    "Exemple:\n"
+    "TEXTE: La societe BETA SARL, plafond 500 euros, contrat ABC-123 du 5 mars 2023\n"
+    'JSON: {{"nom_client": "BETA SARL", "plafond_hospitalisation": "500 euros", '
+    '"date_effet": "5 mars 2023", "numero_contrat": "ABC-123", "motif_operation": null}}\n\n'
+    "Maintenant fais de meme:\n"
+    "TEXTE:\n{texte}\n\nJSON:"
 )
+
+# Timeouts par défaut (surchargés par env). Une connexion courte distingue
+# « Ollama absent » d'« Ollama lent à générer » (lecture plus longue).
+_DEFAULT_CONNECT_TIMEOUT = 5.0
+_DEFAULT_READ_TIMEOUT = 60.0
 
 
 def ollama_base_url() -> str:
@@ -40,44 +65,135 @@ def ollama_model() -> str:
     return os.environ.get("ONIX_LLM_MODEL", "llama3.2:3b")
 
 
-def _extract_json(raw: str) -> Optional[dict]:
-    raw = (raw or "").strip()
-    # Retire d'éventuels fences ```json ... ```
-    raw = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.MULTILINE).strip()
+def _connect_timeout() -> float:
     try:
-        return json.loads(raw)
-    except Exception:
-        pass
-    m = re.search(r"\{.*\}", raw, flags=re.DOTALL)
+        return float(os.environ.get("ONIX_LLM_CONNECT_TIMEOUT", _DEFAULT_CONNECT_TIMEOUT))
+    except (TypeError, ValueError):
+        return _DEFAULT_CONNECT_TIMEOUT
+
+
+def _read_timeout() -> float:
+    try:
+        return float(os.environ.get("ONIX_LLM_TIMEOUT", _DEFAULT_READ_TIMEOUT))
+    except (TypeError, ValueError):
+        return _DEFAULT_READ_TIMEOUT
+
+
+def _balanced_json_object(raw: str) -> Optional[str]:
+    """Extrait la 1re sous-chaîne `{...}` à accolades ÉQUILIBRÉES (gère les objets
+    imbriqués et la prose autour, contrairement à un regex glouton naïf)."""
+    start = raw.find("{")
+    if start == -1:
+        return None
+    depth = 0
+    in_str = False
+    escape = False
+    for i in range(start, len(raw)):
+        ch = raw[i]
+        if in_str:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return raw[start : i + 1]
+    return None
+
+
+def _extract_json(raw: str) -> Optional[dict]:
+    """Parsing tolérant aux réponses LLM bruitées.
+
+    Stratégie en cascade :
+      1. JSON direct (après suppression d'éventuels fences markdown) ;
+      2. objet à accolades équilibrées repéré dans le texte ;
+      3. fallback : regex glouton.
+    Ne renvoie qu'un dict (jamais une liste/scalaire éventuels)."""
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    # Retire d'éventuels fences ```json ... ```
+    cleaned = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.MULTILINE).strip()
+    for candidate in (cleaned, raw):
+        try:
+            parsed = json.loads(candidate)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            pass
+    # Objet à accolades équilibrées (robuste à la prose / l'objet imbriqué).
+    block = _balanced_json_object(cleaned) or _balanced_json_object(raw)
+    if block:
+        try:
+            parsed = json.loads(block)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            pass
+    # Dernier recours : regex glouton (best-effort).
+    m = re.search(r"\{.*\}", cleaned, flags=re.DOTALL)
     if m:
         try:
-            return json.loads(m.group(0))
+            parsed = json.loads(m.group(0))
+            if isinstance(parsed, dict):
+                return parsed
         except Exception:
             return None
     return None
 
 
-def extract_fields_llm(text: str, *, timeout: float = 60.0) -> Dict[str, Any]:
-    """Extrait les champs canoniques d'un texte via Ollama. Lève en cas d'échec."""
+def _filter_canonical(parsed: dict) -> Dict[str, Any]:
+    """Ne garde que les clés canoniques connues, valeurs non vides."""
+    return {k: parsed.get(k) for k in CANONICAL_FIELDS if parsed.get(k) not in (None, "")}
+
+
+def extract_fields_llm(text: str, *, timeout: Optional[float] = None) -> Dict[str, Any]:
+    """Extrait les champs canoniques d'un texte via Ollama. Lève en cas d'échec.
+
+    `timeout` (optionnel) surcharge le timeout de LECTURE ; la connexion garde un
+    timeout court dédié pour détecter rapidement un Ollama absent."""
     if not (text or "").strip():
         raise ValueError("Texte vide.")
+    model = ollama_model()
     url = f"{ollama_base_url()}/api/generate"
+    # NB : on n'impose PAS `format: json` côté Ollama. Sur les petits modèles
+    # locaux (~1B), la grammaire JSON stricte d'Ollama dégrade fortement
+    # l'extraction (le modèle renvoie un objet à vide). On laisse le modèle
+    # générer librement (souvent du JSON entouré de prose / fences markdown) et
+    # on s'appuie sur `_extract_json` (parsing robuste) pour récupérer l'objet.
     payload = {
-        "model": ollama_model(),
+        "model": model,
         "prompt": _PROMPT.format(texte=text[:8000]),
         "stream": False,
-        "format": "json",
         "options": {"temperature": 0},
     }
+    read_timeout = timeout if timeout is not None else _read_timeout()
+    timeouts = httpx.Timeout(connect=_connect_timeout(), read=read_timeout, write=10.0, pool=5.0)
     try:
-        resp = httpx.post(url, json=payload, timeout=timeout)
+        resp = httpx.post(url, json=payload, timeout=timeouts)
         resp.raise_for_status()
-    except Exception as e:  # réseau / Ollama absent
+    except Exception as e:  # réseau / Ollama absent / timeout / HTTP non-2xx
+        logger.warning("Ollama indisponible (modèle=%s): %s", model, type(e).__name__)
         raise RuntimeError(f"Ollama indisponible: {e}") from e
 
-    data = resp.json()
+    try:
+        data = resp.json()
+    except Exception as e:
+        logger.warning("Réponse Ollama non-JSON: %s", type(e).__name__)
+        raise RuntimeError("Réponse Ollama non-JSON.") from e
+
     parsed = _extract_json(data.get("response", ""))
     if not isinstance(parsed, dict):
+        logger.warning("Réponse LLM non exploitable (JSON invalide).")
         raise RuntimeError("Réponse LLM non exploitable (JSON invalide).")
-    # On ne garde que les clés canoniques connues.
-    return {k: parsed.get(k) for k in CANONICAL_FIELDS if parsed.get(k) not in (None, "")}
+    fields = _filter_canonical(parsed)
+    logger.info("Extraction LLM réussie (modèle=%s, champs=%d)", model, len(fields))
+    return fields

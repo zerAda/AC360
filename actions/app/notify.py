@@ -10,6 +10,7 @@ Aucune donnée sensible loggée (on ne journalise pas le corps).
 """
 from __future__ import annotations
 
+import logging
 import os
 import smtplib
 import ssl
@@ -18,10 +19,32 @@ from typing import Any, Dict, Optional
 
 import httpx
 
+logger = logging.getLogger("onix.actions.notify")
+
+# Timeouts par défaut (surchargés par env). Connexion courte pour détecter vite
+# une cible injoignable ; lecture plus longue pour la réponse.
+_WEBHOOK_CONNECT_TIMEOUT = 5.0
+_SMTP_DEFAULT_TIMEOUT = 20.0
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
 
 def _default_webhook() -> Optional[str]:
     url = os.environ.get("ONIX_NOTIFY_WEBHOOK", "").strip()
     return url or None
+
+
+def _webhook_timeout(default_read: float) -> httpx.Timeout:
+    try:
+        read = float(os.environ.get("ONIX_NOTIFY_TIMEOUT", default_read))
+    except (TypeError, ValueError):
+        read = default_read
+    return httpx.Timeout(connect=_WEBHOOK_CONNECT_TIMEOUT, read=read, write=10.0, pool=5.0)
 
 
 def send_webhook(
@@ -41,11 +64,22 @@ def send_webhook(
     if extra:
         payload.update(extra)
     try:
-        resp = httpx.post(target, json=payload, timeout=timeout)
+        resp = httpx.post(target, json=payload, timeout=_webhook_timeout(timeout))
         ok = 200 <= resp.status_code < 300
+        if not ok:
+            logger.warning("Webhook a répondu en erreur (http=%s)", resp.status_code)
         return {"status": "sent" if ok else "error", "http_status": resp.status_code}
     except Exception as e:
+        # Cible down / DNS / timeout : on renvoie un statut propre (jamais 500).
+        logger.warning("Échec d'envoi webhook: %s", type(e).__name__)
         return {"status": "error", "reason": f"Échec d'envoi: {type(e).__name__}"}
+
+
+def _smtp_timeout(default: float) -> float:
+    try:
+        return float(os.environ.get("ONIX_SMTP_TIMEOUT", default))
+    except (TypeError, ValueError):
+        return default
 
 
 def send_email(
@@ -53,11 +87,12 @@ def send_email(
     body: str,
     *,
     to: Optional[str] = None,
-    timeout: float = 20.0,
+    timeout: float = _SMTP_DEFAULT_TIMEOUT,
 ) -> Dict[str, Any]:
     host = os.environ.get("ONIX_SMTP_HOST", "").strip()
     if not host:
         return {"status": "skipped", "reason": "SMTP non configuré (ONIX_SMTP_HOST)."}
+    timeout = _smtp_timeout(timeout)
     port = int(os.environ.get("ONIX_SMTP_PORT", "587") or "587")
     user = os.environ.get("ONIX_SMTP_USER", "").strip() or None
     password = os.environ.get("ONIX_SMTP_PASSWORD", "") or None
@@ -72,7 +107,11 @@ def send_email(
     msg["To"] = recipient
     msg.set_content(body)
 
-    use_ssl = os.environ.get("ONIX_SMTP_SSL", "false").strip().lower() in {"1", "true", "yes", "on"}
+    use_ssl = _env_bool("ONIX_SMTP_SSL", False)
+    # STARTTLS activé par défaut (sécurité), mais désactivable pour un relais
+    # interne en clair (ONIX_SMTP_STARTTLS=false). Si demandé mais non annoncé
+    # par le serveur, on n'envoie PAS en clair par erreur -> erreur explicite.
+    want_starttls = _env_bool("ONIX_SMTP_STARTTLS", True)
     try:
         if use_ssl:
             ctx = ssl.create_default_context()
@@ -82,12 +121,22 @@ def send_email(
                 s.send_message(msg)
         else:
             with smtplib.SMTP(host, port, timeout=timeout) as s:
-                s.starttls(context=ssl.create_default_context())
+                s.ehlo()
+                if want_starttls:
+                    if not s.has_extn("starttls"):
+                        return {
+                            "status": "error",
+                            "reason": "Serveur SMTP sans STARTTLS (définir ONIX_SMTP_STARTTLS=false pour un relais en clair).",
+                        }
+                    s.starttls(context=ssl.create_default_context())
+                    s.ehlo()
                 if user and password:
                     s.login(user, password)
                 s.send_message(msg)
         return {"status": "sent", "provider": "smtp"}
     except Exception as e:
+        # Serveur down / auth / TLS : statut propre, jamais d'exception remontée.
+        logger.warning("Échec SMTP: %s", type(e).__name__)
         return {"status": "error", "reason": f"Échec SMTP: {type(e).__name__}"}
 
 

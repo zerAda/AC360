@@ -56,9 +56,12 @@ vaut `unavailable`, l'endpoint renvoie `422` avec une raison explicite, et l'on
 peut alors passer un texte/JSON déjà extrait ou activer l'assistance LLM.
 
 **« En mieux » — assistance LLM locale.** `use_llm: true` extrait les champs d'un
-texte brut via **Ollama** (`http://ollama:11434`, `format=json`), sans cloud. En
-cas d'indisponibilité d'Ollama, repli **silencieux** sur l'extraction heuristique
-(jamais bloquant).
+texte brut via **Ollama** (`http://ollama:11434`), sans cloud. Le parsing de la
+réponse est **robuste** (prose, fences markdown, objet imbriqué). En cas
+d'indisponibilité d'Ollama, de timeout ou de réponse inexploitable, repli
+**propre** sur l'extraction heuristique (jamais bloquant). Le champ
+`_extraction_mode` de la réponse (`llm` / `heuristic` / `provided`) indique le
+chemin **réellement** utilisé ; il est aussi journalisé (`ONIX_LOG_LEVEL`).
 
 **Sécurité.** Clé API comparée en **temps constant** ; validation stricte des
 uploads (extension allowlistée, taille ≤ `ONIX_MAX_UPLOAD_BYTES`, défaut 15 Mo) ;
@@ -162,8 +165,12 @@ curl -X POST http://actions:8100/admin/control \
 | `ONIX_RATE_CARD` | Rate card FinOps (JSON `{centre: €/unité}`). | vide (0 €) |
 | `ONIX_BUDGET_EUR` / `ONIX_BUDGET_WARN_PCT` | Budget + seuil d'alerte (%). | — / `80` |
 | `ONIX_OLLAMA_URL` / `ONIX_LLM_MODEL` | Assistance LLM locale. | `http://ollama:11434` / `llama3.2:3b` |
+| `ONIX_LLM_CONNECT_TIMEOUT` / `ONIX_LLM_TIMEOUT` | Timeouts LLM (connexion / lecture, s). | `5` / `60` |
 | `ONIX_NOTIFY_WEBHOOK` | URL webhook par défaut (Slack/Mattermost/Teams). | vide |
+| `ONIX_NOTIFY_TIMEOUT` | Timeout d'envoi webhook (s). | `15` |
 | `ONIX_SMTP_HOST`/`PORT`/`USER`/`PASSWORD`/`FROM`/`TO`/`SSL` | Provider email SMTP. | vide |
+| `ONIX_SMTP_STARTTLS` / `ONIX_SMTP_TIMEOUT` | STARTTLS (false = relais en clair) / timeout (s). | `true` / `20` |
+| `ONIX_LOG_LEVEL` | Niveau de log (trace mode d'extraction + échecs notify). | `INFO` |
 | `ONIX_OCR_LANG` | Langues tesseract. | `fra+eng` |
 | `ONIX_MAX_UPLOAD_BYTES` | Taille max d'upload. | `15728640` |
 | `ONIX_REFERENCE_DIR` | Répertoire des références montées (lecture seule). | `/data/reference` |
