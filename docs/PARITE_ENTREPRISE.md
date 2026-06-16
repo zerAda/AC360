@@ -34,14 +34,17 @@ page est **honnête** : elle distingue ce qui est **natif**, **par configuration
    instances par groupe), ou passer en EE/Cloud pour la parité totale. Détails :
    [`connectors/SHAREPOINT.md`](connectors/SHAREPOINT.md) §6.
 2. **Fonctions « applicatives » au-delà du RAG** (audit OCR, génération de
-   documents, relances, notifications, usage/FinOps, kill-switch) sont désormais
+   documents, relances, notifications, usage/FinOps, kill-switch) sont
    **implémentées** dans le microservice local **`onix-actions`** (cf.
    [`ACTIONS.md`](ACTIONS.md)), branché à l'assistant via **Onyx Custom Actions**.
-   Maturité honnête : moteur d'audit, génération `.docx`, tâches, usage, coût et
-   administration sont **opérationnels et testés** ; l'**OCR de PDF scannés/images**
-   nécessite les binaires `tesseract`/`poppler` (fournis par l'image Docker du
-   service) et dégrade proprement à défaut ; les connecteurs externes (webhook
-   tâches/notify, SMTP) sont des **MVP** prêts à configurer.
+   Maturité (validée **bout-en-bout**, preuves réelles) : audit, génération
+   `.docx`, tâches, usage, coût et admin **opérationnels et testés** ; **OCR de
+   PDF/images scannés prouvé en conteneur** (tesseract+poppler dans l'image,
+   pixels → texte → verdict) ; **extraction LLM prouvée via un vrai Ollama** ;
+   **notifications (webhook + SMTP) et tâches sortantes prouvées** contre de vrais
+   récepteurs. **34 tests** verts, **gitleaks 0**. Limites honnêtes restantes :
+   qualité d'extraction LLM dépendante du modèle (≥ 3B recommandé) ; STARTTLS
+   couvert en test unitaire (pas encore contre un serveur STARTTLS réel).
 
 ## Ce qu'onix apporte EN PLUS d'un assistant cloud
 - **Souveraineté totale** : inférence + index + fichiers **sur site**, aucun
@@ -54,7 +57,7 @@ Pour un **assistant commercial RAG sourcé sur SharePoint, en lecture seule, mon
 client, souverain** : onix atteint la **parité fonctionnelle** par configuration.
 La seule limite de fond en édition gratuite est le **RBAC fin par document**
 (permission sync EE). Les fonctions applicatives annexes (audit OCR, génération,
-relances, notifications, usage/FinOps, kill-switch) sont **implémentées** dans
-**`onix-actions`** (cf. [`ACTIONS.md`](ACTIONS.md)) : un acquis, branché via Onyx
-Custom Actions — avec une maturité documentée honnêtement (OCR de scans
-tributaire des binaires système ; connecteurs externes en MVP).
+relances, notifications, usage/FinOps, kill-switch) sont **implémentées et
+validées de bout en bout** dans **`onix-actions`** (OCR de scans, extraction LLM
+via Ollama, notifications webhook/SMTP, tâches sortantes — **prouvées** ; 34
+tests, gitleaks 0) : un acquis, branché via Onyx Custom Actions.
