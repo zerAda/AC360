@@ -26,6 +26,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from . import __version__
+from .audit import log_access_decision
 from .config import get_settings
 from .identity import IdentityError, _TTLCache, resolve_principal
 from .graph_client import GraphError
@@ -37,13 +38,14 @@ _logger = logging.getLogger("onix.gateway")
 
 def _configure_logging() -> None:
     level = getattr(logging, os.environ.get("GATEWAY_LOG_LEVEL", "INFO").upper(), logging.INFO)
-    logger = logging.getLogger("onix.gateway")
-    logger.setLevel(level)
-    if not logger.handlers and not logging.getLogger().handlers:
-        h = logging.StreamHandler()
-        h.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
-        logger.addHandler(h)
-        logger.propagate = False
+    for name in ("onix.gateway", "onix.gateway.audit"):
+        logger = logging.getLogger(name)
+        logger.setLevel(level)
+        if not logger.handlers and not logging.getLogger().handlers:
+            h = logging.StreamHandler()
+            h.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
+            logger.addHandler(h)
+            logger.propagate = False
 
 
 class _State:
@@ -94,8 +96,15 @@ async def health() -> dict[str, Any]:
     }
 
 
-async def _principal_and_sets(request: Request, x_oidc_claims: Optional[str]):
-    """Facteur commun : résout l'identité, ses groupes, et ses Document Sets."""
+async def _principal_and_sets(
+    request: Request, x_oidc_claims: Optional[str], *, endpoint: str
+):
+    """Facteur commun : résout l'identité, ses groupes, et ses Document Sets.
+
+    **Fail-closed** : toute impossibilité de résoudre l'identité (401) ou les
+    groupes (502) est journalisée comme un DENY et propagée. La décision d'accès
+    finale (allow/deny selon le périmètre) est journalisée par l'appelant.
+    """
     settings = get_settings()
     try:
         principal = await resolve_principal(
@@ -105,9 +114,17 @@ async def _principal_and_sets(request: Request, x_oidc_claims: Optional[str]):
             http_client=request.app.state.http,
         )
     except IdentityError as exc:
+        # Identité absente/illisible : refus dur, journalisé sans acteur identifiable.
+        log_access_decision(
+            actor=None, decision="deny", reason="identity_unresolved", endpoint=endpoint
+        )
         raise HTTPException(status_code=401, detail=str(exc))
     except GraphError as exc:
-        # Dépendance amont indisponible : 502 (pas 500 — l'origine est externe).
+        # Dépendance amont (Graph) indisponible alors que requise : on REFUSE
+        # (fail-closed) plutôt que de laisser passer sans groupes. 502 car externe.
+        log_access_decision(
+            actor=None, decision="deny", reason="group_source_unavailable", endpoint=endpoint
+        )
         raise HTTPException(status_code=502, detail=str(exc))
     authorized = request.app.state.group_map.authorized_document_sets(principal.group_ids)
     return principal, authorized
@@ -119,7 +136,18 @@ async def authorized_document_sets(
     x_oidc_claims: Optional[str] = Header(default=None, alias="X-OIDC-Claims"),
 ) -> dict[str, Any]:
     """Introspection : qui suis-je, mes groupes, mes Document Sets autorisés."""
-    principal, authorized = await _principal_and_sets(request, x_oidc_claims)
+    principal, authorized = await _principal_and_sets(
+        request, x_oidc_claims, endpoint="authorized-document-sets"
+    )
+    log_access_decision(
+        actor=principal.user_id,
+        decision="allow" if authorized else "deny",
+        reason="introspection",
+        group_source=principal.source,
+        group_count=len(principal.group_ids),
+        authorized_sets=authorized,
+        endpoint="authorized-document-sets",
+    )
     return {
         "user_id": principal.user_id,
         "upn": principal.upn,
@@ -144,15 +172,40 @@ async def chat_send_message(
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="Le corps doit être un objet JSON.")
 
-    principal, authorized = await _principal_and_sets(request, x_oidc_claims)
+    principal, authorized = await _principal_and_sets(
+        request, x_oidc_claims, endpoint="chat/send-message"
+    )
 
     try:
         safe_payload = enforce_document_sets(
             payload, authorized, deny_if_empty=settings.deny_if_no_match
         )
     except AccessDenied as exc:
-        _logger.info("Accès refusé (périmètre vide) pour user=%s", principal.user_id)
+        # Périmètre vide OU demande hors-périmètre : refus dur, journalisé (haché).
+        log_access_decision(
+            actor=principal.user_id,
+            decision="deny",
+            reason="empty_or_out_of_scope",
+            group_source=principal.source,
+            group_count=len(principal.group_ids),
+            authorized_sets=authorized,
+            endpoint="chat/send-message",
+        )
         raise HTTPException(status_code=403, detail=str(exc))
+
+    effective = (
+        safe_payload.get("retrieval_options", {}).get("filters", {}).get("document_set")
+    )
+    log_access_decision(
+        actor=principal.user_id,
+        decision="allow",
+        reason="proxied",
+        group_source=principal.source,
+        group_count=len(principal.group_ids),
+        authorized_sets=authorized,
+        effective_sets=effective if isinstance(effective, list) else None,
+        endpoint="chat/send-message",
+    )
 
     url = f"{settings.onyx_base_url}/chat/send-message"
     try:

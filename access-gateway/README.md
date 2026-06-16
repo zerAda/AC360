@@ -55,11 +55,35 @@ docker run --rm -p 127.0.0.1:8200:8200 \
 > reverse-proxy TLS qui assure le SSO OIDC et injecte `X-OIDC-Claims`. **L'UI/API
 > Onyx native doit rester interne** (sinon le filtre est contournable).
 
+## Durcissement & déploiement (la passerelle = SEUL point d'entrée)
+
+La sécurité du cloisonnement FOSS **repose entièrement** sur le fait que la
+passerelle est **interposée** : si un utilisateur peut joindre l'UI/API Onyx
+native, le filtre Document Set est **contournable**. Règles de déploiement
+(détaillées dans [`../docs/DECISION_RBAC.md`](../docs/DECISION_RBAC.md) §6) :
+
+1. **N'exposer QUE la passerelle.** Onyx (`web_server`/`api_server`) reste sur le
+   réseau interne `onix-net` **sans port hôte** ; aucune route publique ne pointe
+   vers lui. Le reverse-proxy TLS public route uniquement vers `access-gateway`.
+2. **SSO en amont obligatoire.** Le reverse-proxy/IdP authentifie (OIDC) et injecte
+   `X-OIDC-Claims` (claims **déjà vérifiés**). Ne jamais exposer la passerelle sans
+   cette couche : elle **fait confiance** à cet en-tête.
+3. **Fail-closed.** Identité illisible → **401**. Groupes non résolvables (overage
+   + repli Graph indisponible/en erreur) → **502**, jamais un passage « ouvert ».
+   Aucun groupe mappé → **403** (`GATEWAY_DENY_IF_NO_MATCH=true`, défaut).
+4. **Journal des décisions d'accès (haché).** Chaque allow/deny est journalisé
+   (`onix.gateway.audit`, JSON) avec une **identité pseudonymisée** (HMAC-SHA256,
+   sel `GATEWAY_AUDIT_SALT`) — **jamais** l'UPN/oid en clair, **jamais** le message.
+   Voir [`app/audit.py`](app/audit.py).
+
 ## Tests
 ```bash
 pip install -r requirements-dev.txt
-pytest tests -q        # 38 tests ; Graph et Onyx amont moqués, aucun réseau réel
+pytest tests -q        # 52 tests ; Graph et Onyx amont moqués, aucun réseau réel
 ```
+Couvre notamment (durcissement) : utilisateur **sans groupe** → deny ; **multi-
+groupes** → union des Document Sets autorisés **uniquement** ; **fail-closed** si
+les groupes sont irrésolvables ; **non-fuite** d'identité/contenu dans l'audit.
 
 ## Architecture du code
 | Module | Rôle |
@@ -69,7 +93,8 @@ pytest tests -q        # 38 tests ; Graph et Onyx amont moqués, aucun réseau r
 | `app/graph_client.py` | Client Graph `transitiveMemberOf` (token client-credentials, pagination). |
 | `app/mapping.py` | Mapping groupe → Document Set (deny-by-default). |
 | `app/onyx_proxy.py` | Forçage du filtre Document Set + anti-élargissement. |
-| `app/main.py` | App FastAPI (endpoints, relais). |
+| `app/audit.py` | Journal des décisions d'accès, identité **hachée** (HMAC). |
+| `app/main.py` | App FastAPI (endpoints, relais, fail-closed, audit). |
 
 ## Limites assumées
 - **Pas de trimming par document** (granularité Document Set). Droits hétérogènes

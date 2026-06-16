@@ -15,6 +15,11 @@ le cas réel multi-commerciaux — avec ses limites assumées.
 > - **Cloisonnement par GROUPE / Document Set** = **faisable en FOSS** via SSO OIDC
 >   Entra + Document Sets + la **passerelle `access-gateway/`** d'onix. Granularité
 >   au **groupe d'accès / Document Set**, **pas par document**.
+>
+> 📋 **Dossier de décision chiffré (EE/Cloud vs FOSS vs hybride)** : voir
+> [`DECISION_RBAC.md`](DECISION_RBAC.md) — matrice sécurité/coût/effort/conformité/
+> réversibilité, **prix datés**, **risque résiduel quantifié**, et **recommandation
+> par scénario**. Ce dossier **cadre** l'astérisque RBAC (décision outillée).
 
 ---
 
@@ -178,15 +183,28 @@ certificat) est requise**. Ce n'est pas l'OBO par-document d'un AC360/Copilot.
 5. **Révocation.** Le retrait d'un utilisateur d'un groupe Entra se reflète au
    prochain rafraîchissement (claim au ré-login, ou TTL du cache Graph côté
    passerelle, `GATEWAY_GROUP_CACHE_TTL`). Ce n'est pas instantané.
+6. **Fail-closed.** Si la passerelle ne peut **pas** établir les groupes de
+   l'appelant (identité illisible → 401 ; overage **et** repli Graph indisponible/
+   en erreur → **502**), elle **refuse** ; jamais de passage sans périmètre résolu.
+   Un utilisateur sans groupe mappé → **403** (`GATEWAY_DENY_IF_NO_MATCH=true`).
+7. **Journal des décisions d'accès (haché).** Chaque allow/deny est journalisé
+   (JSON, logger `onix.gateway.audit`) avec une **identité pseudonymisée**
+   (HMAC-SHA256, sel `GATEWAY_AUDIT_SALT`) — **jamais** l'UPN/oid en clair, **jamais**
+   le message. Appui RGPD (journal d'accès) / assurance. Cf.
+   [`../access-gateway/app/audit.py`](../access-gateway/app/audit.py).
 
-### Modèle de menace (synthèse)
-| Menace | Atténuation (FOSS + gateway) |
-|---|---|
-| Un commercial lit le portefeuille d'un autre | Filtre Document Set forcé + deny-by-default |
-| Client tente d'élargir son périmètre (payload trafiqué) | Intersection des `document_set`, `search_doc_ids` neutralisé |
-| Contournement via l'UI Onyx directe | UI/API Onyx **internes** ; seul `access-gateway` est exposé |
-| Overage de groupes OIDC (liste tronquée) | Repli Graph `transitiveMemberOf` (mode `auto`) |
-| Deux droits différents sur un même document | **Non couvert** → EE requis (assumé, §5) |
+### Modèle de menace (synthèse — mis à jour : durcissement)
+| Menace | Atténuation (FOSS + gateway) | Preuve |
+|---|---|---|
+| Un commercial lit le portefeuille d'un autre | Filtre Document Set forcé + deny-by-default | `test_two_commercials_are_isolated` |
+| Client tente d'élargir son périmètre (payload trafiqué) | Intersection des `document_set`, `search_doc_ids` neutralisé | `test_user_cannot_widen_scope`, `test_cannot_escape_via_search_doc_ids` |
+| Multi-groupes : accès à un set non mappé | Union **bornée aux sets autorisés** uniquement | `test_multi_group_user_gets_union_only`, `test_multi_group_user_cannot_reach_unmapped_set` |
+| Utilisateur **sans groupe** / claim groupe absent | **Deny** (403) — fail-closed | `test_user_with_empty_groups_is_denied`, `test_user_without_groups_claim_at_all_is_denied` |
+| **Groupes irrésolvables** (overage + Graph indispo/erreur) | **Deny dur (502)** — jamais de passage « ouvert » (fail-closed) | `test_overage_without_graph_fails_closed_502`, `test_overage_with_graph_error_fails_closed` |
+| Contournement via l'UI Onyx directe | UI/API Onyx **internes** ; seul `access-gateway` est exposé (cf. déploiement) | `DECISION_RBAC.md` §6 / `access-gateway/README.md` |
+| Overage de groupes OIDC (liste tronquée) | Repli Graph `transitiveMemberOf` (mode `auto`) | `test_auto_falls_back_to_graph_on_overage` |
+| Traçabilité d'un accès (audit/RGPD) | **Journal des décisions** allow/deny, **identité hachée** (HMAC) | `test_decision_record_never_leaks_plaintext_identity` |
+| Deux droits différents sur un même document | **Non couvert** → EE requis (assumé, §5 ; quantifié `DECISION_RBAC.md` §4) | — |
 
 ## 7. Décision à acter avec le client
 - **Cas multi-commerciaux / multi-équipes, accès homogène par périmètre** →
@@ -194,6 +212,10 @@ certificat) est requise**. Ce n'est pas l'OBO par-document d'un AC360/Copilot.
 - **Cloisonnement légal strict par document, droits hétérogènes intra-équipe, ou
   propagation automatique des ACL SharePoint** → **Enterprise Edition** (permission
   sync, certificat). Voir [`connectors/SHAREPOINT.md`](connectors/SHAREPOINT.md) §6.
+
+👉 **Pour trancher : [`DECISION_RBAC.md`](DECISION_RBAC.md)** — dossier de décision
+**chiffré et daté** (EE/Cloud vs FOSS vs hybride), risque résiduel **quantifié**,
+recommandation **par scénario**, et durcissement de la passerelle.
 
 Voir aussi : [`PARITE_ENTREPRISE.md`](PARITE_ENTREPRISE.md) (matrice globale) et
 [`../access-gateway/`](../access-gateway/) (code, tests, Dockerfile, mapping).

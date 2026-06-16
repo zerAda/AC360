@@ -105,3 +105,94 @@ def test_invalid_json_body_returns_400(client):
         },
     )
     assert r.status_code == 400
+
+
+# --------------------------------------------------------------------------- #
+# Durcissement : fail-closed & cas de groupes (sans groupe / multi-groupes).    #
+# --------------------------------------------------------------------------- #
+def test_user_with_empty_groups_is_denied(client):
+    """Utilisateur authentifié mais SANS aucun groupe (liste vide) -> deny (403).
+
+    C'est le fail-closed : pas de groupe => pas de Document Set => aucune recherche.
+    """
+    r = client.post(
+        "/v1/chat/send-message",
+        json={"message": "x"},
+        headers={"X-OIDC-Claims": claims(oid="ghost", groups=[])},
+    )
+    assert r.status_code == 403
+    # Et l'introspection confirme un périmètre vide (pas de fuite par défaut).
+    intro = client.get(
+        "/v1/authorized-document-sets",
+        headers={"X-OIDC-Claims": claims(oid="ghost", groups=[])},
+    )
+    assert intro.status_code == 200
+    assert intro.json()["authorized_document_sets"] == []
+
+
+def test_user_without_groups_claim_at_all_is_denied(client):
+    """Aucun claim 'groups' du tout (None) -> en mode 'claims', liste vide -> deny."""
+    r = client.post(
+        "/v1/chat/send-message",
+        json={"message": "x"},
+        headers={"X-OIDC-Claims": claims(oid="nogroupsclaim", groups=None)},
+    )
+    assert r.status_code == 403
+
+
+def test_multi_group_user_gets_union_only(client):
+    """Multi-groupes : l'utilisateur appartient à Nord ET Sud.
+
+    Le périmètre autorisé est EXACTEMENT l'union {clients-nord, clients-sud} —
+    ni plus (pas de set tiers), ni moins.
+    """
+    hdr = {"X-OIDC-Claims": claims(oid="dir", upn="dir@contoso.fr", groups=[GROUP_NORD, GROUP_SUD])}
+    intro = client.get("/v1/authorized-document-sets", headers=hdr)
+    assert intro.status_code == 200
+    assert intro.json()["authorized_document_sets"] == ["clients-nord", "clients-sud"]
+    assert intro.json()["group_count"] == 2
+
+    # Sans filtre demandé : on force EXACTEMENT l'union autorisée.
+    r = client.post("/v1/chat/send-message", json={"message": "x"}, headers=hdr)
+    assert r.status_code == 200
+    relayed = client.last_upstream["payload"]
+    assert relayed["retrieval_options"]["filters"]["document_set"] == [
+        "clients-nord",
+        "clients-sud",
+    ]
+
+
+def test_multi_group_user_cannot_reach_unmapped_set(client):
+    """Multi-groupes Nord+Sud : un set NON cartographié reste hors de portée."""
+    hdr = {"X-OIDC-Claims": claims(oid="dir", groups=[GROUP_NORD, GROUP_SUD])}
+    r = client.post(
+        "/v1/chat/send-message",
+        json={
+            "message": "x",
+            "retrieval_options": {
+                "filters": {"document_set": ["clients-nord", "clients-sud", "secret-rh"]}
+            },
+        },
+        headers=hdr,
+    )
+    assert r.status_code == 200
+    relayed = client.last_upstream["payload"]
+    # 'secret-rh' (non mappé) est retiré ; seule l'union autorisée subsiste.
+    assert relayed["retrieval_options"]["filters"]["document_set"] == [
+        "clients-nord",
+        "clients-sud",
+    ]
+
+
+def test_partial_overlap_multi_group_intersects(client):
+    """Multi-groupes mais requête ne ciblant qu'un sous-ensemble autorisé : OK,
+    bornée à l'intersection (Nord+Sud autorisés, requête = Sud uniquement)."""
+    hdr = {"X-OIDC-Claims": claims(oid="dir", groups=[GROUP_NORD, GROUP_SUD])}
+    r = client.post(
+        "/v1/chat/send-message",
+        json={"message": "x", "retrieval_options": {"filters": {"document_set": ["clients-sud"]}}},
+        headers=hdr,
+    )
+    assert r.status_code == 200
+    relayed = client.last_upstream["payload"]
+    assert relayed["retrieval_options"]["filters"]["document_set"] == ["clients-sud"]
