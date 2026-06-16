@@ -1,0 +1,6 @@
+# Dépendances du harnais de tests RAG (`tests/rag/`).
+# Le MODE CONTRAT (hors-LLM, celui de la CI) n'a besoin que de pytest + PyYAML.
+# `requests` n'est utilisé que par le MODE LIVE optionnel (ONIX_RAG_LIVE=1).
+pytest==8.3.4
+PyYAML==6.0.2
+requests==2.32.3

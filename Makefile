@@ -93,3 +93,22 @@ destroy:
 	 else \
 	   echo "Annulé."; \
 	 fi
+
+# --- WS1 ---
+# Recette QA/garde-fous de l'agent commercial RAG (cf. docs/QA_GUARDRAILS.md).
+#   make rag-test       recette hors-LLM (anti-régression prompt + red-team + dataset)
+#   make rag-test-live  recette live contre une vraie API Onyx (ONIX_API_URL requis)
+#   make rag-deps       installe les dépendances de test (pytest, PyYAML, requests)
+.PHONY: rag-test rag-test-live rag-deps
+
+rag-deps:
+	@pip install -r tests/rag/requirements.txt
+
+# Mode contrat : aucun LLM ni réseau requis. C'est le gate CI.
+rag-test:
+	@python -m pytest tests/rag -q
+
+# Mode live : rejoue dataset + red-team contre l'API Onyx (citations/refus réels).
+# Pré-requis : export ONIX_RAG_LIVE=1 ONIX_API_URL=... [ONIX_API_KEY ONIX_PERSONA_ID]
+rag-test-live:
+	@ONIX_RAG_LIVE=1 python -m pytest tests/rag -q
