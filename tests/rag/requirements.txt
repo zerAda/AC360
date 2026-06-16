@@ -4,3 +4,11 @@
 pytest==8.3.4
 PyYAML==6.0.2
 requests==2.32.3
+
+# ── MODE LIVE OLLAMA (optionnel, ONIX_LIVE_OLLAMA=1) ────────────────────────
+# Le harnais live red-team (`test_live_ollama.py` / `run_live.py`) appelle
+# l'endpoint OpenAI-compatible d'Ollama via la stdlib (urllib) — AUCUNE dépendance
+# supplémentaire requise pour le red-team.
+# La comparaison d'extraction audit (`live_extraction.py`) réutilise la brique de
+# production `actions/app/llm.py`, qui s'appuie sur httpx ; installer dans ce cas :
+httpx==0.27.2
