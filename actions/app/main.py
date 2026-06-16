@@ -17,20 +17,33 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, Response
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    REGISTRY,
+    Counter,
+    Gauge,
+    Histogram,
+    generate_latest,
+)
 from pydantic import BaseModel, Field
 
-from . import admin_state, cost_tracker, docgen, notify as notify_mod
+from . import admin_state, audit_log, cost_tracker, docgen, dlp, notify as notify_mod
 from . import ocr as ocr_mod
+from . import retention as retention_mod
+from . import safe_logger
+from . import security
 from . import tasks as tasks_mod
 from . import usage_tracker
 from .audit_engine import audit as run_audit
 from .audit_engine import extract_canonical_fields
-from .security import require_admin, require_api_key, validate_upload
+from .caller_identity import CallerContext
+from .security import require_admin, require_caller, validate_upload
 
 _logger = logging.getLogger("onix.actions")
 
@@ -39,11 +52,16 @@ def _configure_logging() -> None:
     """Configure le logging applicatif (niveau via ONIX_LOG_LEVEL) si aucun
     handler n'est déjà posé — permet de VOIR le mode d'extraction réellement
     utilisé (llm vs heuristique) et les avertissements notify/llm. Idempotent et
-    non destructif vis-à-vis d'une configuration existante (ex: uvicorn)."""
+    non destructif vis-à-vis d'une configuration existante (ex: uvicorn).
+
+    WS2 : installe le filtre de REDACTION PII sur le logger `onix.actions` (et
+    donc tous ses enfants `onix.actions.*`) — aucun log ne peut fuiter une donnée
+    personnelle (JWT/IBAN/NIR/email) ni servir à injecter de fausses lignes."""
     level_name = os.environ.get("ONIX_LOG_LEVEL", "INFO").upper()
     level = getattr(logging, level_name, logging.INFO)
     app_logger = logging.getLogger("onix.actions")
     app_logger.setLevel(level)
+    safe_logger.install("onix.actions")  # redaction PII + anti-CRLF (idempotent)
     if not app_logger.handlers and not logging.getLogger().handlers:
         handler = logging.StreamHandler()
         handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
@@ -68,6 +86,79 @@ app = FastAPI(
     lifespan=_lifespan,
 )
 
+# WS2 — rate-limiting par appelant. Le quota est appliqué DANS la dépendance
+# `require_caller` (via `security.enforce_rate_limit`), APRÈS résolution de
+# l'identité : un middleware slowapi classique ne verrait que l'IP (les
+# dépendances s'exécutent après le middleware). On n'installe donc PAS de
+# middleware/handler slowapi (qui resterait inerte ici) ; l'enforcement réel est
+# la fenêtre glissante par appelant de `security`. slowapi reste une dépendance
+# de référence pour le format de quota et un futur store partagé (Redis).
+
+
+# ---------------------------------------------------------------------------
+# Câblage inter-WS — métriques Prometheus (cf. docs/OBSERVABILITY.md §5)
+# ---------------------------------------------------------------------------
+# Endpoint /metrics au format texte Prometheus, scrapé par le job `onix-actions`
+# (http://actions:8100/metrics). Les noms ci-dessous correspondent EXACTEMENT aux
+# requêtes des dashboards Grafana et des règles d'alerte WS6 (contrat figé).
+#
+# Sécurité (style WS2) : /metrics n'expose AUCUNE donnée personnelle — uniquement
+# des compteurs/jauges agrégés, et les labels `endpoint` sont les CHEMINS DE ROUTE
+# (gabarits, ex. "/download/{job_id}") et non les valeurs réelles → ni PII, ni
+# cardinalité non bornée. L'endpoint est volontairement NON authentifié : le
+# service n'a aucun port hôte (réseau interne onix-net uniquement), c'est la même
+# posture que /health. À NE PAS exposer publiquement (cf. OBSERVABILITY.md §5).
+#
+# Création IDEMPOTENTE : ce module est rechargé (importlib.reload) par la suite de
+# tests pour relire les variables d'environnement. Recréer un collecteur déjà
+# enregistré lèverait « Duplicated timeseries » ; on purge donc toute série de
+# même nom du registre par défaut avant de (re)créer la métrique.
+def _metric(cls, name, doc, labels=None):
+    # prometheus_client stocke le nom de base SANS le suffixe `_total` (Counter).
+    # On purge le collecteur dont le nom de base correspond à l'un ou l'autre.
+    base = name[: -len("_total")] if name.endswith("_total") else name
+    for collector in list(getattr(REGISTRY, "_names_to_collectors", {}).values()):
+        cname = getattr(collector, "_name", None)
+        if cname is not None and cname in (name, base):
+            try:
+                REGISTRY.unregister(collector)
+            except KeyError:
+                pass
+    return cls(name, doc, labels) if labels else cls(name, doc)
+
+
+REQS = _metric(
+    Counter, "onix_http_requests_total", "Requêtes HTTP servies par onix-actions.",
+    ["endpoint", "method", "status"],
+)
+LATENCY = _metric(
+    Histogram, "onix_http_request_duration_seconds", "Latence des requêtes HTTP (secondes).",
+    ["endpoint"],
+)
+KILLSWITCH = _metric(
+    Counter, "onix_killswitch_blocked_total", "Requêtes bloquées par le kill-switch (HTTP 403).",
+    ["feature", "reason"],
+)
+BUDGET_SPENT = _metric(Gauge, "onix_budget_spent_eur", "Coût estimé cumulé (EUR).")
+BUDGET_LIMIT = _metric(Gauge, "onix_budget_limit_eur", "Budget alloué (EUR).")
+BUDGET_RATIO = _metric(Gauge, "onix_budget_ratio", "Ratio consommé du budget (0–1+).")
+UP = _metric(Gauge, "onix_up", "Vivacité applicative onix-actions (1 = up).")
+UP.set(1)
+
+
+@app.middleware("http")
+async def _metrics_mw(request: Request, call_next):
+    """Compte chaque requête + observe sa latence. Le label `endpoint` est le
+    GABARIT de route (pas l'URL réelle) → borne la cardinalité et évite toute
+    fuite de valeur dans une métrique."""
+    start = time.perf_counter()
+    response = await call_next(request)
+    route = request.scope.get("route")
+    path = getattr(route, "path", None) or request.url.path
+    REQS.labels(path, request.method, response.status_code).inc()
+    LATENCY.labels(path).observe(time.perf_counter() - start)
+    return response
+
 
 # ---------------------------------------------------------------------------
 # Gating commun
@@ -77,6 +168,9 @@ def _gate(feature: str, caller_id: Optional[str] = None) -> None:
     user_hash = admin_state.hash_id(caller_id) if caller_id else None
     allowed, reason = admin_state.is_allowed(feature, user_id_hash=user_hash)
     if not allowed:
+        # Observabilité WS6 : compte le blocage AVANT de lever le 403 (réutilisé
+        # par l'alerte KillSwitchBlockingTraffic et le panneau « 403 par raison »).
+        KILLSWITCH.labels(feature, reason or "unknown").inc()
         raise HTTPException(status_code=403, detail=admin_state.blocked_message(reason))
 
 
@@ -223,6 +317,30 @@ class AdminControlRequest(BaseModel):
     reason: Optional[str] = None
 
 
+class AccessLogRequest(BaseModel):
+    """Journalisation d'accès (UPN hashés) : `document_accessed` /
+    `rag_search_executed`. Aucun identifiant ni requête en clair n'est persisté."""
+
+    event: str = Field(description="document_accessed | rag_search_executed")
+    user_id: Optional[str] = Field(default=None, description="UPN (hashé avant stockage).")
+    client_id: Optional[str] = None
+    document_id: Optional[str] = Field(default=None, description="ID document (hashé).")
+    query: Optional[str] = Field(default=None, description="Requête RAG (NON stockée en clair).")
+
+
+class RetentionPurgeRequest(BaseModel):
+    days: Optional[int] = Field(default=None, description="TTL en jours (défaut ONIX_RETENTION_DAYS).")
+    purge_files: bool = Field(default=True, description="Purger aussi les .docx expirés.")
+
+
+class SubjectErasureRequest(BaseModel):
+    """Effacement ciblé d'un sujet (RGPD art. 17)."""
+
+    subject_id: Optional[str] = Field(default=None, description="Identifiant en clair (hashé ici).")
+    subject_hash: Optional[str] = Field(default=None, description="Hash du sujet (alternative).")
+    erase_files: bool = Field(default=True, description="Effacer aussi les .docx du sujet.")
+
+
 # ---------------------------------------------------------------------------
 # 8. Santé
 # ---------------------------------------------------------------------------
@@ -235,6 +353,22 @@ def health() -> Dict[str, Any]:
         "ocr": ocr_mod.ocr_capabilities(),
         "global_enabled": admin_state.is_global_enabled(),
     }
+
+
+@app.get("/metrics")
+def metrics() -> Response:
+    """Expose les métriques au format texte Prometheus (cf. OBSERVABILITY.md §5).
+
+    Non authentifié À DESSEIN (réseau interne, aucun port hôte — même posture que
+    /health). Rafraîchit les jauges FinOps depuis usage_tracker/cost_tracker à la
+    volée : ce sont des AGRÉGATS (coût/budget), jamais de donnée personnelle."""
+    spent = usage_tracker.summary().get("estimated_cost_eur", 0.0)
+    budget = cost_tracker.check_budget(spent)
+    BUDGET_SPENT.set(spent)
+    if budget.get("budget_eur"):
+        BUDGET_LIMIT.set(budget["budget_eur"])
+        BUDGET_RATIO.set((budget.get("ratio_pct") or 0) / 100.0)
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 # ---------------------------------------------------------------------------
@@ -275,19 +409,30 @@ def _resolve_document_fields(
     return extract_canonical_fields(pseudo_ocr), "heuristic"
 
 
+def _effective_caller(caller: CallerContext, body_caller_id: Optional[str]) -> Optional[str]:
+    """Identité retenue pour la traçabilité : l'identité VÉRIFIÉE prime ; en
+    repli (clé de service seule), on accepte l'étiquette du corps pour conserver
+    la granularité d'usage. Jamais l'inverse (une identité vérifiée ne peut être
+    usurpée par un `caller_id` de corps)."""
+    if not caller.is_service:
+        return caller.caller_id
+    return body_caller_id or (None if caller.caller_id == "service" else caller.caller_id)
+
+
 @app.post("/audit")
-def audit_endpoint(req: AuditRequest, _: str = Depends(require_api_key)) -> Dict[str, Any]:
-    _gate("audit", req.caller_id)
-    usage_tracker.track(
-        "audit_documentaire_started", user_id=req.caller_id, action_name="audit"
-    )
+def audit_endpoint(
+    req: AuditRequest, caller: CallerContext = Depends(require_caller)
+) -> Dict[str, Any]:
+    who = _effective_caller(caller, req.caller_id)
+    _gate("audit", who)
+    usage_tracker.track("audit_documentaire_started", user_id=who, action_name="audit")
     document, mode = _resolve_document_fields(req.document, req.text, req.use_llm)
     reference = _load_reference(req.reference, req.reference_path, req.client_key)
     result = run_audit({"document": document, "reference": reference})
     result["_extraction_mode"] = mode
     usage_tracker.track(
         "audit_documentaire_completed",
-        user_id=req.caller_id,
+        user_id=who,
         client_id=result.get("client_document"),
         action_name="audit",
         document_count=1,
@@ -303,20 +448,26 @@ async def audit_file_endpoint(
     client_key: Optional[str] = Form(default=None),
     use_llm: bool = Form(default=False),
     caller_id: Optional[str] = Form(default=None),
-    _: str = Depends(require_api_key),
+    caller: CallerContext = Depends(require_caller),
 ) -> Dict[str, Any]:
     """Audit à partir d'un FICHIER (PDF/image) : OCR local -> extraction ->
     comparaison. Dégrade proprement si l'OCR est indisponible."""
-    _gate("audit", caller_id)
-    _gate("ocr", caller_id)
+    who = _effective_caller(caller, caller_id)
+    _gate("audit", who)
+    _gate("ocr", who)
     data = await file.read()
     validate_upload(file.filename or "", len(data))
 
-    usage_tracker.track("ocr_started", user_id=caller_id, action_name="audit_file")
+    # WS2 — journal d'accès : « qui a accédé à quel document » (UPN + nom de
+    # fichier hashés, jamais en clair).
+    audit_log.record_document_accessed(
+        user_id=who, document_id=file.filename, action_name="audit_file"
+    )
+    usage_tracker.track("ocr_started", user_id=who, action_name="audit_file")
     ocr_out = ocr_mod.extract(data, file.filename or "document")
     mode = ocr_out["metadata"]["extraction_mode"]
     if mode == "unavailable":
-        usage_tracker.track("ocr_failed", status="error", user_id=caller_id,
+        usage_tracker.track("ocr_failed", status="error", user_id=who,
                             error_code="ocr_unavailable")
         if not use_llm:
             raise HTTPException(
@@ -327,7 +478,7 @@ async def audit_file_endpoint(
                     "hint": "Activez l'OCR (tesseract/poppler) ou fournissez un texte/JSON déjà extrait.",
                 },
             )
-    usage_tracker.track("ocr_completed", user_id=caller_id,
+    usage_tracker.track("ocr_completed", user_id=who,
                         page_count=ocr_out["metadata"].get("pages", 0))
 
     # Champs : LLM sur le texte si demandé, sinon extraction canonique OCR.
@@ -349,7 +500,7 @@ async def audit_file_endpoint(
     reference_record = _load_reference(ref_inline, reference_path, client_key)
     result = run_audit({"document": document, "reference": reference_record})
     result["_ocr_mode"] = mode
-    usage_tracker.track("audit_documentaire_completed", user_id=caller_id,
+    usage_tracker.track("audit_documentaire_completed", user_id=who,
                         client_id=result.get("client_document"), document_count=1)
     return result
 
@@ -358,8 +509,15 @@ async def audit_file_endpoint(
 # 2. Génération de fiche .docx + téléchargement
 # ---------------------------------------------------------------------------
 @app.post("/generate/fiche")
-def generate_fiche_endpoint(req: FicheRequest, _: str = Depends(require_api_key)) -> Dict[str, Any]:
-    _gate("generate", req.caller_id)
+def generate_fiche_endpoint(
+    req: FicheRequest, caller: CallerContext = Depends(require_caller)
+) -> Dict[str, Any]:
+    who = _effective_caller(caller, req.caller_id)
+    _gate("generate", who)
+    # NB : le CONTENU de la fiche (.docx) est l'output explicitement demandé par
+    # l'utilisateur — on ne le redacte donc PAS (ce serait corrompre le livrable).
+    # La redaction PII vise les LOGS et les champs persistés en base d'usage/audit
+    # (ici seul le client est tracé, et il l'est SOUS FORME HASHÉE).
     try:
         out = docgen.generate_fiche(
             req.client_name, req.summary, req.alert_points,
@@ -367,7 +525,7 @@ def generate_fiche_endpoint(req: FicheRequest, _: str = Depends(require_api_key)
         )
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
-    usage_tracker.track("fiche_generated", user_id=req.caller_id,
+    usage_tracker.track("fiche_generated", user_id=who,
                         client_id=req.client_name, action_name="generate_fiche")
     return {
         "status": "success",
@@ -378,8 +536,15 @@ def generate_fiche_endpoint(req: FicheRequest, _: str = Depends(require_api_key)
 
 
 @app.get("/download/{job_id}")
-def download_endpoint(job_id: str, _: str = Depends(require_api_key)) -> FileResponse:
-    _gate("generate")
+def download_endpoint(
+    job_id: str, caller: CallerContext = Depends(require_caller)
+) -> FileResponse:
+    _gate("generate", caller.caller_id if not caller.is_service else None)
+    audit_log.record_document_accessed(
+        user_id=(None if caller.is_service else caller.caller_id),
+        document_id=job_id,
+        action_name="download",
+    )
     base = os.path.join(docgen.jobs_dir(), os.path.basename(job_id))
     if not os.path.isdir(base):
         raise HTTPException(status_code=404, detail="Job introuvable.")
@@ -401,16 +566,28 @@ def download_endpoint(job_id: str, _: str = Depends(require_api_key)) -> FileRes
 # 3. Tâches / relances locales
 # ---------------------------------------------------------------------------
 @app.post("/tasks")
-def create_task_endpoint(req: TaskRequest, _: str = Depends(require_api_key)) -> Dict[str, Any]:
-    _gate("tasks", req.caller_id)
+def create_task_endpoint(
+    req: TaskRequest, caller: CallerContext = Depends(require_caller)
+) -> Dict[str, Any]:
+    who = _effective_caller(caller, req.caller_id)
+    _gate("tasks", who)
+    # WS2 — DLP egress : si un webhook_url est fourni, il DOIT être autorisé par
+    # l'allowlist (refus AVANT toute création/appel) pour empêcher l'exfiltration.
+    if req.webhook_url:
+        try:
+            dlp.check_egress(req.webhook_url)
+        except dlp.EgressDenied as e:
+            raise HTTPException(status_code=403, detail=f"Destination refusée (DLP) : {e}")
+    # `notes` est un champ LIBRE -> redaction PII avant persistance.
+    safe_notes = safe_logger.redact_text(req.notes) if req.notes else None
     try:
         record = tasks_mod.create_task(
             title=req.title, due_date=req.due_date, client_id=req.client_id,
-            owner=req.caller_id, notes=req.notes, webhook_url=req.webhook_url,
+            owner=who, notes=safe_notes, webhook_url=req.webhook_url,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    # Push optionnel vers un système externe.
+    # Push optionnel vers un système externe (déjà allowlisté ci-dessus).
     if req.webhook_url:
         res = notify_mod.send_webhook(
             f"Nouvelle tâche: {req.title}" + (f" (échéance {req.due_date})" if req.due_date else ""),
@@ -418,14 +595,14 @@ def create_task_endpoint(req: TaskRequest, _: str = Depends(require_api_key)) ->
         )
         tasks_mod.update_webhook_status(record["task_id"], res.get("status", "unknown"))
         record["webhook_status"] = res.get("status")
-    usage_tracker.track("task_created", user_id=req.caller_id, action_name="create_task")
+    usage_tracker.track("task_created", user_id=who, action_name="create_task")
     record.pop("webhook_url", None)
     return record
 
 
 @app.get("/tasks")
 def list_tasks_endpoint(
-    status: Optional[str] = None, _: str = Depends(require_api_key)
+    status: Optional[str] = None, _: CallerContext = Depends(require_caller)
 ) -> Dict[str, Any]:
     _gate("tasks")
     try:
@@ -439,8 +616,22 @@ def list_tasks_endpoint(
 # 4. Notification
 # ---------------------------------------------------------------------------
 @app.post("/notify")
-def notify_endpoint(req: NotifyRequest, _: str = Depends(require_api_key)) -> Dict[str, Any]:
-    _gate("notify", req.caller_id)
+def notify_endpoint(
+    req: NotifyRequest, caller: CallerContext = Depends(require_caller)
+) -> Dict[str, Any]:
+    who = _effective_caller(caller, req.caller_id)
+    _gate("notify", who)
+    # WS2 — DLP egress sur le provider webhook : la cible (req.url ou défaut) doit
+    # être allowlistée. Le provider SMTP exige STARTTLS par défaut (cf. notify.py).
+    # On ne contrôle QUE s'il y a réellement une cible : sans URL, aucun egress
+    # n'a lieu (notify renvoie 'skipped'), donc rien à filtrer.
+    if (req.provider or "webhook").lower() == "webhook":
+        target = req.url or os.environ.get("ONIX_NOTIFY_WEBHOOK", "").strip()
+        if target:
+            try:
+                dlp.check_egress(target)
+            except dlp.EgressDenied as e:
+                raise HTTPException(status_code=403, detail=f"Destination refusée (DLP) : {e}")
     result = notify_mod.notify(
         provider=req.provider, message=req.message, subject=req.subject,
         url=req.url, to=req.to, extra=req.extra,
@@ -448,7 +639,7 @@ def notify_endpoint(req: NotifyRequest, _: str = Depends(require_api_key)) -> Di
     usage_tracker.track(
         "notification_sent",
         status="ok" if result.get("status") in ("sent", "skipped") else "error",
-        user_id=req.caller_id, action_name=f"notify_{req.provider}",
+        user_id=who, action_name=f"notify_{req.provider}",
     )
     return result
 
@@ -457,12 +648,16 @@ def notify_endpoint(req: NotifyRequest, _: str = Depends(require_api_key)) -> Di
 # 5. Usage
 # ---------------------------------------------------------------------------
 @app.post("/usage")
-def usage_endpoint(req: UsageRequest, _: str = Depends(require_api_key)) -> Dict[str, Any]:
+def usage_endpoint(
+    req: UsageRequest, _: CallerContext = Depends(require_caller)
+) -> Dict[str, Any]:
     _gate("usage")
+    # `action_name` / `safe_error_message` peuvent être libres -> redaction.
     try:
         event = usage_tracker.track(
             req.event_type, status=req.status, user_id=req.user_id,
-            client_id=req.client_id, action_name=req.action_name,
+            client_id=req.client_id,
+            action_name=safe_logger.redact_text(req.action_name) if req.action_name else None,
             document_count=req.document_count, page_count=req.page_count,
             estimated_tokens_input=req.estimated_tokens_input,
             estimated_tokens_output=req.estimated_tokens_output,
@@ -474,7 +669,7 @@ def usage_endpoint(req: UsageRequest, _: str = Depends(require_api_key)) -> Dict
 
 
 @app.get("/usage/summary")
-def usage_summary_endpoint(_: str = Depends(require_api_key)) -> Dict[str, Any]:
+def usage_summary_endpoint(_: CallerContext = Depends(require_caller)) -> Dict[str, Any]:
     _gate("usage")
     return usage_tracker.summary()
 
@@ -483,7 +678,7 @@ def usage_summary_endpoint(_: str = Depends(require_api_key)) -> Dict[str, Any]:
 # 6. Coût (FinOps)
 # ---------------------------------------------------------------------------
 @app.get("/cost")
-def cost_endpoint(_: str = Depends(require_api_key)) -> Dict[str, Any]:
+def cost_endpoint(_: CallerContext = Depends(require_caller)) -> Dict[str, Any]:
     _gate("cost")
     spent = usage_tracker.summary().get("estimated_cost_eur", 0.0)
     return {
@@ -495,7 +690,7 @@ def cost_endpoint(_: str = Depends(require_api_key)) -> Dict[str, Any]:
 
 @app.post("/cost/estimate")
 def cost_estimate_endpoint(
-    req: CostEstimateRequest, _: str = Depends(require_api_key)
+    req: CostEstimateRequest, _: CallerContext = Depends(require_caller)
 ) -> Dict[str, Any]:
     _gate("cost")
     try:
@@ -514,7 +709,7 @@ def cost_estimate_endpoint(
 # ---------------------------------------------------------------------------
 @app.post("/admin/control")
 def admin_control_endpoint(
-    req: AdminControlRequest, _: str = Depends(require_admin)
+    req: AdminControlRequest, _: CallerContext = Depends(require_admin)
 ) -> Dict[str, Any]:
     record = admin_state.apply_control(
         admin_id=req.admin_id, action=req.action, scope=req.scope,
@@ -526,5 +721,73 @@ def admin_control_endpoint(
 
 
 @app.get("/admin/state")
-def admin_state_endpoint(_: str = Depends(require_admin)) -> Dict[str, Any]:
+def admin_state_endpoint(_: CallerContext = Depends(require_admin)) -> Dict[str, Any]:
     return admin_state.current_state()
+
+
+@app.get("/admin/audit/verify")
+def admin_audit_verify_endpoint(_: CallerContext = Depends(require_admin)) -> Dict[str, Any]:
+    """WS2 — vérifie l'intégrité du journal d'audit CHAÎNÉ (tamper-evident).
+    `ok=false` + `broken_at` si une ligne a été modifiée/supprimée/réordonnée."""
+    return audit_log.verify_chain()
+
+
+# ---------------------------------------------------------------------------
+# 9. Journalisation d'accès (RGPD : traçabilité, UPN hashés)
+# ---------------------------------------------------------------------------
+@app.post("/access/log")
+def access_log_endpoint(
+    req: AccessLogRequest, caller: CallerContext = Depends(require_caller)
+) -> Dict[str, Any]:
+    """Émet un événement d'accès (`document_accessed` / `rag_search_executed`).
+    Identité et identifiants HASHÉS ; la requête RAG n'est jamais stockée en clair."""
+    who = _effective_caller(caller, req.user_id)
+    _gate("usage")
+    event = (req.event or "").strip()
+    if event == "document_accessed":
+        rec = audit_log.record_document_accessed(
+            user_id=who, document_id=req.document_id, client_id=req.client_id
+        )
+    elif event == "rag_search_executed":
+        rec = audit_log.record_rag_search(
+            user_id=who, query=req.query, client_id=req.client_id
+        )
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="event doit être 'document_accessed' ou 'rag_search_executed'.",
+        )
+    # Ne JAMAIS répondre « journalisé » si la persistance a échoué (sinon une
+    # trace d'accès RGPD est perdue à l'insu de l'appelant / de la conformité).
+    if not rec.get("_persisted", True):
+        raise HTTPException(
+            status_code=500, detail="Échec de persistance du journal d'accès."
+        )
+    return {"recorded": True, "event_id": rec["event_id"], "event_type": rec["event_type"]}
+
+
+# ---------------------------------------------------------------------------
+# 10. Rétention & effacement (RGPD art. 5-1-e & art. 17) — réservé admin
+# ---------------------------------------------------------------------------
+@app.post("/admin/retention/purge")
+def retention_purge_endpoint(
+    req: RetentionPurgeRequest, _: CallerContext = Depends(require_admin)
+) -> Dict[str, Any]:
+    """Purge par âge (TTL) : usage_events, tâches terminées, .docx expirés."""
+    return retention_mod.purge_by_age(days=req.days, purge_files=req.purge_files)
+
+
+@app.post("/admin/retention/erase")
+def retention_erase_endpoint(
+    req: SubjectErasureRequest, _: CallerContext = Depends(require_admin)
+) -> Dict[str, Any]:
+    """Effacement ciblé d'un sujet (droit à l'effacement, art. 17). Le sujet est
+    désigné par son identifiant en clair (hashé ici) OU par son hash."""
+    try:
+        return retention_mod.erase_subject(
+            subject_id=req.subject_id,
+            subject_hash=req.subject_hash,
+            erase_files=req.erase_files,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

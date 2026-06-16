@@ -120,6 +120,11 @@ def _to_jsonl_sink(event: Dict[str, Any]) -> None:
 
 
 def emit_usage_event(event: Dict[str, Any]) -> Dict[str, Any]:
+    """Persiste un événement d'usage. Renseigne `event['_persisted']` (bool) pour
+    que l'appelant SACHE si l'écriture en base a réussi — important pour les
+    événements de TRAÇABILITÉ d'accès (RGPD) : on ne doit pas répondre « journalisé »
+    si la persistance a silencieusement échoué (disque plein, base verrouillée)."""
+    persisted = True
     try:
         with _lock, _connect() as conn:
             conn.execute(
@@ -136,8 +141,9 @@ def emit_usage_event(event: Dict[str, Any]) -> Dict[str, Any]:
             )
             conn.commit()
     except Exception:
-        pass
+        persisted = False
     _to_jsonl_sink(event)
+    event["_persisted"] = persisted
     return event
 
 

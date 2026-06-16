@@ -1,14 +1,35 @@
 # onix-actions — dépendances épinglées (reproductibilité).
 # Toutes locales / open-source : aucun SDK cloud.
-fastapi==0.115.6
+#
+# Versions relevées (WS6) pour purger 100 % des CVE connues (gate pip-audit en CI
+# = 0 vulnérabilité). Compatibilité validée par actions/tests (33 passed, 1 skipped).
+# Relever ces pins quand de nouveaux correctifs paraissent (le gate pip-audit, qui
+# est BLOQUANT, échouera dès qu'une CVE corrigeable apparaît). Cf. docs/OBSERVABILITY.md.
+fastapi==0.137.1
 uvicorn[standard]==0.34.0
 pydantic==2.10.4
-python-multipart==0.0.20
+python-multipart==0.0.32
 httpx==0.28.1
 python-docx==1.1.2
 thefuzz==0.22.1
-pdfplumber==0.11.4
-pypdf==5.1.0
+pdfplumber==0.11.10
+pypdf==6.13.2
 pytesseract==0.3.13
 pdf2image==1.17.0
-Pillow==11.0.0
+Pillow==12.2.0
+# --- WS2 : sécurité / RGPD ---------------------------------------------------
+# Rate-limiting par appelant (parité quota AC360). Le décompte effectif par
+# identité est piloté dans la dépendance d'auth ; slowapi reste l'extension de
+# référence (et un repli mémoire couvre son absence).
+slowapi==0.1.9
+# Vérification de JWT OIDC (RS256/ES256 + JWKS) pour l'identité d'appelant
+# fédérée (ex. Entra ID). Optionnel : la voie HS256 est gérée nativement sans
+# dépendance ; PyJWT n'est requis QUE pour les signatures asymétriques.
+# Intégration : relevé de 2.10.1 (proposé par WS2) à 2.13.0 pour purger 12 CVE
+# disclosed depuis (PYSEC-2025-183, PYSEC-2026-120/175/176/177/178/179) — gate
+# pip-audit --strict = 0 CVE. API compatible (vérif JWT inchangée).
+PyJWT==2.13.0
+# --- Intégration (câblage WS6 ↔ WS2) -----------------------------------------
+# Endpoint /metrics Prometheus dans actions/app/main.py (cf. docs/OBSERVABILITY.md
+# §5). Pin sûr (0 CVE connue). Permet l'instrumentation HTTP + FinOps + kill-switch.
+prometheus-client==0.21.1

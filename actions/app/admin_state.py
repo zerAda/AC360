@@ -14,12 +14,15 @@ Aucun identifiant en clair : les UPN/utilisateurs sont hashés SHA-256.
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import sqlite3
 import threading
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+_logger = logging.getLogger("onix.actions.admin")
 
 # Fonctions « métier » gatées (alignées sur AC360 + ajouts onix-actions).
 FEATURES = ("audit", "generate", "tasks", "notify", "usage", "cost", "ocr", "llm")
@@ -81,6 +84,10 @@ def init_db() -> None:
             " reason TEXT, result TEXT)"
         )
         conn.commit()
+    # WS2 — colonnes de chaînage HMAC du journal d'audit (migration idempotente).
+    from . import audit_log
+
+    audit_log.ensure_schema()
 
 
 def _get_state(key: str) -> Optional[str]:
@@ -109,7 +116,15 @@ def _env_flag(env_name: str, default: bool = True) -> bool:
         return True
     if norm in _FALSE:
         return False
-    return default  # valeur inconnue -> fail open (comme AC360)
+    # WS2 — FAIL-CLOSED sur valeur inconnue : une typo (« ON », « tru »…) ne doit
+    # PAS ouvrir une fonction par défaut. On coupe (False) et on le journalise.
+    # (AC360 faisait du fail-open ; WS2 inverse ce choix par sécurité.)
+    _logger.warning(
+        "Flag %s = valeur inconnue (%r) -> fail-closed (désactivé).",
+        env_name,
+        val.strip()[:32],
+    )
+    return False
 
 
 def _flag_effective(key: str, env_name: str, default: bool = True) -> bool:
@@ -204,6 +219,11 @@ def apply_control(
         else:
             result = "noop"
 
+    # WS2 — `reason` est un champ LIBRE : on le passe par la porte de redaction
+    # PII avant persistance (un admin pourrait y coller un e-mail/IBAN/NIR).
+    from .safe_logger import redact_text
+
+    safe_reason = redact_text(reason) if reason else None
     record = {
         "action_id": action_id or str(uuid.uuid4()),
         "timestamp_utc": timestamp_utc or _now_iso(),
@@ -211,19 +231,14 @@ def apply_control(
         "action": action if action in _ACTION_SCOPES else "disable_global",
         "scope": scope,
         "target_hash": hash_id(target_id) if target_id else None,
-        "reason": reason,
+        "reason": safe_reason,
         "result": result,
     }
-    with _lock, _connect() as conn:
-        conn.execute(
-            "INSERT INTO admin_audit(action_id, timestamp_utc, admin_id_hash,"
-            " action, scope, target_hash, reason, result)"
-            " VALUES(:action_id,:timestamp_utc,:admin_id_hash,:action,:scope,"
-            ":target_hash,:reason,:result)",
-            record,
-        )
-        conn.commit()
-    return record
+    # WS2 — journal d'audit append-only CHAÎNÉ (HMAC tamper-evident). Import
+    # paresseux pour éviter une dépendance circulaire (audit_log -> admin_state).
+    from . import audit_log
+
+    return audit_log.append_audit(record)
 
 
 def current_state() -> Dict[str, Any]:

@@ -7,8 +7,17 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-ENV_FILE=".env"
-TEMPLATE="env.template"
+# Fichier d'environnement cible : `.env` par défaut (dev/local). Surchargeable
+# pour le multi-environnement (test/prod) via $ENV_FILE ou en 1er argument :
+#   ENV_FILE=deploy/prod/.env.prod ./scripts/gen-secrets.sh
+#   ./scripts/gen-secrets.sh deploy/prod/.env.prod
+ENV_FILE="${ENV_FILE:-${1:-.env}}"
+# Gabarit associé : env.prod.template pour les environnements prod/test (sous
+# deploy/prod/), env.template sinon. Surchargeable via $TEMPLATE.
+case "$ENV_FILE" in
+  deploy/prod/*|*/deploy/prod/*) TEMPLATE="${TEMPLATE:-deploy/prod/env.prod.template}" ;;
+  *)                             TEMPLATE="${TEMPLATE:-env.template}" ;;
+esac
 
 if [ ! -f "$ENV_FILE" ]; then
   cp "$TEMPLATE" "$ENV_FILE"
@@ -81,6 +90,25 @@ fi
 if [ -z "$(get_val S3_AWS_SECRET_ACCESS_KEY)" ]; then
   set_val S3_AWS_SECRET_ACCESS_KEY "$(get_val MINIO_ROOT_PASSWORD)"; echo "  + S3_AWS_SECRET_ACCESS_KEY = MINIO_ROOT_PASSWORD"
 fi
+
+# --- WS2 ---
+# Secrets de la couche sécurité/RGPD d'onix-actions (cf. docs/SECURITY_RGPD_ACTIONS.md).
+echo "Génération des secrets WS2 (sécurité/RGPD onix-actions) :"
+# Clé ADMIN distincte (en-tête X-Admin-Key) : OBLIGATOIRE par défaut (fail-closed)
+# pour /admin/*. Séparer la clé admin de la clé de service évite qu'une fuite de
+# la clé d'appel donne le contrôle d'administration (kill-switch, blocage).
+ensure ONIX_ACTIONS_ADMIN_KEY          rand 48
+# Secret HMAC d'identité d'appelant (signature par appel : X-Onix-Signature).
+# Lie identité + horodatage + requête -> ni rejouable, ni transférable.
+ensure ONIX_ACTIONS_CALLER_HMAC_SECRET rand 48
+# Clé HMAC de chaînage du journal d'audit (admin_audit tamper-evident). Toute
+# altération d'une ligne casse la chaîne et devient détectable (/admin/audit/verify).
+ensure ONIX_ACTIONS_AUDIT_HMAC_KEY     rand 48
+
+# --- Intégration (câblage WS6) ---
+# Mot de passe admin Grafana (référencé par monitoring/ + env.template WS6). Sans
+# génération, Grafana démarrerait sur 'admin' par défaut → on le force ici.
+ensure GRAFANA_ADMIN_PASSWORD          rand 32
 
 chmod 600 "$ENV_FILE"
 echo "✓ Secrets prêts. Permissions $ENV_FILE → 600 (lecture/écriture propriétaire uniquement)."

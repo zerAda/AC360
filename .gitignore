@@ -1,5 +1,9 @@
 # Secrets locaux (générés par scripts/gen-secrets.sh) — NE JAMAIS committer.
 .env
+# Fichiers d'environnement multi-env (dev/test/prod) — secrets, jamais committés.
+.env.*
+deploy/prod/.env
+deploy/prod/.env.*
 
 # Sauvegardes locales (scripts/backup.sh)
 backups/
@@ -11,5 +15,12 @@ docker-compose.sandbox.yml
 actions/.venv/
 actions/data/
 actions/.pytest_cache/
+
+# access-gateway — artefacts locaux (venv, caches, .env local du composant)
+access-gateway/.venv/
+access-gateway/.pytest_cache/
+access-gateway/.env
+access-gateway/config/group_map.json
+
 **/__pycache__/
 *.pyc
