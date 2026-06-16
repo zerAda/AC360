@@ -59,15 +59,38 @@ def _gate(feature: str, caller_id: Optional[str] = None) -> None:
         raise HTTPException(status_code=403, detail=admin_state.blocked_message(reason))
 
 
+def _select_reference_record(records: list, client_key: Optional[str]) -> dict:
+    """Choisit l'enregistrement de référence parmi une liste : filtré par
+    `client_key` (sur le nom du client) si fourni, sinon le premier."""
+    if not records:
+        raise HTTPException(status_code=404, detail="Référence vide.")
+    if client_key:
+        from .audit_engine import normalize_name
+
+        target = normalize_name(client_key)
+        for rec in records:
+            if isinstance(rec, dict) and normalize_name(rec.get("nom_client")) == target:
+                return rec
+        raise HTTPException(status_code=404, detail="Client introuvable dans la référence.")
+    first = records[0]
+    if not isinstance(first, dict):
+        raise HTTPException(status_code=400, detail="Référence : objet attendu.")
+    return first
+
+
 def _load_reference(
-    reference: Optional[dict],
+    reference: Optional[Any],
     reference_path: Optional[str],
     client_key: Optional[str],
 ) -> dict:
-    """Résout l'enregistrement de référence : inline (dict) prioritaire, sinon
-    fichier monté (JSON/CSV) filtré par `client_key` sur le nom du client."""
-    if reference:
-        return reference
+    """Résout l'enregistrement de référence : inline (dict OU liste) prioritaire,
+    sinon fichier monté (JSON/CSV). Dans les deux cas, une liste est filtrée par
+    `client_key` sur le nom du client (à défaut, le premier enregistrement)."""
+    if reference is not None:
+        # Inline : accepte un objet unique ou une liste d'objets (comme un
+        # fichier .json), et applique la même résolution par client_key.
+        records = reference if isinstance(reference, list) else [reference]
+        return _select_reference_record(records, client_key)
     if not reference_path:
         raise HTTPException(
             status_code=400,
@@ -96,17 +119,7 @@ def _load_reference(
     except Exception:
         raise HTTPException(status_code=400, detail="Référence illisible.")
 
-    if not records:
-        raise HTTPException(status_code=404, detail="Référence vide.")
-    if client_key:
-        from .audit_engine import normalize_name
-
-        target = normalize_name(client_key)
-        for rec in records:
-            if normalize_name(rec.get("nom_client")) == target:
-                return rec
-        raise HTTPException(status_code=404, detail="Client introuvable dans la référence.")
-    return records[0]
+    return _select_reference_record(records, client_key)
 
 
 # ---------------------------------------------------------------------------
@@ -292,8 +305,17 @@ async def audit_file_endpoint(
     else:
         document = extract_canonical_fields(ocr_out)
 
-    ref_dict = json.loads(reference) if reference else None
-    reference_record = _load_reference(ref_dict, reference_path, client_key)
+    if reference:
+        try:
+            ref_inline = json.loads(reference)
+        except json.JSONDecodeError:
+            raise HTTPException(
+                status_code=400,
+                detail="Champ 'reference' invalide : JSON attendu (objet ou liste d'objets).",
+            )
+    else:
+        ref_inline = None
+    reference_record = _load_reference(ref_inline, reference_path, client_key)
     result = run_audit({"document": document, "reference": reference_record})
     result["_ocr_mode"] = mode
     usage_tracker.track("audit_documentaire_completed", user_id=caller_id,
