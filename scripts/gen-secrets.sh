@@ -105,6 +105,11 @@ ensure ONIX_ACTIONS_CALLER_HMAC_SECRET rand 48
 # altération d'une ligne casse la chaîne et devient détectable (/admin/audit/verify).
 ensure ONIX_ACTIONS_AUDIT_HMAC_KEY     rand 48
 
+# --- Intégration (câblage WS6) ---
+# Mot de passe admin Grafana (référencé par monitoring/ + env.template WS6). Sans
+# génération, Grafana démarrerait sur 'admin' par défaut → on le force ici.
+ensure GRAFANA_ADMIN_PASSWORD          rand 32
+
 chmod 600 "$ENV_FILE"
 echo "✓ Secrets prêts. Permissions $ENV_FILE → 600 (lecture/écriture propriétaire uniquement)."
 echo "  Sauvegardez ces secrets dans votre coffre (ex: Azure Key Vault / gestionnaire de mots de passe)."

@@ -26,3 +26,7 @@ slowapi==0.1.9
 # fédérée (ex. Entra ID). Optionnel : la voie HS256 est gérée nativement sans
 # dépendance ; PyJWT n'est requis QUE pour les signatures asymétriques.
 PyJWT==2.10.1
+# --- Intégration (câblage WS6 ↔ WS2) -----------------------------------------
+# Endpoint /metrics Prometheus dans actions/app/main.py (cf. docs/OBSERVABILITY.md
+# §5). Pin sûr (0 CVE connue). Permet l'instrumentation HTTP + FinOps + kill-switch.
+prometheus-client==0.21.1

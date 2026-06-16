@@ -17,11 +17,20 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    REGISTRY,
+    Counter,
+    Gauge,
+    Histogram,
+    generate_latest,
+)
 from pydantic import BaseModel, Field
 
 from . import admin_state, audit_log, cost_tracker, docgen, dlp, notify as notify_mod
@@ -87,6 +96,71 @@ app = FastAPI(
 
 
 # ---------------------------------------------------------------------------
+# Câblage inter-WS — métriques Prometheus (cf. docs/OBSERVABILITY.md §5)
+# ---------------------------------------------------------------------------
+# Endpoint /metrics au format texte Prometheus, scrapé par le job `onix-actions`
+# (http://actions:8100/metrics). Les noms ci-dessous correspondent EXACTEMENT aux
+# requêtes des dashboards Grafana et des règles d'alerte WS6 (contrat figé).
+#
+# Sécurité (style WS2) : /metrics n'expose AUCUNE donnée personnelle — uniquement
+# des compteurs/jauges agrégés, et les labels `endpoint` sont les CHEMINS DE ROUTE
+# (gabarits, ex. "/download/{job_id}") et non les valeurs réelles → ni PII, ni
+# cardinalité non bornée. L'endpoint est volontairement NON authentifié : le
+# service n'a aucun port hôte (réseau interne onix-net uniquement), c'est la même
+# posture que /health. À NE PAS exposer publiquement (cf. OBSERVABILITY.md §5).
+#
+# Création IDEMPOTENTE : ce module est rechargé (importlib.reload) par la suite de
+# tests pour relire les variables d'environnement. Recréer un collecteur déjà
+# enregistré lèverait « Duplicated timeseries » ; on purge donc toute série de
+# même nom du registre par défaut avant de (re)créer la métrique.
+def _metric(cls, name, doc, labels=None):
+    # prometheus_client stocke le nom de base SANS le suffixe `_total` (Counter).
+    # On purge le collecteur dont le nom de base correspond à l'un ou l'autre.
+    base = name[: -len("_total")] if name.endswith("_total") else name
+    for collector in list(getattr(REGISTRY, "_names_to_collectors", {}).values()):
+        cname = getattr(collector, "_name", None)
+        if cname is not None and cname in (name, base):
+            try:
+                REGISTRY.unregister(collector)
+            except KeyError:
+                pass
+    return cls(name, doc, labels) if labels else cls(name, doc)
+
+
+REQS = _metric(
+    Counter, "onix_http_requests_total", "Requêtes HTTP servies par onix-actions.",
+    ["endpoint", "method", "status"],
+)
+LATENCY = _metric(
+    Histogram, "onix_http_request_duration_seconds", "Latence des requêtes HTTP (secondes).",
+    ["endpoint"],
+)
+KILLSWITCH = _metric(
+    Counter, "onix_killswitch_blocked_total", "Requêtes bloquées par le kill-switch (HTTP 403).",
+    ["feature", "reason"],
+)
+BUDGET_SPENT = _metric(Gauge, "onix_budget_spent_eur", "Coût estimé cumulé (EUR).")
+BUDGET_LIMIT = _metric(Gauge, "onix_budget_limit_eur", "Budget alloué (EUR).")
+BUDGET_RATIO = _metric(Gauge, "onix_budget_ratio", "Ratio consommé du budget (0–1+).")
+UP = _metric(Gauge, "onix_up", "Vivacité applicative onix-actions (1 = up).")
+UP.set(1)
+
+
+@app.middleware("http")
+async def _metrics_mw(request: Request, call_next):
+    """Compte chaque requête + observe sa latence. Le label `endpoint` est le
+    GABARIT de route (pas l'URL réelle) → borne la cardinalité et évite toute
+    fuite de valeur dans une métrique."""
+    start = time.perf_counter()
+    response = await call_next(request)
+    route = request.scope.get("route")
+    path = getattr(route, "path", None) or request.url.path
+    REQS.labels(path, request.method, response.status_code).inc()
+    LATENCY.labels(path).observe(time.perf_counter() - start)
+    return response
+
+
+# ---------------------------------------------------------------------------
 # Gating commun
 # ---------------------------------------------------------------------------
 def _gate(feature: str, caller_id: Optional[str] = None) -> None:
@@ -94,6 +168,9 @@ def _gate(feature: str, caller_id: Optional[str] = None) -> None:
     user_hash = admin_state.hash_id(caller_id) if caller_id else None
     allowed, reason = admin_state.is_allowed(feature, user_id_hash=user_hash)
     if not allowed:
+        # Observabilité WS6 : compte le blocage AVANT de lever le 403 (réutilisé
+        # par l'alerte KillSwitchBlockingTraffic et le panneau « 403 par raison »).
+        KILLSWITCH.labels(feature, reason or "unknown").inc()
         raise HTTPException(status_code=403, detail=admin_state.blocked_message(reason))
 
 
@@ -276,6 +353,22 @@ def health() -> Dict[str, Any]:
         "ocr": ocr_mod.ocr_capabilities(),
         "global_enabled": admin_state.is_global_enabled(),
     }
+
+
+@app.get("/metrics")
+def metrics() -> Response:
+    """Expose les métriques au format texte Prometheus (cf. OBSERVABILITY.md §5).
+
+    Non authentifié À DESSEIN (réseau interne, aucun port hôte — même posture que
+    /health). Rafraîchit les jauges FinOps depuis usage_tracker/cost_tracker à la
+    volée : ce sont des AGRÉGATS (coût/budget), jamais de donnée personnelle."""
+    spent = usage_tracker.summary().get("estimated_cost_eur", 0.0)
+    budget = cost_tracker.check_budget(spent)
+    BUDGET_SPENT.set(spent)
+    if budget.get("budget_eur"):
+        BUDGET_LIMIT.set(budget["budget_eur"])
+        BUDGET_RATIO.set((budget.get("ratio_pct") or 0) / 100.0)
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 # ---------------------------------------------------------------------------
