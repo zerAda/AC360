@@ -18,7 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Backend Deploy & Observability** - Deploy the fixed backend via a real prod CD pipeline with monitoring, alerting, and five solo-operator runbooks live (completed 2026-06-15)
 - [x] **Phase 4: Copilot Studio Production Publish** - Publish the hardened agent to Teams 1:1 with rebound prod connections, SSO, and validated live guardrails (completed 2026-06-15)
 - [x] **Phase 5: RGPD & Security Evidence Pack** - Produce the compliance and security-review evidence required before any real user or client data (completed 2026-06-15)
-- [ ] **Phase 6: Controlled E2E, Go/No-Go & Team Rollout** - Prove the full stack against real services on synthetic data, then gate and roll out to the team
+- [x] **Phase 6: Controlled E2E, Go/No-Go & Team Rollout** - Prove the full stack against real services on synthetic data, then gate and roll out to the team (completed 2026-06-16)
 
 ## Phase Details
 
@@ -154,10 +154,10 @@ Plans:
 **Plans**: 4 plans
 Plans:
 
-- [ ] 06-01-PLAN.md — Wave 0 RED: failing allowlist fail-safe spec + E2E-harness spec (mocked HTTP, no live call) (GO-01, GO-02)
-- [ ] 06-02-PLAN.md — Wave 1: allowlist mode in feature_flags.py — AC360_ALLOWED_TEAMS/USERS_HASHED, deny-by-default when set, no-restriction when unset (GO-02)
-- [ ] 06-03-PLAN.md — Wave 1: scripts/e2e_smoke.py synthetic E2E driver (audit→status→result, 5 scenarios, injectable HTTP, no-PII KQL → GUARDRAILS_VALIDATION §2) (GO-01)
-- [ ] 06-04-PLAN.md — Wave 2: Go/No-Go checklist (07) + gradual-rollout runbook (08) + blocking operator checkpoint for live E2E / sign-off / rollout (GO-01/02/03/04)
+- [x] 06-01-PLAN.md — Wave 0 RED: failing allowlist fail-safe spec + E2E-harness spec (mocked HTTP, no live call) (GO-01, GO-02)
+- [x] 06-02-PLAN.md — Wave 1: allowlist mode in feature_flags.py — AC360_ALLOWED_TEAMS/USERS_HASHED, deny-by-default when set, no-restriction when unset (GO-02)
+- [x] 06-03-PLAN.md — Wave 1: scripts/e2e_smoke.py synthetic E2E driver (audit→status→result, 5 scenarios, injectable HTTP, no-PII KQL → GUARDRAILS_VALIDATION §2) (GO-01)
+- [x] 06-04-PLAN.md — Wave 2: Go/No-Go checklist (07) + gradual-rollout runbook (08) + blocking operator checkpoint for live E2E / sign-off / rollout (GO-01/02/03/04)
 
 **Risks**: The E2E must use synthetic (not real-client) data and must restart the Functions app between download and FIC retrieval to prove cross-instance file durability; skipping failure paths or using real PII before the DPIA exists would invalidate the gate.
 
@@ -174,4 +174,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 3. Backend Deploy & Observability | 5/5 | Complete   | 2026-06-15 |
 | 4. Copilot Studio Production Publish | 2/2 | Complete   | 2026-06-15 |
 | 5. RGPD & Security Evidence Pack | 6/6 | Complete   | 2026-06-15 |
-| 6. Controlled E2E, Go/No-Go & Team Rollout | 0/4 | Not started | - |
+| 6. Controlled E2E, Go/No-Go & Team Rollout | 4/4 | Complete   | 2026-06-16 |
