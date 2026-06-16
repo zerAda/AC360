@@ -81,7 +81,7 @@ Go-live gate (P1). Each maps to a roadmap phase.
 ### Controlled Go-Live
 
 - [ ] **GO-01**: Controlled real-prod E2E against real Azure services using **synthetic** test client/document, covering happy path + failure paths (OCR timeout, CLIENT_NON_TROUVE, Fabric-down, ECART+FIC), with a telemetry check proving no PII leak
-- [ ] **GO-02**: Feature-flag gating restricts access to exactly the target team at launch
+- [x] **GO-02**: Feature-flag gating restricts access to exactly the target team at launch
 - [ ] **GO-03**: Go/No-Go checklist signed by the operator
 - [ ] **GO-04**: Gradual rollout executed (pilot cohort of 2–5, then full team after 24–48h clean signal)
 
