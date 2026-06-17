@@ -24,7 +24,7 @@ jobs:
 
     steps:
       - name: Checkout du code source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Afficher la version à déployer
         env:
@@ -62,7 +62,7 @@ jobs:
           find . -name "*.zip" -o -name "*.tar.gz" | head -20
 
       - name: Uploader le package comme artefact GitHub
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ac360-staging-v${{ github.event.inputs.version }}-${{ github.run_number }}
           path: |
