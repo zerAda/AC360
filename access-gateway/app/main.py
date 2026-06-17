@@ -34,7 +34,9 @@ from .identity import IdentityError, _TTLCache, resolve_principal
 from .graph_client import GraphError
 from .mapping import GroupMap, load_group_map
 from .metrics import (
+    add_cache_tokens_saved,
     inc_answer_no_context,
+    inc_cache_bypassed,
     inc_citation,
     inc_feedback,
     inc_guardrail,
@@ -50,6 +52,15 @@ from .onyx_proxy import (
     reconstruct_context,
     upstream_headers,
 )
+from . import audit as _audit
+from .cache import (
+    build_cache,
+    estimate_tokens,
+    make_cache_key,
+    normalize_question,
+    should_bypass,
+)
+from .doc_acl import StaticDocACL, filter_citations
 
 _logger = logging.getLogger("onix.gateway")
 
@@ -81,16 +92,48 @@ async def _lifespan(app: FastAPI):
     app.state.group_map = load_group_map(settings.mapping_path)
     app.state.cache = _TTLCache(settings.group_cache_ttl)
     app.state.http = httpx.AsyncClient(timeout=httpx.Timeout(settings.upstream_timeout))
+    # Cache applicatif RBAC-safe (couche au-dessus d'Onyx/Ollama). FAIL-SAFE : une
+    # config invalide (secret HMAC manquant) DÉSACTIVE le cache avec un log CRITICAL
+    # plutôt que de couper la passerelle (le cache est une optimisation, pas une
+    # autorité ; cache OFF = posture sûre — aucun risque de fuite).
+    try:
+        app.state.response_cache = build_cache(settings)
+    except RuntimeError as exc:
+        _logger.critical("Cache DÉSACTIVÉ (config invalide) : %s", exc)
+        app.state.response_cache = None
+    # Filtre ACL par-document (FOSS) : actif UNIQUEMENT si un fichier ACL existe.
+    # Activé sans fichier ⇒ INACTIF + avertissement (un deny-all total serait une
+    # erreur d'exploitation, pas une intention). Cf. docs/RBAC.md.
+    app.state.doc_acl = None
+    if settings.doc_acl_enabled:
+        if os.path.exists(settings.doc_acl_path):
+            app.state.doc_acl = StaticDocACL.from_file(
+                settings.doc_acl_path, default_policy=settings.doc_acl_default_policy
+            )
+            _logger.info(
+                "doc_acl actif (fichier=%s, défaut=%s).",
+                settings.doc_acl_path, settings.doc_acl_default_policy,
+            )
+        else:
+            _logger.warning(
+                "doc_acl activé mais '%s' absent → filtre par-document INACTIF "
+                "(fournissez l'ACL via GATEWAY_DOC_ACL_PATH).", settings.doc_acl_path,
+            )
     _logger.info(
-        "gateway prête : source=%s, groupes mappés=%d, deny_if_no_match=%s",
+        "gateway prête : source=%s, groupes=%d, deny_if_no_match=%s, cache=%s, doc_acl=%s",
         settings.group_source,
         len(app.state.group_map.by_group),
         settings.deny_if_no_match,
+        "on" if app.state.response_cache is not None else "off",
+        "on" if app.state.doc_acl is not None else "off",
     )
     try:
         yield
     finally:
         await app.state.http.aclose()
+        _cache = getattr(app.state, "response_cache", None)
+        if _cache is not None:
+            _cache.close()
 
 
 app = FastAPI(
@@ -248,57 +291,107 @@ async def chat_send_message(
         endpoint="chat/send-message",
     )
 
-    url = f"{settings.onyx_base_url}/chat/send-message"
+    # Latence bout-en-bout mesurée dès l'entrée (couvre cache + amont).
     _t0 = time.perf_counter()
-    try:
-        resp = await request.app.state.http.post(
-            url,
-            json=safe_payload,
-            headers=upstream_headers(settings.onyx_api_key),
+    question_text = payload.get("message", "") if isinstance(payload, dict) else ""
+
+    # ── CACHE — clé RBAC-safe = HMAC(périmètre Document Set TRIÉ ∥ locale ∥
+    # question normalisée). On NE met en cache QUE le corps PÉRIMÈTRE-déterministe
+    # (réponse Onyx + post-filtre garde-fous), JAMAIS le résultat du filtre ACL
+    # par-document (qui est PAR UTILISATEUR) : ce dernier est ré-appliqué à CHAQUE
+    # requête (hit ET miss). Ainsi deux utilisateurs au même périmètre mutualisent
+    # le coût LLM sans jamais partager une citation que l'un n'a pas le droit de voir.
+    cache = getattr(request.app.state, "response_cache", None)
+    acl = getattr(request.app.state, "doc_acl", None)
+    bypass = should_bypass(payload=payload, headers=request.headers)
+    cacheable = cache is not None and bypass is None
+    cache_key: Optional[str] = None
+    if cacheable:
+        cache_key = make_cache_key(
+            settings=settings,
+            principal=principal.user_id,
+            normalized_question=normalize_question(str(question_text)),
+            authorized_doc_sets=list(authorized),
         )
-    except httpx.HTTPError as exc:
-        _logger.warning("Erreur de relais vers Onyx : %s", type(exc).__name__)
-        inc_upstream_error()
-        raise HTTPException(status_code=502, detail="Onyx amont injoignable.")
+    elif cache is not None and bypass is not None:
+        inc_cache_bypassed(bypass)
 
-    body = _safe_json(resp)
+    body: Any
+    status_code = 200
+    media = "application/json"
+    cached = cache.lookup(cache_key) if (cacheable and cache_key) else None
 
-    # ── CHEMIN RÉPONSE : POST-FILTRE GARDE-FOUS (couche 3, hors-LLM, DÉPLOYÉ) ──
-    # La passerelle est le dernier point sous notre contrôle avant l'utilisateur :
-    # on inspecte la réponse de l'assistant Onyx et, au moindre invariant violé
-    # (fuite de prompt, exécution d'injection, write simulé, fait non sourcé…), on
-    # SUBSTITUE un refus déterministe. S'exécute APRÈS le LLM : une injection ne
-    # peut pas le désactiver. N'agit que sur les réponses 2xx exploitables.
-    if settings.guardrail_enabled and 200 <= resp.status_code < 300:
-        answer, field = extract_answer(body)
-        if field is not None:
-            question = payload.get("message", "") if isinstance(payload, dict) else ""
-            context = reconstruct_context(body)
-            verdict = post_filter(str(question), context, answer)
-            log_guardrail_decision(
-                actor=principal.user_id,
-                blocked=verdict.blocked,
-                rule=verdict.rule,
-                reason=verdict.reason,
-                endpoint="chat/send-message",
+    if cached is not None:
+        # HIT : corps périmètre-déterministe déjà post-filtré → on saute Onyx + LLM.
+        body = cached
+        add_cache_tokens_saved(estimate_tokens(body))
+        log_access_decision(
+            actor=principal.user_id, decision="cache_hit", reason="served_from_cache",
+            group_source=principal.source, group_count=len(principal.group_ids),
+            authorized_sets=authorized, endpoint="chat/send-message",
+        )
+    else:
+        # MISS : relais vers Onyx.
+        url = f"{settings.onyx_base_url}/chat/send-message"
+        try:
+            resp = await request.app.state.http.post(
+                url, json=safe_payload, headers=upstream_headers(settings.onyx_api_key),
             )
-            # ── Métriques qualité/ops (exception-safe) ──────────────────────
-            inc_guardrail(rule=verdict.rule, blocked=verdict.blocked)
-            final_answer = verdict.answer
-            inc_citation(has_citation=has_citation(final_answer))
-            if not context:
-                inc_answer_no_context()
-            if verdict.blocked:
-                body = apply_filtered_answer(body, field, verdict.answer)
+        except httpx.HTTPError as exc:
+            _logger.warning("Erreur de relais vers Onyx : %s", type(exc).__name__)
+            inc_upstream_error()
+            raise HTTPException(status_code=502, detail="Onyx amont injoignable.")
+        status_code = resp.status_code
+        _media_hdr = resp.headers.get("content-type", "application/json")
+        media = "application/json" if _media_hdr.startswith("application/json") else _media_hdr
+        body = _safe_json(resp)
 
-    # Mesure de latence bout-en-bout (après relais + post-filtre).
+        if not (200 <= status_code < 300):
+            # Non-2xx : relais tel quel, sans cache / ACL / garde-fous.
+            observe_latency(time.perf_counter() - _t0)
+            inc_requests(endpoint="chat/send-message", decision="allow")
+            return JSONResponse(status_code=status_code, content=body, media_type="application/json")
+
+        # ── POST-FILTRE GARDE-FOUS (couche 3, hors-LLM, périmètre-déterministe) ──
+        # Dernier point sous notre contrôle avant l'utilisateur. S'exécute APRÈS le
+        # LLM : une injection ne peut pas le désactiver. Au moindre invariant violé
+        # (fuite de prompt, injection exécutée, write simulé, fait non sourcé) → refus.
+        if settings.guardrail_enabled:
+            answer, field = extract_answer(body)
+            if field is not None:
+                context = reconstruct_context(body)
+                verdict = post_filter(str(question_text), context, answer)
+                log_guardrail_decision(
+                    actor=principal.user_id, blocked=verdict.blocked,
+                    rule=verdict.rule, reason=verdict.reason, endpoint="chat/send-message",
+                )
+                inc_guardrail(rule=verdict.rule, blocked=verdict.blocked)
+                inc_citation(has_citation=has_citation(verdict.answer))
+                if not context:
+                    inc_answer_no_context()
+                if verdict.blocked:
+                    body = apply_filtered_answer(body, field, verdict.answer)
+
+        # STOCKAGE : corps PÉRIMÈTRE-déterministe (pré-filtre ACL par-utilisateur).
+        if cacheable and cache_key:
+            cache.store(cache_key, body, ttl=settings.cache_ttl_seconds)
+
+    # ── FILTRE ACL PAR-DOCUMENT (PAR UTILISATEUR) — appliqué hit ET miss. ──────
+    # Retire de la réponse les citations/documents non autorisés pour CET appelant
+    # (RBAC fin FOSS, filtre de SORTIE — cf. docs/RBAC.md). Inactif si pas d'ACL.
+    if acl is not None:
+        body, _dropped = filter_citations(
+            body, principal, acl, _audit,
+            strip_uncited=settings.doc_acl_strip_uncited,
+            extract_answer=extract_answer,
+            apply_filtered_answer=apply_filtered_answer,
+            enabled=settings.doc_acl_enabled,
+        )
+
     observe_latency(time.perf_counter() - _t0)
     inc_requests(endpoint="chat/send-message", decision="allow")
-
-    media = resp.headers.get("content-type", "application/json")
     return JSONResponse(
-        status_code=resp.status_code,
-        content=body,
+        status_code=status_code, content=body,
         media_type="application/json" if media.startswith("application/json") else media,
     )
 
