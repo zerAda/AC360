@@ -20,11 +20,87 @@ import json
 import logging
 import os
 import re
-from typing import Any, Dict, Optional
+from dataclasses import dataclass
+from typing import Any, Dict, Optional, Tuple
 
 import httpx
 
 logger = logging.getLogger("onix.actions.llm")
+
+
+@dataclass(frozen=True)
+class LLMUsage:
+    """Comptage de tokens d'un appel LLM — GROUND TRUTH quand `measured=True`.
+
+    Ollama renvoie déjà les VRAIS comptes dans la réponse de `/api/generate`
+    (cf. https://github.com/ollama/ollama/blob/main/docs/api.md) :
+      * `prompt_eval_count` -> tokens d'ENTRÉE réellement évalués ;
+      * `eval_count`        -> tokens de SORTIE réellement générés ;
+      * `prompt_eval_duration` / `eval_duration` / `total_duration` -> durées en
+        NANOSECONDES.
+    On capture ces champs au lieu d'estimer (chars/4). `measured=True` signale au
+    FinOps que le chiffre est mesuré (et non estimé).
+
+    `eval_tokens_per_second` est dérivé de `eval_count` / `eval_duration` (signal
+    de perf réel) ; None si la durée est absente ou nulle.
+    """
+
+    input_tokens: int
+    output_tokens: int
+    measured: bool
+    total_duration_ns: Optional[int] = None
+    prompt_eval_duration_ns: Optional[int] = None
+    eval_duration_ns: Optional[int] = None
+    eval_tokens_per_second: Optional[float] = None
+
+    def as_dict(self) -> Dict[str, Any]:
+        return {
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "measured": self.measured,
+            "total_duration_ns": self.total_duration_ns,
+            "prompt_eval_duration_ns": self.prompt_eval_duration_ns,
+            "eval_duration_ns": self.eval_duration_ns,
+            "eval_tokens_per_second": self.eval_tokens_per_second,
+        }
+
+
+def estimate_tokens(text: str) -> int:
+    """Estimation HEURISTIQUE (~chars/4) du nombre de tokens d'un texte.
+
+    Utilisée UNIQUEMENT pour le repli (pas d'appel LLM, donc aucun comptage réel
+    disponible). Les événements correspondants sont marqués `measured=False`."""
+    return max(0, len((text or "")) // 4)
+
+
+def usage_from_ollama(data: Dict[str, Any]) -> Optional[LLMUsage]:
+    """Construit un `LLMUsage` MESURÉ depuis une réponse `/api/generate`.
+
+    Retourne None si les champs de comptage sont absents (réponse partielle /
+    ancienne version d'Ollama) -> l'appelant retombera sur l'estimation."""
+    if not isinstance(data, dict):
+        return None
+    pin = data.get("prompt_eval_count")
+    pout = data.get("eval_count")
+    if not isinstance(pin, int) or not isinstance(pout, int):
+        return None
+    eval_dur = data.get("eval_duration")
+    eval_dur = eval_dur if isinstance(eval_dur, int) else None
+    tps: Optional[float] = None
+    if eval_dur and eval_dur > 0:
+        # eval_count tokens en eval_duration ns -> tokens/s.
+        tps = round(pout / (eval_dur / 1_000_000_000), 2)
+    total_dur = data.get("total_duration")
+    prompt_dur = data.get("prompt_eval_duration")
+    return LLMUsage(
+        input_tokens=pin,
+        output_tokens=pout,
+        measured=True,
+        total_duration_ns=total_dur if isinstance(total_dur, int) else None,
+        prompt_eval_duration_ns=prompt_dur if isinstance(prompt_dur, int) else None,
+        eval_duration_ns=eval_dur,
+        eval_tokens_per_second=tps,
+    )
 
 CANONICAL_FIELDS = (
     "nom_client",
@@ -155,11 +231,20 @@ def _filter_canonical(parsed: dict) -> Dict[str, Any]:
     return {k: parsed.get(k) for k in CANONICAL_FIELDS if parsed.get(k) not in (None, "")}
 
 
-def extract_fields_llm(text: str, *, timeout: Optional[float] = None) -> Dict[str, Any]:
-    """Extrait les champs canoniques d'un texte via Ollama. Lève en cas d'échec.
+def extract_fields_llm_with_usage(
+    text: str, *, timeout: Optional[float] = None
+) -> Tuple[Dict[str, Any], LLMUsage]:
+    """Comme `extract_fields_llm` mais renvoie AUSSI les VRAIS comptes de tokens.
 
-    `timeout` (optionnel) surcharge le timeout de LECTURE ; la connexion garde un
-    timeout court dédié pour détecter rapidement un Ollama absent."""
+    Retourne `(champs, usage)` où `usage` est un `LLMUsage` MESURÉ (issu de
+    `prompt_eval_count` / `eval_count` d'Ollama) quand ces champs sont présents.
+    Si Ollama répond sans les comptes (cas rare / vieille version), on retombe sur
+    une estimation chars/4 marquée `measured=False` — le résultat d'extraction
+    reste valable, seule la métrique de coût est dégradée.
+
+    Lève (RuntimeError / ValueError) aux MÊMES conditions que l'API historique :
+    l'appelant gère le repli heuristique. La compatibilité ascendante est assurée
+    par `extract_fields_llm` (renvoie uniquement les champs)."""
     if not (text or "").strip():
         raise ValueError("Texte vide.")
     model = ollama_model()
@@ -195,5 +280,34 @@ def extract_fields_llm(text: str, *, timeout: Optional[float] = None) -> Dict[st
         logger.warning("Réponse LLM non exploitable (JSON invalide).")
         raise RuntimeError("Réponse LLM non exploitable (JSON invalide).")
     fields = _filter_canonical(parsed)
-    logger.info("Extraction LLM réussie (modèle=%s, champs=%d)", model, len(fields))
+    # GROUND TRUTH : on capture les comptes RÉELS renvoyés par Ollama. Si absents
+    # (réponse partielle), on dégrade vers une estimation chars/4 (measured=False).
+    usage = usage_from_ollama(data)
+    if usage is None:
+        response_text = data.get("response", "") or ""
+        usage = LLMUsage(
+            input_tokens=estimate_tokens(_PROMPT.format(texte=text[:8000])),
+            output_tokens=estimate_tokens(response_text),
+            measured=False,
+        )
+        logger.info(
+            "Comptes de tokens Ollama absents -> estimation (modèle=%s).", model
+        )
+    logger.info(
+        "Extraction LLM réussie (modèle=%s, champs=%d, in=%d, out=%d, measured=%s)",
+        model, len(fields), usage.input_tokens, usage.output_tokens, usage.measured,
+    )
+    return fields, usage
+
+
+def extract_fields_llm(text: str, *, timeout: Optional[float] = None) -> Dict[str, Any]:
+    """Extrait les champs canoniques d'un texte via Ollama. Lève en cas d'échec.
+
+    Wrapper de COMPATIBILITÉ ASCENDANTE : renvoie uniquement les champs (comme
+    historiquement). Pour récupérer aussi les VRAIS comptes de tokens, utiliser
+    `extract_fields_llm_with_usage`.
+
+    `timeout` (optionnel) surcharge le timeout de LECTURE ; la connexion garde un
+    timeout court dédié pour détecter rapidement un Ollama absent."""
+    fields, _usage = extract_fields_llm_with_usage(text, timeout=timeout)
     return fields

@@ -126,8 +126,9 @@ def test_audit_use_llm_repli_heuristique_si_ollama_ko(client, monkeypatch):
     def _boom(*a, **k):
         raise RuntimeError("Ollama indisponible: down")
 
-    # On force l'échec de l'extraction LLM.
-    monkeypatch.setattr(llm, "extract_fields_llm", _boom)
+    # On force l'échec de l'extraction LLM. `_resolve_document_fields` appelle
+    # désormais `extract_fields_llm_with_usage` (capture des tokens réels).
+    monkeypatch.setattr(llm, "extract_fields_llm_with_usage", _boom)
     text = (
         "Raison sociale: ACME SAS\nPlafond hospitalisation: 2000\n"
         "Date d'effet: 01/01/2024\nNuméro de contrat: CTR-2024-001\n"
@@ -150,14 +151,17 @@ def test_audit_use_llm_repli_heuristique_si_ollama_ko(client, monkeypatch):
 def test_audit_use_llm_mode_llm(client, monkeypatch):
     """/audit use_llm=true : si Ollama répond, mode 'llm' et champs LLM utilisés.
 
-    `_resolve_document_fields` fait `from .llm import extract_fields_llm` au moment
-    de l'appel : patcher `app.llm.extract_fields_llm` suffit."""
+    `_resolve_document_fields` fait `from .llm import extract_fields_llm_with_usage`
+    au moment de l'appel : patcher `app.llm.extract_fields_llm_with_usage` suffit."""
     import app.llm as llm
 
     def _fake(text, **k):
-        return {"nom_client": "ACME SAS", "numero_contrat": "CTR-2024-001"}
+        return (
+            {"nom_client": "ACME SAS", "numero_contrat": "CTR-2024-001"},
+            llm.LLMUsage(input_tokens=42, output_tokens=7, measured=True),
+        )
 
-    monkeypatch.setattr(llm, "extract_fields_llm", _fake)
+    monkeypatch.setattr(llm, "extract_fields_llm_with_usage", _fake)
     r = client.post("/audit", json={
         "text": "n'importe quel texte libre sans structure clé:valeur",
         "use_llm": True,
