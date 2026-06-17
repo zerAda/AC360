@@ -25,6 +25,8 @@ wheels/
 
 # Virtual Environment
 venv/
+.venv/
+**/.venv/
 ENV/
 
 # IDEs
@@ -143,3 +145,8 @@ tests/red_team/RED_TEAM_PROMPTS.md
 
 # Project Specific
 .planning/STATE.md.tmp
+.planning/STATE.md.lock
+
+# Local backups / leftover scaffolds (not part of the product)
+.backup_topics/
+nouveau_projet/
