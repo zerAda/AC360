@@ -58,12 +58,23 @@ regexes = [
   '''\*\*\*''',
   '''example\.com''',
   '''<REPLACE_ME>''',
-  '''TODO'''
+  '''TODO''',
+  # --- Confirmed false positives (NOT secrets — verified 2026-06-17) ---
+  # Azure built-in role definition ID "Key Vault Secrets User" (public constant)
+  '''4633458b-17de-408a-b874-0445c86b69e6''',
+  # Intentional test fixtures used to exercise redaction logic
+  '''A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S9t0''',
+  # Placeholder GUIDs (conftest fail-fast TENANT_ID/CLIENT_ID)
+  '''0{8}-0{4}-0{4}-0{4}-0{12}''',
+  '''1{8}-1{4}-1{4}-1{4}-1{12}''',
+  # Azure resource / app-registration NAMES (not secrets)
+  '''ac360-kv-prod''',
+  '''AC360-(API|OBO)-prod'''
 ]
 
 paths = [
-  ".git",
-  "node_modules",
-  "*.md",
-  "tests/red_team"
+  '''\.git''',
+  '''node_modules''',
+  '''\.md$''',
+  '''tests/red_team'''
 ]
