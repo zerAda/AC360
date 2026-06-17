@@ -473,12 +473,20 @@ class SemanticIndex:
         exact_key: str,
         embedding: Sequence[float],
         normalized_question: str,
+        divergence_text: Optional[str] = None,
     ) -> None:
         """Indexe (best-effort) l'embedding d'une question répondue.
 
         Idempotent sur `exact_key` au sein d'une partition (ré-indexer remonte
         l'entrée en tête LRU). Un embedding vide/non numérique est ignoré (on
-        n'indexe pas du bruit qui ne matcherait jamais proprement)."""
+        n'indexe pas du bruit qui ne matcherait jamais proprement).
+
+        `divergence_text` (optionnel) = texte utilisé par le GARDE anti-divergence
+        au moment de la recherche. On y stocke la question BRUTE (non normalisée)
+        car la casse porte le signal d'entité (ALPHA vs BETA) : la normalisation
+        lowercase tuerait la détection d'entités. Défaut = `normalized_question`
+        (rétro-compatible : un appelant qui ne fournit que le normalisé garde
+        l'ancien comportement)."""
         vec = _coerce_vector(embedding)
         if not vec:
             return
@@ -489,7 +497,7 @@ class SemanticIndex:
                 self._parts[perimeter] = part
             if exact_key in part:
                 part.move_to_end(exact_key)
-            part[exact_key] = (vec, normalized_question or "")
+            part[exact_key] = (vec, divergence_text or normalized_question or "")
             while len(part) > self._max:
                 part.popitem(last=False)
 
@@ -787,6 +795,7 @@ class Cache:
         perimeter: Optional[str] = None,
         normalized_question: Optional[str] = None,
         embed_fn: Optional[Callable[[str], Optional[Sequence[float]]]] = None,
+        raw_question: Optional[str] = None,
     ) -> None:
         """Persiste `body` (dict JSON-sérialisable) dans le backend.
 
@@ -811,7 +820,8 @@ class Cache:
             self._notify_error("set", exc)
         # Indexation sémantique best-effort (n'altère jamais le store ci-dessus).
         self.index_embedding(
-            key, perimeter=perimeter, normalized_question=normalized_question, embed_fn=embed_fn
+            key, perimeter=perimeter, normalized_question=normalized_question,
+            embed_fn=embed_fn, raw_question=raw_question,
         )
 
     def index_embedding(
@@ -821,6 +831,7 @@ class Cache:
         perimeter: Optional[str],
         normalized_question: Optional[str],
         embed_fn: Optional[Callable[[str], Optional[Sequence[float]]]],
+        raw_question: Optional[str] = None,
     ) -> None:
         """Indexe (best-effort) l'embedding d'une question répondue.
 
@@ -842,6 +853,7 @@ class Cache:
                 exact_key=key,
                 embedding=vec,
                 normalized_question=normalized_question,
+                divergence_text=raw_question,
             )
         except Exception:  # pragma: no cover — indexation best-effort
             pass
@@ -851,6 +863,8 @@ class Cache:
         perimeter: str,
         question: str,
         embed_fn: Callable[[str], Optional[Sequence[float]]],
+        *,
+        raw_question: Optional[str] = None,
     ) -> Optional[dict]:
         """Recherche un voisin sémantique SÛR dans la partition `perimeter`.
 
@@ -882,7 +896,7 @@ class Cache:
                 perimeter=perimeter,
                 embedding=vec,
                 threshold=self._semantic_threshold,
-                query_text=question,
+                query_text=(raw_question or question),
                 on_candidate=self._on_semantic_candidate,
                 on_rejected_divergence=self._on_semantic_rejected,
             )

@@ -56,7 +56,9 @@ from .onyx_proxy import (
 )
 from . import audit as _audit
 from .cache import (
+    _perimeter_partition,
     build_cache,
+    build_embed_fn,
     estimate_tokens,
     make_cache_key,
     normalize_question,
@@ -164,6 +166,9 @@ async def _lifespan(app: FastAPI):
     except RuntimeError as exc:
         _logger.critical("Cache DÉSACTIVÉ (config invalide) : %s", exc)
         app.state.response_cache = None
+    # Fonction d'embedding du tier sémantique (opt-in) : construite une fois si
+    # activé, injectée aux lookups/stores. None si désactivé → tier sémantique inerte.
+    app.state.embed_fn = build_embed_fn(settings) if settings.semantic_cache_enabled else None
     # Filtre ACL par-document (FOSS) : StaticDocACL ⊕ GraphDocACL (cf. _build_doc_acl).
     app.state.doc_acl, app.state.doc_acl_graph = await _build_doc_acl(app.state.http, settings)
     # Rafraîchi périodique de l'ACL Graph (tâche de fond) si TTL > 0.
@@ -396,16 +401,20 @@ async def chat_send_message(
     # le coût LLM sans jamais partager une citation que l'un n'a pas le droit de voir.
     cache = getattr(request.app.state, "response_cache", None)
     acl = getattr(request.app.state, "doc_acl", None)
+    embed_fn = getattr(request.app.state, "embed_fn", None)
     bypass = should_bypass(payload=payload, headers=request.headers)
     cacheable = cache is not None and bypass is None
+    norm_q = normalize_question(str(question_text))
     cache_key: Optional[str] = None
+    perimeter: Optional[str] = None
     if cacheable:
         cache_key = make_cache_key(
             settings=settings,
             principal=principal.user_id,
-            normalized_question=normalize_question(str(question_text)),
+            normalized_question=norm_q,
             authorized_doc_sets=list(authorized),
         )
+        perimeter = _perimeter_partition(list(authorized))
     elif cache is not None and bypass is not None:
         inc_cache_bypassed(bypass)
 
@@ -413,6 +422,12 @@ async def chat_send_message(
     status_code = 200
     media = "application/json"
     cached = cache.lookup(cache_key) if (cacheable and cache_key) else None
+    # Tier SÉMANTIQUE (opt-in) : rattrapage au-dessus du miss EXACT (reformulations).
+    # Sûr par construction : recherche bornée à la partition du périmètre + garde
+    # anti-divergence (nombres/dates/entités) DANS semantic_lookup. Cf. docs/CACHE.md §13.
+    if (cached is None and cacheable and settings.semantic_cache_enabled
+            and embed_fn is not None and perimeter is not None):
+        cached = cache.semantic_lookup(perimeter, norm_q, embed_fn, raw_question=str(question_text))
 
     if cached is not None:
         # HIT : corps périmètre-déterministe déjà post-filtré → on saute Onyx + LLM.
@@ -466,8 +481,13 @@ async def chat_send_message(
                     body = apply_filtered_answer(body, field, verdict.answer)
 
         # STOCKAGE : corps PÉRIMÈTRE-déterministe (pré-filtre ACL par-utilisateur).
+        # On indexe aussi l'embedding (best-effort) pour le tier sémantique si activé.
         if cacheable and cache_key:
-            cache.store(cache_key, body, ttl=settings.cache_ttl_seconds)
+            cache.store(
+                cache_key, body, ttl=settings.cache_ttl_seconds,
+                perimeter=perimeter, normalized_question=norm_q, embed_fn=embed_fn,
+                raw_question=str(question_text),
+            )
 
     # ── FILTRE ACL PAR-DOCUMENT (PAR UTILISATEUR) — appliqué hit ET miss. ──────
     # Retire de la réponse les citations/documents non autorisés pour CET appelant

@@ -379,7 +379,7 @@ plus de hits ⇒ moins de coût/latence.
 
 1. **Partition PAR PÉRIMÈTRE (RBAC-safe par construction).**
    L'index sémantique (`SemanticIndex`) est un dictionnaire
-   `{ périmètre → LRU[ clé_exacte → (embedding, question_normalisée) ] }`. La
+   `{ périmètre → LRU[ clé_exacte → (embedding de la question normalisée, texte BRUT pour le garde divergence) ] }`. La
    recherche d'un voisin se fait **UNIQUEMENT** dans la partition du périmètre
    de la requête (`_perimeter_partition` = sets autorisés triés+dédoublonnés,
    **la même définition** que la composante `authorized_doc_sets` de la clé
@@ -401,6 +401,12 @@ plus de hits ⇒ moins de coût/latence.
    (sûre à matcher) d'une **question factuellement différente** (dangereuse).
 
 ### 13.3. Règles EXACTES du garde anti-divergence
+
+> ⚙️ **Entrée du garde = la question BRUTE** (non normalisée). L'embedding
+> (similarité cosinus) utilise la forme *normalisée* (lowercase, casse-insensible) ;
+> le garde anti-divergence utilise la forme *brute* car **la casse porte le signal
+> d'entité** : sans cela, `ALPHA` deviendrait `alpha` et la règle MAJUSCULES ne le
+> verrait plus (l'orchestrateur passe donc `raw_question` à `semantic_lookup`/`store`).
 
 `_has_factual_divergence(query, candidate)` renvoie `True` (⇒ **REJET du hit**)
 dès que l'**ensemble des marqueurs factuels** des deux textes diffère
@@ -435,7 +441,7 @@ comme une entité (seuil ≥2 caractères) pour éviter un excès de faux diverg
 ### 13.4. Chemin de décision (`Cache.semantic_lookup`)
 
 ```
-semantic_lookup(perimeter, question_normalisée, embed_fn):
+semantic_lookup(perimeter, question_normalisée, embed_fn, raw_question):
   1. pas d'index sémantique câblé        → None (no-op)
   2. embed_fn(question) → None/exception  → None (MISS GRACIEUX)
   3. recherche du meilleur voisin DANS LA PARTITION `perimeter` :
