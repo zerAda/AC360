@@ -57,8 +57,17 @@ def init_db() -> None:
             " document_count INTEGER, page_count INTEGER,"
             " estimated_tokens_input INTEGER, estimated_tokens_output INTEGER,"
             " estimated_cost_eur REAL, cost_source TEXT,"
+            " tokens_measured INTEGER DEFAULT 0,"
             " error_code TEXT, safe_error_message TEXT)"
         )
+        # Migration douce : ajoute la colonne FinOps `tokens_measured` aux bases
+        # déjà créées avant ce champ (CREATE TABLE IF NOT EXISTS ne la rajoute
+        # pas). 1 = comptes MESURÉS (Ollama eval_count) ; 0 = ESTIMÉS (chars/4).
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(usage_events)")}
+        if "tokens_measured" not in cols:
+            conn.execute(
+                "ALTER TABLE usage_events ADD COLUMN tokens_measured INTEGER DEFAULT 0"
+            )
         conn.commit()
 
 
@@ -76,6 +85,7 @@ def build_usage_event(
     estimated_tokens_output: int = 0,
     estimated_cost_eur: float = 0.0,
     cost_source: str = "ESTIME",
+    measured: bool = False,
     error_code: Optional[str] = None,
     safe_error_message: Optional[str] = None,
     event_id: Optional[str] = None,
@@ -101,6 +111,9 @@ def build_usage_event(
         "estimated_tokens_output": int(estimated_tokens_output),
         "estimated_cost_eur": round(float(estimated_cost_eur), 6),
         "cost_source": cost_source,
+        # FinOps : True quand les tokens sont MESURÉS (Ollama eval_count), False
+        # quand ils sont ESTIMÉS (chars/4) ou absents. Persiste en 0/1 (SQLite).
+        "tokens_measured": 1 if measured else 0,
         "error_code": error_code,
         "safe_error_message": safe_error_message,
     }
@@ -124,6 +137,9 @@ def emit_usage_event(event: Dict[str, Any]) -> Dict[str, Any]:
     événements de TRAÇABILITÉ d'accès (RGPD) : on ne doit pas répondre « journalisé »
     si la persistance a silencieusement échoué (disque plein, base verrouillée)."""
     persisted = True
+    # Tolérance : un événement construit hors `build_usage_event` peut ne pas
+    # porter `tokens_measured` -> défaut « estimé » (0) pour ne pas casser l'INSERT.
+    event.setdefault("tokens_measured", 0)
     try:
         with _lock, _connect() as conn:
             conn.execute(
@@ -131,11 +147,13 @@ def emit_usage_event(event: Dict[str, Any]) -> Dict[str, Any]:
                 " event_id, timestamp_utc, environment, event_type, status,"
                 " user_id_hash, client_id_hash, action_name, document_count,"
                 " page_count, estimated_tokens_input, estimated_tokens_output,"
-                " estimated_cost_eur, cost_source, error_code, safe_error_message)"
+                " estimated_cost_eur, cost_source, tokens_measured,"
+                " error_code, safe_error_message)"
                 " VALUES(:event_id,:timestamp_utc,:environment,:event_type,:status,"
                 ":user_id_hash,:client_id_hash,:action_name,:document_count,"
                 ":page_count,:estimated_tokens_input,:estimated_tokens_output,"
-                ":estimated_cost_eur,:cost_source,:error_code,:safe_error_message)",
+                ":estimated_cost_eur,:cost_source,:tokens_measured,"
+                ":error_code,:safe_error_message)",
                 event,
             )
             conn.commit()
@@ -155,7 +173,7 @@ def summary(limit: int = 1000) -> Dict[str, Any]:
     with _connect() as conn:
         rows = conn.execute(
             "SELECT event_type, status, estimated_cost_eur, estimated_tokens_input,"
-            " estimated_tokens_output FROM usage_events"
+            " estimated_tokens_output, tokens_measured FROM usage_events"
             " ORDER BY timestamp_utc DESC LIMIT ?",
             (int(limit),),
         ).fetchall()
@@ -164,12 +182,29 @@ def summary(limit: int = 1000) -> Dict[str, Any]:
     total_cost = 0.0
     total_in = 0
     total_out = 0
+    # FinOps : ventilation MESURÉ (Ollama eval_count) vs ESTIMÉ (chars/4) pour que
+    # le client distingue les chiffres « ground truth » des heuristiques.
+    measured_in = 0
+    measured_out = 0
+    estimated_in = 0
+    estimated_out = 0
+    measured_events = 0
     for r in rows:
         by_type[r["event_type"]] = by_type.get(r["event_type"], 0) + 1
         by_status[r["status"]] = by_status.get(r["status"], 0) + 1
         total_cost += float(r["estimated_cost_eur"] or 0.0)
-        total_in += int(r["estimated_tokens_input"] or 0)
-        total_out += int(r["estimated_tokens_output"] or 0)
+        t_in = int(r["estimated_tokens_input"] or 0)
+        t_out = int(r["estimated_tokens_output"] or 0)
+        total_in += t_in
+        total_out += t_out
+        if int(r["tokens_measured"] or 0):
+            measured_in += t_in
+            measured_out += t_out
+            if t_in or t_out:
+                measured_events += 1
+        else:
+            estimated_in += t_in
+            estimated_out += t_out
     return {
         "total_events": len(rows),
         "by_type": by_type,
@@ -177,4 +212,12 @@ def summary(limit: int = 1000) -> Dict[str, Any]:
         "estimated_cost_eur": round(total_cost, 6),
         "estimated_tokens_input": total_in,
         "estimated_tokens_output": total_out,
+        # Ground truth vs heuristique (cf. docs/FINOPS.md).
+        "tokens": {
+            "measured_input": measured_in,
+            "measured_output": measured_out,
+            "estimated_input": estimated_in,
+            "estimated_output": estimated_out,
+            "measured_events": measured_events,
+        },
     }

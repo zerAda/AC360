@@ -299,6 +299,7 @@ class UsageRequest(BaseModel):
     estimated_tokens_input: int = 0
     estimated_tokens_output: int = 0
     estimated_cost_eur: float = 0.0
+    measured: bool = False  # True = tokens MESURÉS (ground truth), False = estimés.
 
 
 class CostEstimateRequest(BaseModel):
@@ -374,8 +375,38 @@ def metrics() -> Response:
 # ---------------------------------------------------------------------------
 # 1. Audit documentaire
 # ---------------------------------------------------------------------------
+def _record_llm_usage(
+    usage: "Any", *, measured: bool, who: Optional[str] = None
+) -> None:
+    """Enregistre l'usage/coût LLM dans usage_tracker avec les VRAIS comptes de
+    tokens quand `measured=True` (issus d'Ollama : `prompt_eval_count` /
+    `eval_count`), sinon une estimation chars/4 (`measured=False`).
+
+    Le coût est valorisé via les centres `llm_token_input` / `llm_token_output`
+    (rate card en €/token). On persiste le flag `measured` pour que le FinOps
+    distingue le ground truth de l'estimation (cf. docs/FINOPS.md)."""
+    cost_in = cost_tracker.estimate_cost(
+        "llm_token_input", usage.input_tokens, unit="token", measured=measured
+    )
+    cost_out = cost_tracker.estimate_cost(
+        "llm_token_output", usage.output_tokens, unit="token", measured=measured
+    )
+    total_cost = cost_in["estimated_cost_eur"] + cost_out["estimated_cost_eur"]
+    usage_tracker.track(
+        "backend_action_called",
+        user_id=who,
+        action_name="llm_extract",
+        estimated_tokens_input=usage.input_tokens,
+        estimated_tokens_output=usage.output_tokens,
+        estimated_cost_eur=total_cost,
+        cost_source=cost_in["cost_source"],
+        measured=measured,
+    )
+
+
 def _resolve_document_fields(
-    document: Optional[dict], text: Optional[str], use_llm: bool
+    document: Optional[dict], text: Optional[str], use_llm: bool,
+    *, who: Optional[str] = None,
 ) -> tuple[Dict[str, Any], str]:
     """Construit les champs canoniques du document à partir d'un dict déjà
     extrait, ou d'un texte brut (LLM si demandé, sinon heuristique OCR-like).
@@ -384,7 +415,11 @@ def _resolve_document_fields(
       * "provided"  : document déjà extrait fourni ;
       * "llm"       : extraction par Ollama réussie ;
       * "heuristic" : extraction « clé: valeur » (par défaut OU repli si LLM raté).
-    Le mode est journalisé pour l'observabilité (LLM réel vs repli)."""
+    Le mode est journalisé pour l'observabilité (LLM réel vs repli).
+
+    FinOps : sur le chemin "llm", les tokens RÉELS d'Ollama sont enregistrés
+    (`measured=True`) ; sur le repli "heuristic" (aucun appel LLM abouti), on
+    enregistre une estimation chars/4 (`measured=False`)."""
     if document:
         return document, "provided"
     if not text:
@@ -392,19 +427,34 @@ def _resolve_document_fields(
     if use_llm:
         _gate("llm")
         try:
-            from .llm import extract_fields_llm
+            from .llm import extract_fields_llm_with_usage
 
-            fields = extract_fields_llm(text)
+            fields, usage = extract_fields_llm_with_usage(text)
             if fields:
-                usage_tracker.track("backend_action_called", action_name="llm_extract")
-                _logger.info("Extraction document via LLM (mode=llm, champs=%d)", len(fields))
+                # GROUND TRUTH : comptes réels Ollama (ou estimation marquée si la
+                # réponse n'a pas renvoyé les compteurs -> usage.measured=False).
+                _record_llm_usage(usage, measured=usage.measured, who=who)
+                _logger.info(
+                    "Extraction document via LLM (mode=llm, champs=%d, in=%d, out=%d, measured=%s)",
+                    len(fields), usage.input_tokens, usage.output_tokens, usage.measured,
+                )
                 return fields, "llm"
             # JSON valide mais aucun champ exploitable -> repli heuristique propre.
             _logger.info("LLM sans champ exploitable -> repli heuristique.")
         except Exception as e:
             # Repli propre sur l'heuristique : « en mieux » mais jamais bloquant.
             _logger.warning("Extraction LLM échouée (%s) -> repli heuristique.", type(e).__name__)
-    # Heuristique locale : libellés "clé: valeur" -> champs canoniques.
+    # Heuristique locale : libellés "clé: valeur" -> champs canoniques. Aucun
+    # appel LLM -> tokens ESTIMÉS (chars/4), enregistrés comme NON mesurés.
+    from .llm import LLMUsage, estimate_tokens
+
+    _record_llm_usage(
+        LLMUsage(
+            input_tokens=estimate_tokens(text), output_tokens=0, measured=False
+        ),
+        measured=False,
+        who=who,
+    )
     pseudo_ocr = {"fields": ocr_mod._kv_pairs_from_text(text), "tables": []}
     return extract_canonical_fields(pseudo_ocr), "heuristic"
 
@@ -426,7 +476,7 @@ def audit_endpoint(
     who = _effective_caller(caller, req.caller_id)
     _gate("audit", who)
     usage_tracker.track("audit_documentaire_started", user_id=who, action_name="audit")
-    document, mode = _resolve_document_fields(req.document, req.text, req.use_llm)
+    document, mode = _resolve_document_fields(req.document, req.text, req.use_llm, who=who)
     reference = _load_reference(req.reference, req.reference_path, req.client_key)
     result = run_audit({"document": document, "reference": reference})
     result["_extraction_mode"] = mode
@@ -483,7 +533,7 @@ async def audit_file_endpoint(
 
     # Champs : LLM sur le texte si demandé, sinon extraction canonique OCR.
     if use_llm and ocr_out.get("text"):
-        document, _extract_mode = _resolve_document_fields(None, ocr_out["text"], True)
+        document, _extract_mode = _resolve_document_fields(None, ocr_out["text"], True, who=who)
     else:
         document = extract_canonical_fields(ocr_out)
 
@@ -751,6 +801,7 @@ def usage_endpoint(
             estimated_tokens_input=req.estimated_tokens_input,
             estimated_tokens_output=req.estimated_tokens_output,
             estimated_cost_eur=req.estimated_cost_eur,
+            measured=req.measured,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -769,11 +820,15 @@ def usage_summary_endpoint(_: CallerContext = Depends(require_caller)) -> Dict[s
 @app.get("/cost")
 def cost_endpoint(_: CallerContext = Depends(require_caller)) -> Dict[str, Any]:
     _gate("cost")
-    spent = usage_tracker.summary().get("estimated_cost_eur", 0.0)
+    summary = usage_tracker.summary()
+    spent = summary.get("estimated_cost_eur", 0.0)
     return {
         "rate_card": cost_tracker.load_rate_card(),
         "spent_eur": spent,
         "budget": cost_tracker.check_budget(spent),
+        # FinOps : ventilation tokens MESURÉS (Ollama eval_count) vs ESTIMÉS
+        # (chars/4) — pour des chiffres crédibles côté client (cf. docs/FINOPS.md).
+        "tokens": summary.get("tokens", {}),
     }
 
 

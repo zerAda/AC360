@@ -68,7 +68,18 @@ def estimate_cost(
     use_case: Optional[str] = None,
     event_id: Optional[str] = None,
     timestamp_utc: Optional[str] = None,
+    measured: bool = False,
 ) -> Dict[str, Any]:
+    """Valorise une `quantity` pour un centre de coût.
+
+    Deux dimensions DISTINCTES de fiabilité :
+      * `cost_source` (PARAMETRABLE / A_VALIDER) qualifie le TARIF unitaire : une
+        rate card a-t-elle été fournie ?
+      * `measured` (bool) qualifie la QUANTITÉ : pour les centres de coût tokens
+        (`llm_token_input` / `llm_token_output`), True = comptes RÉELS d'Ollama
+        (`prompt_eval_count` / `eval_count`), False = estimation chars/4. C'est ce
+        flag que le FinOps utilise pour distinguer mesuré d'estimé.
+    """
     if cost_center not in COST_CENTERS:
         raise ValueError(f"cost_center inconnu : {cost_center}")
     if quantity < 0:
@@ -88,6 +99,7 @@ def estimate_cost(
         "unit_cost_eur": unit_cost,
         "estimated_cost_eur": amount,
         "cost_source": source,
+        "measured": bool(measured),
         "client_id_hash": hash_id(client_id) if client_id else None,
         "use_case": use_case,
     }
