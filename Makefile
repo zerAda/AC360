@@ -22,7 +22,7 @@ endif
 PORT = $$(sed -n 's/^ONYX_HOST_PORT=//p' .env 2>/dev/null | head -n1); PORT=$${PORT:-3000}
 
 .DEFAULT_GOAL := help
-.PHONY: help detect tune secrets up down restart ps stats logs models verify config update backup restore destroy
+.PHONY: help detect tune secrets secrets-gateway up down restart ps stats logs models verify config update backup restore destroy
 
 help:
 	@grep -E '^#   make' Makefile | sed 's/^#   /  /'
@@ -37,6 +37,11 @@ tune:
 
 secrets:
 	@bash scripts/gen-secrets.sh
+
+# Secrets de la PASSERELLE (access-gateway/.env) : génère GATEWAY_CACHE_HMAC_SECRET
+# (requis si cache activé) + GATEWAY_AUDIT_SALT. Les creds Graph/Onyx restent manuels.
+secrets-gateway:
+	@ENV_FILE=access-gateway/.env bash scripts/gen-secrets.sh
 
 # Démarre la stack puis pré-tire les modèles → "prêt à l'emploi".
 up: secrets

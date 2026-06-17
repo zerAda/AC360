@@ -16,6 +16,7 @@ ENV_FILE="${ENV_FILE:-${1:-.env}}"
 # deploy/prod/), env.template sinon. Surchargeable via $TEMPLATE.
 case "$ENV_FILE" in
   deploy/prod/*|*/deploy/prod/*) TEMPLATE="${TEMPLATE:-deploy/prod/env.prod.template}" ;;
+  *access-gateway*)              TEMPLATE="${TEMPLATE:-access-gateway/.env.template}" ;;
   *)                             TEMPLATE="${TEMPLATE:-env.template}" ;;
 esac
 
@@ -109,6 +110,22 @@ ensure ONIX_ACTIONS_AUDIT_HMAC_KEY     rand 48
 # Mot de passe admin Grafana (référencé par monitoring/ + env.template WS6). Sans
 # génération, Grafana démarrerait sur 'admin' par défaut → on le force ici.
 ensure GRAFANA_ADMIN_PASSWORD          rand 32
+
+# --- Secrets de la PASSERELLE (access-gateway) ------------------------------
+# Générés UNIQUEMENT quand on cible le fichier d'env de la passerelle
+# (ENV_FILE=access-gateway/.env ; cf. `make secrets-gateway`). On ne génère QUE
+# les secrets ALÉATOIRES : le secret client Graph et la clé API Onyx proviennent
+# de systèmes externes et restent à renseigner à la main.
+case "$ENV_FILE" in
+  *access-gateway*)
+    echo "Secrets passerelle (access-gateway) :"
+    # REQUIS si le cache est activé : sans lui le cache se DÉSACTIVE au démarrage
+    # (log CRITICAL). Évite le footgun « cache silencieusement OFF ».
+    ensure GATEWAY_CACHE_HMAC_SECRET     rand 48
+    # Sel HMAC de pseudonymisation du journal d'accès (RGPD : pas d'UPN en clair).
+    ensure GATEWAY_AUDIT_SALT            rand 48
+    ;;
+esac
 
 chmod 600 "$ENV_FILE"
 echo "✓ Secrets prêts. Permissions $ENV_FILE → 600 (lecture/écriture propriétaire uniquement)."
