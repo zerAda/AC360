@@ -69,11 +69,14 @@ services:
   opensearch:
     restart: always
     healthcheck:
-      # OPENSEARCH_ADMIN_PASSWORD = le secret généré ; l'utilisateur admin par
-      # défaut est « admin ». _cluster/health répond dès que le nœud est prêt.
+      # Le conteneur OpenSearch expose le secret via OPENSEARCH_INITIAL_ADMIN_PASSWORD
+      # (cf. base : OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD}).
+      # Référencer OPENSEARCH_ADMIN_PASSWORD ici donnerait un mot de passe VIDE
+      # (var absente du conteneur) → 401 → jamais healthy. Vérifié au runtime.
+      # Utilisateur admin par défaut = « admin » ; _cluster/health répond dès que prêt.
       test:
         - "CMD-SHELL"
-        - "curl -ksf -u admin:$${OPENSEARCH_ADMIN_PASSWORD} https://localhost:9200/_cluster/health >/dev/null || exit 1"
+        - "curl -ksf -u admin:$${OPENSEARCH_INITIAL_ADMIN_PASSWORD} https://localhost:9200/_cluster/health >/dev/null || exit 1"
       interval: 15s
       timeout: 10s
       retries: 20

@@ -62,12 +62,19 @@ Validez la composition **sans rien démarrer** :
 docker compose -f docker-compose.yml -f docker-compose.prod-local.yml config -q
 ```
 
-> **Healthchecks vérifiés contre le code source d'Onyx v4.1.1** (pas devinés) :
-> api_server `GET /health` (8080, route publique non authentifiée), model-server
-> `GET /api/health` (9000, `APIRouter(prefix="/api")`), OpenSearch
-> `https://…:9200/_cluster/health` (plugin sécurité actif → HTTPS + `-u admin`),
-> Postgres `pg_isready`, Redis `redis-cli ping`, web `:3000/` (upstream nginx).
+> **Healthchecks éprouvés (pas devinés).** Le socle de données a été démarré
+> RÉELLEMENT et observé `healthy` : Postgres (`pg_isready`), Redis (`redis-cli
+> ping`), MinIO (`mc ready`), **OpenSearch** (`curl -ksf -u admin:… https://…:9200/_cluster/health`,
+> statut `green`). Les sondes applicatives sont vérifiées contre le code/Dockerfiles
+> Onyx v4.1.1 : api_server `GET /health` (8080, route publique ; `curl` présent dans
+> l'image backend), model-server `GET /api/health` (9000, `APIRouter(prefix="/api")`,
+> python stdlib), web `:3000/` (`wget` busybox de node-alpine ; le serveur force
+> `HOSTNAME=0.0.0.0` → la sonde loopback fonctionne).
 > Chaîne de démarrage fiable : **socle données sain → api saine → web saine → nginx**.
+>
+> *Note de fiabilité :* la sonde OpenSearch lit `OPENSEARCH_INITIAL_ADMIN_PASSWORD`
+> (la variable réellement présente dans le conteneur) — et non `OPENSEARCH_ADMIN_PASSWORD`,
+> qui y est absente et donnerait un mot de passe vide (401 → jamais `healthy`).
 
 Première connexion : ouvrez `http://localhost:3000` (ou l'URL Tailscale, §5) et
 **créez le compte admin IMMÉDIATEMENT** (§6). Réglez l'assistant LLM : Provider
