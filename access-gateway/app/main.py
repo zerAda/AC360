@@ -18,20 +18,30 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from typing import Any, Optional
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from . import __version__
 from .audit import log_access_decision, log_guardrail_decision
 from .config import get_settings
-from .guardrail import post_filter
+from .guardrail import has_citation, post_filter
 from .identity import IdentityError, _TTLCache, resolve_principal
 from .graph_client import GraphError
 from .mapping import GroupMap, load_group_map
+from .metrics import (
+    inc_answer_no_context,
+    inc_citation,
+    inc_feedback,
+    inc_guardrail,
+    inc_requests,
+    inc_upstream_error,
+    observe_latency,
+)
 from .onyx_proxy import (
     AccessDenied,
     apply_filtered_answer,
@@ -104,6 +114,26 @@ async def health() -> dict[str, Any]:
     }
 
 
+@app.get("/metrics")
+async def metrics() -> Response:
+    """Métriques Prometheus — format texte exposition v0.0.4.
+
+    Réseau interne uniquement (pas de port hôte publié). Aucune auth requise
+    sur le réseau ``onix-net`` (cf. posture de monitoring/prometheus.yml).
+    Renvoie 404 si ``GATEWAY_METRICS_ENABLED=false``.
+    """
+    settings = get_settings()
+    if not settings.metrics_enabled:
+        raise HTTPException(status_code=404, detail="Métriques désactivées.")
+    try:
+        from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
+        return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+    except Exception as exc:
+        _logger.warning("Erreur génération métriques Prometheus : %s", exc)
+        raise HTTPException(status_code=503, detail="Métriques temporairement indisponibles.")
+
+
 async def _principal_and_sets(
     request: Request, x_oidc_claims: Optional[str], *, endpoint: str
 ):
@@ -147,15 +177,17 @@ async def authorized_document_sets(
     principal, authorized = await _principal_and_sets(
         request, x_oidc_claims, endpoint="authorized-document-sets"
     )
+    decision = "allow" if authorized else "deny"
     log_access_decision(
         actor=principal.user_id,
-        decision="allow" if authorized else "deny",
+        decision=decision,
         reason="introspection",
         group_source=principal.source,
         group_count=len(principal.group_ids),
         authorized_sets=authorized,
         endpoint="authorized-document-sets",
     )
+    inc_requests(endpoint="authorized-document-sets", decision=decision)
     return {
         "user_id": principal.user_id,
         "upn": principal.upn,
@@ -199,6 +231,7 @@ async def chat_send_message(
             authorized_sets=authorized,
             endpoint="chat/send-message",
         )
+        inc_requests(endpoint="chat/send-message", decision="deny")
         raise HTTPException(status_code=403, detail=str(exc))
 
     effective = (
@@ -216,6 +249,7 @@ async def chat_send_message(
     )
 
     url = f"{settings.onyx_base_url}/chat/send-message"
+    _t0 = time.perf_counter()
     try:
         resp = await request.app.state.http.post(
             url,
@@ -224,6 +258,7 @@ async def chat_send_message(
         )
     except httpx.HTTPError as exc:
         _logger.warning("Erreur de relais vers Onyx : %s", type(exc).__name__)
+        inc_upstream_error()
         raise HTTPException(status_code=502, detail="Onyx amont injoignable.")
 
     body = _safe_json(resp)
@@ -247,8 +282,18 @@ async def chat_send_message(
                 reason=verdict.reason,
                 endpoint="chat/send-message",
             )
+            # ── Métriques qualité/ops (exception-safe) ──────────────────────
+            inc_guardrail(rule=verdict.rule, blocked=verdict.blocked)
+            final_answer = verdict.answer
+            inc_citation(has_citation=has_citation(final_answer))
+            if not context:
+                inc_answer_no_context()
             if verdict.blocked:
                 body = apply_filtered_answer(body, field, verdict.answer)
+
+    # Mesure de latence bout-en-bout (après relais + post-filtre).
+    observe_latency(time.perf_counter() - _t0)
+    inc_requests(endpoint="chat/send-message", decision="allow")
 
     media = resp.headers.get("content-type", "application/json")
     return JSONResponse(
@@ -256,6 +301,41 @@ async def chat_send_message(
         content=body,
         media_type="application/json" if media.startswith("application/json") else media,
     )
+
+
+@app.post("/v1/feedback")
+async def feedback(
+    request: Request,
+    x_oidc_claims: Optional[str] = Header(default=None, alias="X-OIDC-Claims"),
+) -> dict[str, Any]:
+    """Retour utilisateur (thumbs up/down) sur la dernière réponse.
+
+    Incrémente ``onix_gateway_feedback_total{rating}`` (rating ∈ up|down).
+    Même résolution d'identité que les autres endpoints (fail-closed).
+    Activé uniquement si ``GATEWAY_METRICS_ENABLED=true`` (défaut).
+    """
+    settings = get_settings()
+    if not settings.metrics_enabled:
+        raise HTTPException(status_code=404, detail="Feedback désactivé (métriques off).")
+
+    # Résolution d'identité (fail-closed : pas de feedback anonyme).
+    await _principal_and_sets(request, x_oidc_claims, endpoint="feedback")
+
+    try:
+        payload = await request.json()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Corps JSON invalide.")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Le corps doit être un objet JSON.")
+
+    rating = payload.get("rating", "")
+    if rating not in ("up", "down"):
+        raise HTTPException(
+            status_code=422, detail="rating doit être 'up' ou 'down'."
+        )
+
+    inc_feedback(rating=rating)
+    return {"status": "ok", "rating": rating}
 
 
 def _safe_json(resp: httpx.Response) -> Any:

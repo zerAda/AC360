@@ -54,6 +54,26 @@ scrape_configs:
         labels:
           service: onix-actions
 
+  # --- onix-access-gateway : métriques qualité + ops du proxy RBAC ----------
+  # Endpoint GET /metrics exposé sur le port 8200 (cf. access-gateway/Dockerfile
+  # et README). Activé par GATEWAY_METRICS_ENABLED (défaut : true). Pas d'auth
+  # (réseau interne onix-net, sans port hôte publié — même posture que onix-actions).
+  # Métriques collectées (cf. docs/OBSERVABILITY.md §access-gateway) :
+  #   onix_gateway_requests_total{endpoint,decision}         (compteur)
+  #   onix_gateway_guardrail_total{rule,blocked}             (compteur — qualité)
+  #   onix_gateway_answer_no_context_total                   (compteur)
+  #   onix_gateway_answer_with_citation_total                (compteur)
+  #   onix_gateway_answer_without_citation_total             (compteur)
+  #   onix_gateway_request_latency_seconds_bucket{le}        (histogramme)
+  #   onix_gateway_upstream_errors_total                     (compteur)
+  #   onix_gateway_feedback_total{rating}                    (compteur — up/down)
+  - job_name: onix-access-gateway
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["access-gateway:8200"]
+        labels:
+          service: onix-access-gateway
+
   # --- Exporters d'infrastructure ------------------------------------------
   - job_name: node
     static_configs:

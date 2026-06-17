@@ -77,6 +77,25 @@ pas être « persuadé » par une injection. Mise en œuvre recommandée :
   refus. Le post-filtre est **stateless** et **testable** (mêmes assertions que
   `tests/rag/`).
 
+#### Métriques live du garde-fous (DÉPLOYÉ dans `access-gateway`)
+
+Le post-filtre déterministe est **câblé dans la passerelle RBAC** et
+instrumente chaque passage en temps réel via Prometheus (scrape job
+`onix-access-gateway`, cf. [`docs/OBSERVABILITY.md §5b`](OBSERVABILITY.md)) :
+
+| Métrique Prometheus | Sens qualité |
+|---|---|
+| `onix_gateway_guardrail_total{rule,blocked="true"}` | Nombre de blocages par règle — preuve live des garde-fous actifs |
+| `onix_gateway_guardrail_total{rule,blocked="false"}` | Passages conformes par règle — taux de passthrough |
+| `onix_gateway_answer_with_citation_total` | Réponses FINALES (post-filtre) avec citation |
+| `onix_gateway_answer_without_citation_total` | Réponses FINALES sans citation — signal de non-groundedness |
+| `onix_gateway_answer_no_context_total` | Réponses 2xx sans contexte documentaire fourni par Onyx |
+
+Ces métriques transforment les invariants de sécurité déterministes (validés
+hors-LLM en CI) en **télémétrie qualité LIVE** : on peut voir en production
+le taux de blocage par règle, le ratio réponses citées/non-citées, et les cas
+sans contexte — sans dépendre d'un LLM ni d'un test live manuel.
+
 ---
 
 ## 3. Recommandation de modèle (≥ 7B)

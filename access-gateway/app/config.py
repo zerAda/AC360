@@ -53,6 +53,10 @@ class Settings:
     # Timeout (s) du relais HTTP vers l'amont Onyx. Un amont qui génère via LLM
     # peut être lent (CPU) ; configurable pour ne pas couper une génération longue.
     upstream_timeout: float
+    # Endpoint Prometheus GET /metrics (observabilité qualité + ops). Activé par
+    # défaut (réseau interne — pas d'auth requis). Désactiver uniquement pour les
+    # environnements sans stack de monitoring (GET /metrics → 404, aucun compteur).
+    metrics_enabled: bool
 
     @property
     def graph_configured(self) -> bool:
@@ -80,6 +84,7 @@ def get_settings() -> Settings:
         group_cache_ttl=int(os.environ.get("GATEWAY_GROUP_CACHE_TTL", "300")),
         guardrail_enabled=_bool("GATEWAY_GUARDRAIL_ENABLED", True),
         upstream_timeout=float(os.environ.get("GATEWAY_UPSTREAM_TIMEOUT", "30")),
+        metrics_enabled=_bool("GATEWAY_METRICS_ENABLED", True),
     )
 
 

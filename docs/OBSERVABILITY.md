@@ -136,6 +136,50 @@ committée**.
 
 ---
 
+## 5b. Métriques `onix-access-gateway` (livré)
+
+La passerelle RBAC (`access-gateway/`) expose `GET /metrics` sur son port
+**8200** (cf. `access-gateway/Dockerfile`). Activé par défaut
+(`GATEWAY_METRICS_ENABLED=true`) ; désactiver → 404 et aucun compteur.
+
+### Noms de métriques
+
+| Métrique | Type | Labels | Sens |
+|---|---|---|---|
+| `onix_gateway_requests_total` | counter | `endpoint`, `decision` (allow\|deny) | Toutes requêtes traitées |
+| `onix_gateway_guardrail_total` | counter | `rule`, `blocked` (true\|false) | Déclenchements du post-filtre |
+| `onix_gateway_answer_no_context_total` | counter | — | Réponses 2xx sans contexte documentaire |
+| `onix_gateway_answer_with_citation_total` | counter | — | Réponses finales avec citation |
+| `onix_gateway_answer_without_citation_total` | counter | — | Réponses finales sans citation |
+| `onix_gateway_request_latency_seconds` | histogram | — | Latence bout-en-bout (buckets LLM : 0.5 à 120 s) |
+| `onix_gateway_upstream_errors_total` | counter | — | Erreurs de relais Onyx (→ 502) |
+| `onix_gateway_feedback_total` | counter | `rating` (up\|down) | Retours utilisateur (endpoint `/v1/feedback`) |
+
+### Job Prometheus
+
+```yaml
+- job_name: onix-access-gateway
+  metrics_path: /metrics
+  static_configs:
+    - targets: ["access-gateway:8200"]
+      labels:
+        service: onix-access-gateway
+```
+
+Ajouté dans `monitoring/prometheus/prometheus.yml`. Le service doit être sur
+le réseau Docker `onix-net` pour être joignable par Prometheus.
+
+### Caveat multi-worker (uvicorn `--workers N`)
+
+En mode multi-worker, chaque processus uvicorn dispose de son propre registre
+mémoire. Pour agréger correctement les métriques de tous les workers, definir
+`PROMETHEUS_MULTIPROC_DIR` vers un répertoire partagé en écriture et utiliser
+`multiprocess.MultiProcessCollector` à l'exposition. En mode single-worker
+(défaut en conteneur), aucune configuration supplémentaire n'est nécessaire.
+Voir : https://prometheus.github.io/client_python/multiprocess/
+
+---
+
 ## 5. Dépendance d'intégration : endpoint `/metrics` (à ajouter par WS2)
 
 > **Action requise côté `actions/` (hors périmètre WS6).** Le job Prometheus
