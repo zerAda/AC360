@@ -42,21 +42,32 @@ make up            # 1er démarrage + pré-tirage des modèles (peut être long)
 ```
 
 Puis **bascule en overlay prod-local** (healthchecks + démarrage ordonné +
-`restart: always`) — commande EXACTE :
+`restart: always`). Le plus simple — **cibles Makefile dédiées** :
+
+```bash
+make preflight-local   # prérequis : daemon Docker, vm.max_map_count, RAM, disque, ports, secrets
+make up-local-prod     # = docker compose -f docker-compose.yml -f docker-compose.prod-local.yml up -d
+make verify            # santé de bout en bout (services, câblage Ollama interne, génération)
+```
+
+Équivalent explicite (sans Make) :
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod-local.yml up -d
 ```
-
-> Astuce orchestrateur : des cibles Makefile dédiées peuvent encapsuler cette
-> commande (`make up-local-prod`, `make config-local-prod`, `make
-> down-local-prod`) — voir la fin de ce document.
 
 Validez la composition **sans rien démarrer** :
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod-local.yml config -q
 ```
+
+> **Healthchecks vérifiés contre le code source d'Onyx v4.1.1** (pas devinés) :
+> api_server `GET /health` (8080, route publique non authentifiée), model-server
+> `GET /api/health` (9000, `APIRouter(prefix="/api")`), OpenSearch
+> `https://…:9200/_cluster/health` (plugin sécurité actif → HTTPS + `-u admin`),
+> Postgres `pg_isready`, Redis `redis-cli ping`, web `:3000/` (upstream nginx).
+> Chaîne de démarrage fiable : **socle données sain → api saine → web saine → nginx**.
 
 Première connexion : ouvrez `http://localhost:3000` (ou l'URL Tailscale, §5) et
 **créez le compte admin IMMÉDIATEMENT** (§6). Réglez l'assistant LLM : Provider
