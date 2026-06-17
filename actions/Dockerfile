@@ -14,7 +14,11 @@ ENV PYTHONUNBUFFERED=1 \
     ONIX_REFERENCE_DIR=/data/reference
 
 # Binaires système pour l'OCR local + healthcheck (curl).
+# `apt-get upgrade` applique les correctifs de sécurité Debian disponibles sur la
+# base épinglée → élimine les CVE OS « fixables » (CRITICAL/HIGH) que le scan trivy
+# bloque (la base figée accumule des CVE corrigées en amont mais non appliquées).
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends \
         tesseract-ocr \
         tesseract-ocr-fra \
