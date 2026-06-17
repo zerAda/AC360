@@ -16,15 +16,17 @@ nécessaire pour connaître l'appartenance aux groupes de l'entreprise.
 """
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 import os
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import Any, Optional
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from . import __version__
 from .audit import log_access_decision, log_guardrail_decision
@@ -60,7 +62,9 @@ from .cache import (
     normalize_question,
     should_bypass,
 )
-from .doc_acl import StaticDocACL, filter_citations
+from .doc_acl import CompositeDocACL, StaticDocACL, filter_citations
+from .graph_acl import GraphSession, build_graph_acl, load_mapping
+from .streaming import proxy_stream
 
 _logger = logging.getLogger("onix.gateway")
 
@@ -85,6 +89,65 @@ class _State:
     cache: _TTLCache
 
 
+async def _build_doc_acl(http_client: httpx.AsyncClient, settings):
+    """Construit le filtre ACL par-document : sources combinées en OR —
+    StaticDocACL (doc_acl.json) et/ou GraphDocACL (permissions SharePoint via
+    Microsoft Graph, opt-in). Renvoie ``(acl | None, graph_acl | None)``. Tolérant :
+    une source en échec est OMISE (jamais de crash de la passerelle pour l'ACL)."""
+    if not settings.doc_acl_enabled:
+        return None, None
+    sources: list = []
+    graph_acl = None
+    if os.path.exists(settings.doc_acl_path):
+        try:
+            sources.append(StaticDocACL.from_file(
+                settings.doc_acl_path, default_policy=settings.doc_acl_default_policy))
+            _logger.info("doc_acl statique chargé (%s).", settings.doc_acl_path)
+        except Exception as exc:  # noqa: BLE001
+            _logger.error("doc_acl statique illisible (%s) — ignoré.", exc)
+    if settings.doc_acl_graph_enabled:
+        try:
+            graph = GraphSession(client=http_client, settings=settings)
+            mapping = load_mapping(settings.doc_acl_mapping_path)
+            graph_acl = await build_graph_acl(
+                graph, mapping,
+                default_policy=settings.doc_acl_default_policy,
+                ttl_seconds=settings.doc_acl_refresh_seconds,
+            )
+            sources.append(graph_acl)
+            _logger.info("doc_acl Graph synchronisé (%d docs SharePoint).", len(graph_acl))
+        except GraphError as exc:
+            _logger.error("doc_acl Graph indisponible (%s) — source statique seule.", exc)
+    if not sources:
+        _logger.warning(
+            "doc_acl activé mais aucune source exploitable (fichier '%s' / Graph) "
+            "→ filtre par-document INACTIF.", settings.doc_acl_path,
+        )
+        return None, graph_acl
+    if len(sources) == 1:
+        return sources[0], graph_acl
+    return CompositeDocACL(sources), graph_acl
+
+
+async def _acl_refresher(app: FastAPI, settings) -> None:
+    """Tâche de fond : re-synchronise périodiquement l'ACL (statique + Graph) selon
+    le TTL. Le swap de ``app.state.doc_acl`` est atomique (les lecteurs voient
+    l'ancienne OU la nouvelle ACL, jamais un état partiel). Un refresh raté ne tue
+    pas la passerelle (on conserve l'ACL courante)."""
+    interval = max(60, int(settings.doc_acl_refresh_seconds))
+    while True:
+        try:
+            await asyncio.sleep(interval)
+            combined, gacl = await _build_doc_acl(app.state.http, settings)
+            app.state.doc_acl = combined
+            app.state.doc_acl_graph = gacl
+            _logger.info("doc_acl re-synchronisé (intervalle %ss).", interval)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            _logger.error("doc_acl refresh échoué (%s) — ACL courante conservée.", exc)
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     _configure_logging()
@@ -101,35 +164,29 @@ async def _lifespan(app: FastAPI):
     except RuntimeError as exc:
         _logger.critical("Cache DÉSACTIVÉ (config invalide) : %s", exc)
         app.state.response_cache = None
-    # Filtre ACL par-document (FOSS) : actif UNIQUEMENT si un fichier ACL existe.
-    # Activé sans fichier ⇒ INACTIF + avertissement (un deny-all total serait une
-    # erreur d'exploitation, pas une intention). Cf. docs/RBAC.md.
-    app.state.doc_acl = None
-    if settings.doc_acl_enabled:
-        if os.path.exists(settings.doc_acl_path):
-            app.state.doc_acl = StaticDocACL.from_file(
-                settings.doc_acl_path, default_policy=settings.doc_acl_default_policy
-            )
-            _logger.info(
-                "doc_acl actif (fichier=%s, défaut=%s).",
-                settings.doc_acl_path, settings.doc_acl_default_policy,
-            )
-        else:
-            _logger.warning(
-                "doc_acl activé mais '%s' absent → filtre par-document INACTIF "
-                "(fournissez l'ACL via GATEWAY_DOC_ACL_PATH).", settings.doc_acl_path,
-            )
+    # Filtre ACL par-document (FOSS) : StaticDocACL ⊕ GraphDocACL (cf. _build_doc_acl).
+    app.state.doc_acl, app.state.doc_acl_graph = await _build_doc_acl(app.state.http, settings)
+    # Rafraîchi périodique de l'ACL Graph (tâche de fond) si TTL > 0.
+    app.state.acl_refresher = None
+    if app.state.doc_acl_graph is not None and settings.doc_acl_refresh_seconds > 0:
+        app.state.acl_refresher = asyncio.create_task(_acl_refresher(app, settings))
     _logger.info(
-        "gateway prête : source=%s, groupes=%d, deny_if_no_match=%s, cache=%s, doc_acl=%s",
+        "gateway prête : source=%s, groupes=%d, deny_if_no_match=%s, cache=%s, doc_acl=%s, stream=%s",
         settings.group_source,
         len(app.state.group_map.by_group),
         settings.deny_if_no_match,
         "on" if app.state.response_cache is not None else "off",
         "on" if app.state.doc_acl is not None else "off",
+        "on" if settings.stream_enabled else "off",
     )
     try:
         yield
     finally:
+        task = getattr(app.state, "acl_refresher", None)
+        if task is not None:
+            task.cancel()
+            with suppress(asyncio.CancelledError, Exception):
+                await task
         await app.state.http.aclose()
         _cache = getattr(app.state, "response_cache", None)
         if _cache is not None:
@@ -291,9 +348,45 @@ async def chat_send_message(
         endpoint="chat/send-message",
     )
 
+    question_text = payload.get("message", "") if isinstance(payload, dict) else ""
+
+    # ── STREAMING SSE : si demandé ET activé, on relaie en FLUX (proxy_stream). ──
+    # Garde-fous (garde DUR incrémental + override final) et filtre ACL par-document
+    # appliqués DANS le flux ; le cache est court-circuité (une réponse streamée
+    # n'est pas rejouable en bloc). Cf. docs/STREAMING.md.
+    if settings.stream_enabled and isinstance(payload, dict) and payload.get("stream") is True:
+        acl = getattr(request.app.state, "doc_acl", None)
+        url = f"{settings.onyx_base_url}/chat/send-message"
+        headers = upstream_headers(settings.onyx_api_key)
+        inc_requests(endpoint="chat/send-message", decision="allow")
+
+        async def _stream_gen():
+            try:
+                async with request.app.state.http.stream(
+                    "POST", url, json=safe_payload, headers=headers,
+                ) as resp:
+                    async for chunk in proxy_stream(
+                        resp.aiter_lines(),
+                        question=str(question_text),
+                        principal=principal,
+                        acl=acl,
+                        settings=settings,
+                        post_filter=post_filter,
+                        doc_acl_filter=filter_citations,
+                        extract_answer=extract_answer,
+                        apply_filtered_answer=apply_filtered_answer,
+                        audit=_audit,
+                    ):
+                        yield chunk
+            except httpx.HTTPError as exc:
+                _logger.warning("Erreur de relais (stream) vers Onyx : %s", type(exc).__name__)
+                inc_upstream_error()
+                yield (json.dumps({"error": "Onyx amont injoignable."}) + "\n").encode("utf-8")
+
+        return StreamingResponse(_stream_gen(), media_type="application/x-ndjson")
+
     # Latence bout-en-bout mesurée dès l'entrée (couvre cache + amont).
     _t0 = time.perf_counter()
-    question_text = payload.get("message", "") if isinstance(payload, dict) else ""
 
     # ── CACHE — clé RBAC-safe = HMAC(périmètre Document Set TRIÉ ∥ locale ∥
     # question normalisée). On NE met en cache QUE le corps PÉRIMÈTRE-déterministe
