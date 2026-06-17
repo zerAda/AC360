@@ -298,6 +298,111 @@ actionsQueue:
         memory: 1Gi
 
 # =============================================================================
+# 2bis) access-gateway — proxy RBAC identity-aware DEVANT l'API Onyx
+#    (cloisonnement par groupe/Document Set, ACL par-document FOSS, cache
+#    RBAC-safe, streaming SSE, /metrics). Stateless en HA (replicas>=2 + HPA + PDB).
+#    Auparavant déployé HORS-CHART (deploy/azure/access-gateway.yaml) ; désormais
+#    NATIF mais DÉSACTIVÉ par défaut (enabled=false) : c'est une couche optionnelle.
+#    Câblage : l'Ingress route SEUL le chemin chat vers ce Service (cf. ingress.yaml
+#    / docs/DEPLOY_AZURE.md). Secrets via le Secret applicatif partagé (secrets.*).
+# =============================================================================
+accessGateway:
+  enabled: false            # true => rend ConfigMap + Deployment + Service + HPA + PDB
+  image:
+    # Image construite depuis ./access-gateway (cf. access-gateway/Dockerfile). En
+    # prod, la CI la publie sur un registre ; renseigner repository:tag ici.
+    repository: onix-access-gateway
+    tag: "local"
+  replicaCount: 2
+  port: 8200                # port HTTP du proxy (uvicorn) — aligné Dockerfile/manifeste
+  resources:
+    requests:
+      cpu: 100m
+      memory: 192Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 70
+  pdb:
+    enabled: true
+    minAvailable: 1
+  # Durcissement du pod (aligné deploy/azure/access-gateway.yaml) : non-root +
+  # seccomp RuntimeDefault. L'image tourne déjà en utilisateur non privilégié.
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  # ConfigMap (optionnelle) contenant doc_acl.json / mapping SharePoint, montée en
+  # lecture seule sous /config. Générée hors-chart par le CronJob de sync Graph→ACL.
+  # Vide => <fullname>-doc-acl (montage `optional: true`, absente = ACL vide).
+  docAclConfigMap: ""
+  # Variables d'environnement libres supplémentaires (non-secret) côté conteneur.
+  extraEnv: []
+  # ---------------------------------------------------------------------------
+  # Knobs GATEWAY_* NON-SECRET (rendus dans la ConfigMap dédiée). Les SECRETS
+  # (clés Graph/Onyx, HMAC, sel d'audit, URL Redis TLS) ne sont JAMAIS ici : ils
+  # viennent du Secret applicatif (secrets.existingSecret). Noms/défauts alignés
+  # sur access-gateway/app/config.py (get_settings).
+  # ---------------------------------------------------------------------------
+  config:
+    # Amont Onyx : vide => Service api in-cluster (http://<fullname>-api:<api.port>).
+    # Renseigner uniquement si l'amont Onyx est EXTERNE au chart.
+    onyxBaseUrl: ""
+    # Source des groupes Entra : "graph" (Microsoft Graph app-only) | "claims"
+    # (groupes dans le header X-OIDC-Claims) | "auto" (claims puis Graph si overage).
+    groupSource: "graph"
+    # deny-by-default : un utilisateur sans aucun groupe mappé est REFUSÉ.
+    denyIfNoMatch: true
+    # Microsoft Graph (NON-SECRET). tenantId REQUIS en mode graph/auto ; client_id
+    # & client_secret sont des SECRETS (cf. Secret applicatif). Hôtes surchargeables
+    # pour les clouds souverains (Gov/China).
+    graph:
+      tenantId: ""                                   # -> GATEWAY_GRAPH_TENANT_ID
+      host: "https://graph.microsoft.com"            # -> GATEWAY_GRAPH_HOST
+      authority: "https://login.microsoftonline.com" # -> GATEWAY_GRAPH_AUTHORITY
+    # Garde-fous (post-filtre réponse) — contrôle de sécurité DÉPLOYÉ (laisser ON).
+    guardrailEnabled: true        # -> GATEWAY_GUARDRAIL_ENABLED
+    # Endpoint Prometheus GET /metrics (réseau interne, pas d'auth).
+    metricsEnabled: true          # -> GATEWAY_METRICS_ENABLED
+    # Filtre ACL par-DOCUMENT (FOSS) appliqué sur la réponse (filtre de SORTIE).
+    docAcl:
+      enabled: true               # -> GATEWAY_DOC_ACL_ENABLED
+      path: "/config/doc_acl.json"          # -> GATEWAY_DOC_ACL_PATH (volume /config)
+      defaultPolicy: "deny"       # -> GATEWAY_DOC_ACL_DEFAULT_POLICY (deny | allow)
+      stripUncited: true          # -> GATEWAY_DOC_ACL_STRIP_UNCITED (refus sûr si 0 citation)
+      # ACL VIVANTE dérivée de SharePoint via Graph, OR-mergée avec le JSON statique.
+      graphEnabled: false         # -> GATEWAY_DOC_ACL_GRAPH_ENABLED (opt-in)
+      mappingPath: "/config/doc_acl_mapping.json"  # -> GATEWAY_DOC_ACL_MAPPING_PATH
+      refreshSeconds: 900         # -> GATEWAY_DOC_ACL_REFRESH_SECONDS (re-sync ACL Graph)
+    # Cache applicatif RBAC-safe (clé HMAC inclut le périmètre trié). La clé HMAC
+    # (GATEWAY_CACHE_HMAC_SECRET) et l'URL Redis (GATEWAY_CACHE_REDIS_URL) sont des
+    # SECRETS ; URL Redis vide côté secret => LRU mémoire (pas de cache partagé).
+    cache:
+      enabled: true               # -> GATEWAY_CACHE_ENABLED
+      ttlSeconds: 3600            # -> GATEWAY_CACHE_TTL_SECONDS
+      maxEntries: 512             # -> GATEWAY_CACHE_MAX_ENTRIES (borne LRU mémoire)
+      locale: "fr"                # -> GATEWAY_CACHE_LOCALE (différencie FR/EN dans la clé)
+    # Tier SÉMANTIQUE du cache — OPT-IN strict (risque de précision sur corpus
+    # factuel). Embeddings via Ollama (nomic-embed-text). embedUrl vide => Service
+    # ollama in-cluster (http://<fullname>-ollama:<ollama.port>/api/embeddings).
+    semantic:
+      enabled: false              # -> GATEWAY_SEMANTIC_CACHE_ENABLED
+      embedUrl: ""                # -> GATEWAY_SEMANTIC_EMBED_URL (vide => Ollama in-cluster)
+      embedModel: "nomic-embed-text"  # -> GATEWAY_SEMANTIC_EMBED_MODEL (doit être déterministe)
+      threshold: 0.95             # -> GATEWAY_SEMANTIC_THRESHOLD (cosinus mini ; haut = sûr)
+    # Streaming SSE token-par-token devant Onyx (latence perçue ÷10 sur CPU).
+    stream:
+      enabled: true               # -> GATEWAY_STREAM_ENABLED
+      idleTimeout: 60             # -> GATEWAY_STREAM_IDLE_TIMEOUT (s d'inactivité tolérée)
+    # Clés GATEWAY_* libres supplémentaires (non-secret) rendues telles quelles.
+    extra: {}
+
+# =============================================================================
 # 3) OLLAMA — runtime LLM local. Stateful (modèles sur PVC). Réplicable mais
 #    chaque réplique recharge les modèles : par défaut 1, scalable si la VRAM/RAM
 #    suit. PDB pour éviter l'éviction simultanée.
@@ -323,6 +428,23 @@ ollama:
     maxLoadedModels: 1
     keepAlive: "5m"
     contextLength: 8192     # 4096 (défaut Ollama) tronque le contexte RAG ; 12288 pour 7-8B si RAM OK
+  # ---------------------------------------------------------------------------
+  # Pool GPU — chemin PRÊT À ACTIVER (OPT-IN). Par défaut OFF => Ollama tourne en
+  # CPU (comportement INCHANGÉ : aucun nodeSelector/toleration/limite GPU rendu).
+  # Activer quand un node pool GPU NVIDIA est dispo + NVIDIA device plugin installé
+  # (cf. docs/DEPLOY_AZURE.md « GPU plus tard »). Bascule alors le débit LLM ×10.
+  # ---------------------------------------------------------------------------
+  gpu:
+    enabled: false          # true => place le pod sur le pool GPU et demande le GPU
+    count: 1                # nb de GPU réclamés (resources.limits["nvidia.com/gpu"])
+    # Sélecteur du pool GPU (clé/valeur du label de nœud). Ex AKS : { agentpool: gpu }
+    # ou { "nvidia.com/gpu.present": "true" }. Vide => pas de contrainte de placement.
+    nodeSelector: {}
+    # Tolérances pour le taint du pool GPU (ex AKS : sku=gpu:NoSchedule). Vide => aucune.
+    tolerations: []
+    # runtimeClass NVIDIA (si le cluster route le GPU via une RuntimeClass dédiée,
+    # ex. "nvidia"). Vide => runtime par défaut (cas device-plugin classique).
+    runtimeClassName: ""
   # Variables d'environnement Ollama supplémentaires (libres) ajoutées telles quelles.
   extraEnv: []
   persistence:

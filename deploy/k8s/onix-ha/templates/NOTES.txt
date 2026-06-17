@@ -10,6 +10,9 @@ onix-ha déployé : {{ include "onix.fullname" . }} (namespace {{ .Release.Names
 {{- if .Values.actionsQueue.enabled }}
   - actions-worker ....... min {{ .Values.actionsQueue.worker.autoscaling.minReplicas }} / max {{ .Values.actionsQueue.worker.autoscaling.maxReplicas }}  (file Celery)
 {{- end }}
+{{- if .Values.accessGateway.enabled }}
+  - access-gateway ....... min {{ .Values.accessGateway.autoscaling.minReplicas }} / max {{ .Values.accessGateway.autoscaling.maxReplicas }}  (proxy RBAC devant l'API)
+{{- end }}
 
 SOCLE DE DONNÉES HA (sous-charts officiels) :
   - PostgreSQL (CNPG) ..... cluster={{ .Values.postgresql.cluster.enabled }} ({{ .Values.postgresql.cluster.instances }} instances)

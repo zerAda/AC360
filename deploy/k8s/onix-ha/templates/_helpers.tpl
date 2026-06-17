@@ -153,6 +153,28 @@ Usage: env:\n{{ include "onix.dataTierSecretEnv" . | nindent 12 }}
 {{- end -}}
 
 {{/*
+Variables d'environnement SECRÈTES de l'access-gateway, injectées depuis le
+Secret K8s (mêmes clés que deploy/azure/access-gateway.yaml). Noms FIXES, lus par
+le code (config.py / audit.py). GATEWAY_CACHE_REDIS_URL contient la clé Redis (TLS)
+=> SECRET, jamais en ConfigMap. Usage: env:\n{{ include "onix.gatewaySecretEnv" . | nindent 12 }}
+*/}}
+{{- define "onix.gatewaySecretEnv" -}}
+{{- $secret := include "onix.secretName" . -}}
+- name: GATEWAY_CACHE_HMAC_SECRET
+  valueFrom: { secretKeyRef: { name: {{ $secret }}, key: GATEWAY_CACHE_HMAC_SECRET } }
+- name: GATEWAY_AUDIT_SALT
+  valueFrom: { secretKeyRef: { name: {{ $secret }}, key: GATEWAY_AUDIT_SALT } }
+- name: GATEWAY_ONYX_API_KEY
+  valueFrom: { secretKeyRef: { name: {{ $secret }}, key: GATEWAY_ONYX_API_KEY } }
+- name: GATEWAY_GRAPH_CLIENT_ID
+  valueFrom: { secretKeyRef: { name: {{ $secret }}, key: GATEWAY_GRAPH_CLIENT_ID } }
+- name: GATEWAY_GRAPH_CLIENT_SECRET
+  valueFrom: { secretKeyRef: { name: {{ $secret }}, key: GATEWAY_GRAPH_CLIENT_SECRET } }
+- name: GATEWAY_CACHE_REDIS_URL
+  valueFrom: { secretKeyRef: { name: {{ $secret }}, key: GATEWAY_CACHE_REDIS_URL } }
+{{- end -}}
+
+{{/*
 HorizontalPodAutoscaler générique (autoscaling/v2).
 Usage: {{ include "onix.hpa" (dict "ctx" . "component" "api" "target" "<deploy>" "cfg" .Values.api.autoscaling) }}
 */}}
