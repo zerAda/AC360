@@ -293,6 +293,11 @@ services:
       # de contexte, quasi sans perte. Le KV n'est quantifié QUE si flash attn = 1.
       - OLLAMA_FLASH_ATTENTION=${OLLAMA_FLASH_ATTENTION:-1}
       - OLLAMA_KV_CACHE_TYPE=${OLLAMA_KV_CACHE_TYPE:-q8_0}
+      # Fenêtre de contexte (num_ctx) par défaut. Le défaut Ollama (4096) tronque
+      # SILENCIEUSEMENT le contexte RAG ; on l'élargit. Mémoire KV ~ contexte ×
+      # OLLAMA_NUM_PARALLEL (q8_0 ci-dessus la ~divise par 2). `make tune` ajuste
+      # au matériel (8192 ≤3B / 12288 7-8B / 16384 GPU). Cf. docs/PERFORMANCE.md §2bis.
+      - OLLAMA_CONTEXT_LENGTH=${OLLAMA_CONTEXT_LENGTH:-8192}
     volumes:
       - ollama_data:/root/.ollama
     healthcheck:

@@ -307,8 +307,24 @@ ollama:
   image:
     repository: ollama/ollama
     tag: "0.30.8"
+  # replicaCount=1 : chaque réplique recharge les modèles en mémoire (pas de
+  # partage de KV-cache entre pods) ⇒ c'est un SPOF de DÉBIT, pas de disponibilité
+  # (Onyx tolère une coupure LLM transitoire). Passez à >=2 (PVC par pod) si la
+  # VRAM/RAM par nœud le permet et que le débit l'exige. Cf. docs/PERFORMANCE.md.
   replicaCount: 1
   port: 11434
+  # Réglages de performance Ollama (injectés en env dans le StatefulSet). Alignés
+  # sur docker-compose / scripts/detect-hardware.sh. Mémoire KV ~ contextLength ×
+  # numParallel (q8_0 ~/2). Adaptez à la RAM/VRAM RÉELLE du nœud.
+  tuning:
+    flashAttention: 1
+    kvCacheType: q8_0
+    numParallel: 1
+    maxLoadedModels: 1
+    keepAlive: "5m"
+    contextLength: 8192     # 4096 (défaut Ollama) tronque le contexte RAG ; 12288 pour 7-8B si RAM OK
+  # Variables d'environnement Ollama supplémentaires (libres) ajoutées telles quelles.
+  extraEnv: []
   persistence:
     enabled: true
     size: 50Gi

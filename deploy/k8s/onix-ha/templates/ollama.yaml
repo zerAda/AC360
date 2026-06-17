@@ -24,6 +24,24 @@ spec:
         - name: ollama
           image: "{{ .Values.ollama.image.repository }}:{{ .Values.ollama.image.tag }}"
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          # Réglages de performance (alignés docker-compose / detect-hardware.sh).
+          # Mémoire KV ~ contextLength × numParallel (q8_0 ~/2). Cf. PERFORMANCE.md §2bis.
+          env:
+            - name: OLLAMA_FLASH_ATTENTION
+              value: {{ .Values.ollama.tuning.flashAttention | quote }}
+            - name: OLLAMA_KV_CACHE_TYPE
+              value: {{ .Values.ollama.tuning.kvCacheType | quote }}
+            - name: OLLAMA_NUM_PARALLEL
+              value: {{ .Values.ollama.tuning.numParallel | quote }}
+            - name: OLLAMA_MAX_LOADED_MODELS
+              value: {{ .Values.ollama.tuning.maxLoadedModels | quote }}
+            - name: OLLAMA_KEEP_ALIVE
+              value: {{ .Values.ollama.tuning.keepAlive | quote }}
+            - name: OLLAMA_CONTEXT_LENGTH
+              value: {{ .Values.ollama.tuning.contextLength | quote }}
+            {{- with .Values.ollama.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.ollama.port }}
