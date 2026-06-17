@@ -1,4 +1,6 @@
-azure-functions>=2.1.0
+# NB: azure-functions 2.x requires Python >=3.13; this app is pinned to 3.12.
+# Keep the 1.x line (Dependabot's >=2.1.0 PR is incompatible — do not merge until 3.13).
+azure-functions>=1.18.0
 azure-functions-durable>=1.5.0
 azure-ai-formrecognizer>=3.3.3
 azure-identity>=1.25.3
