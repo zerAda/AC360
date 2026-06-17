@@ -119,6 +119,23 @@ try:
         ["op"],
     )
 
+    # ── Tier SÉMANTIQUE (embedding + seuil, cf. app/cache.py + docs/CACHE.md §13) ──
+    # Candidats sémantiques examinés : on a calculé un embedding de la requête
+    # et trouvé au MOINS un voisin (dans le MÊME périmètre) au-dessus du seuil
+    # cosinus. Compteur des « presque-hits » avant le garde anti-divergence.
+    CACHE_SEMANTIC_CANDIDATES_TOTAL = Counter(
+        "onix_gateway_cache_semantic_candidates_total",
+        "Candidats sémantiques au-dessus du seuil cosinus (avant garde divergence)",
+    )
+    # Candidats REJETÉS par le garde factuel : la requête et le candidat
+    # divergent sur un NOMBRE/DATE/MONTANT/% ou une ENTITÉ saillante (MAJUSCULES
+    # ou guillemets). C'est le rejet qui rend le cache sémantique SÛR sur du
+    # factuel (ex. « CA 2024 » ≠ « CA 2025 », « client ALPHA » ≠ « client BETA »).
+    CACHE_SEMANTIC_REJECTED_DIVERGENCE_TOTAL = Counter(
+        "onix_gateway_cache_semantic_rejected_divergence_total",
+        "Candidats sémantiques REJETÉS pour divergence numérique/entité (sécurité factuelle)",
+    )
+
     # ── Streaming SSE (RBAC-safe, cf. app/streaming.py + docs/STREAMING.md) ──
     # Requêtes traitées en mode flux (relais token-par-token devant Onyx).
     STREAM_REQUESTS_TOTAL = Counter(
@@ -301,6 +318,28 @@ def inc_cache_error(op: str) -> None:
         CACHE_ERRORS_TOTAL.labels(op=op).inc()
     except Exception as exc:
         _logger.debug("metrics inc_cache_error: %s", exc)
+
+
+def inc_cache_semantic_candidate() -> None:
+    """Incrémente `onix_gateway_cache_semantic_candidates_total` (voisin trouvé
+    au-dessus du seuil cosinus, AVANT le garde anti-divergence)."""
+    if not _METRICS_AVAILABLE:
+        return
+    try:
+        CACHE_SEMANTIC_CANDIDATES_TOTAL.inc()
+    except Exception as exc:
+        _logger.debug("metrics inc_cache_semantic_candidate: %s", exc)
+
+
+def inc_cache_semantic_rejected_divergence() -> None:
+    """Incrémente `onix_gateway_cache_semantic_rejected_divergence_total` (un
+    candidat pourtant similaire a été REFUSÉ pour divergence factuelle)."""
+    if not _METRICS_AVAILABLE:
+        return
+    try:
+        CACHE_SEMANTIC_REJECTED_DIVERGENCE_TOTAL.inc()
+    except Exception as exc:
+        _logger.debug("metrics inc_cache_semantic_rejected_divergence: %s", exc)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

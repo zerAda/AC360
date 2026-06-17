@@ -78,6 +78,27 @@ class Settings:
     # Locale incluse dans la clé (différencie versions FR/EN d'une même question).
     cache_locale: str
 
+    # ── Tier SÉMANTIQUE du cache (embedding + seuil) — cf. docs/CACHE.md §13 ──
+    # OPT-IN strict : désactivé par défaut. Un cache sémantique sur un corpus
+    # FACTUEL est un RISQUE DE PRÉCISION (servir la réponse de la question A
+    # pour une question B « proche »). On ne l'active qu'en connaissance de
+    # cause, avec un seuil élevé ET le garde anti-divergence numérique/entités.
+    semantic_cache_enabled: bool
+    # URL de l'API d'embeddings Ollama (endpoint legacy /api/embeddings, schéma
+    # { "model", "prompt" } → { "embedding": [...] }). 100 % local/souverain.
+    semantic_embed_url: str
+    # Modèle d'embeddings (déjà pull : nomic-embed-text). Doit être DÉTERMINISTE
+    # (sinon deux embeddings de la même question divergent et cassent le seuil).
+    semantic_embed_model: str
+    # Seuil de similarité COSINUS minimal pour un hit sémantique. Élevé par
+    # défaut (0.95) : on préfère un miss (recalcul) à un faux positif (mauvaise
+    # réponse servie). En-dessous du seuil → miss. Au-dessus MAIS divergence
+    # numérique/entité détectée → REJET (cf. cache._has_factual_divergence).
+    semantic_threshold: float
+    # Bornage de l'index sémantique PAR PÉRIMÈTRE (réutilise la borne LRU du
+    # cache exact si non surchargé). Empêche une croissance mémoire non bornée.
+    semantic_max_entries: int
+
     # ── Filtre ACL par DOCUMENT appliqué sur la RÉPONSE (FOSS, voir doc_acl.py) ──
     # Active le retrait des citations vers les documents non autorisés
     # individuellement pour l'appelant. C'est un filtre de SORTIE — il
@@ -154,6 +175,25 @@ def get_settings() -> Settings:
         cache_max_entries=int(os.environ.get("GATEWAY_CACHE_MAX_ENTRIES", "512")),
         cache_hmac_secret=os.environ.get("GATEWAY_CACHE_HMAC_SECRET", "").strip(),
         cache_locale=os.environ.get("GATEWAY_CACHE_LOCALE", "fr").strip().lower() or "fr",
+        # Tier sémantique du cache (cf. app/cache.py SemanticIndex + docs/CACHE.md §13).
+        # OPT-IN : false par défaut (risque de précision documenté honnêtement).
+        semantic_cache_enabled=_bool("GATEWAY_SEMANTIC_CACHE_ENABLED", False),
+        semantic_embed_url=os.environ.get(
+            "GATEWAY_SEMANTIC_EMBED_URL", "http://ollama:11434/api/embeddings"
+        ).strip(),
+        semantic_embed_model=os.environ.get(
+            "GATEWAY_SEMANTIC_EMBED_MODEL", "nomic-embed-text"
+        ).strip()
+        or "nomic-embed-text",
+        # Seuil COSINUS élevé (0.95) : faux positif >> miss en coût métier.
+        semantic_threshold=float(os.environ.get("GATEWAY_SEMANTIC_THRESHOLD", "0.95")),
+        # Par défaut, on aligne la borne de l'index sémantique sur la LRU exacte.
+        semantic_max_entries=int(
+            os.environ.get(
+                "GATEWAY_SEMANTIC_MAX_ENTRIES",
+                os.environ.get("GATEWAY_CACHE_MAX_ENTRIES", "512"),
+            )
+        ),
         # Filtre ACL par document (cf. app/doc_acl.py + docs/RBAC.md).
         doc_acl_enabled=_bool("GATEWAY_DOC_ACL_ENABLED", True),
         doc_acl_path=os.environ.get("GATEWAY_DOC_ACL_PATH", "config/doc_acl.json").strip(),

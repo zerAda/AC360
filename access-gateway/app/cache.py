@@ -47,9 +47,14 @@ LIMITES HONNÊTES :
   * `InMemoryBackend` n'est PAS partagé entre workers/réplicas. En HA, brancher
     Redis (``GATEWAY_CACHE_REDIS_URL``) — sans quoi le hit-rate s'effondre dès
     qu'on monte les workers.
-  * Pas (encore) de tier sémantique : on cache la question NORMALISÉE exacte.
-    L'étiquette ``tier`` est déjà câblée côté métrique pour préparer un futur
-    cache approché (embedding + seuil de similarité).
+  * Tier sémantique (embedding + seuil cosinus) DISPONIBLE mais **opt-in**
+    (``GATEWAY_SEMANTIC_CACHE_ENABLED=false`` par défaut). Il capture les
+    REFORMULATIONS d'une question déjà répondue DANS LE MÊME PÉRIMÈTRE RBAC.
+    Deux garde-fous le rendent sûr sur du factuel : (1) l'index est
+    **partitionné PAR PÉRIMÈTRE** → un match cross-périmètre est
+    structurellement impossible ; (2) un **garde anti-divergence** refuse tout
+    candidat qui diffère sur un nombre/date/montant/% ou une entité saillante
+    (cf. ``SemanticIndex`` et ``_has_factual_divergence``, docs/CACHE.md §13).
   * `estimate_tokens` est une APPROXIMATION (chars/4) : utile pour piloter les
     économies — pas pour la facturation comptable.
   * On NE cache PAS les flux streaming (``stream=True``) : la sémantique
@@ -65,9 +70,11 @@ import hashlib
 import hmac
 import json
 import logging
+import math
+import re
 import threading
 import time as _time
-from typing import Any, Callable, Dict, Mapping, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 _logger = logging.getLogger("onix.gateway")
 
@@ -303,6 +310,331 @@ def make_cache_key(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Tier SÉMANTIQUE — partition par périmètre + garde anti-divergence factuelle.
+#
+# PHILOSOPHIE DE SÛRETÉ (lire avant de toucher) :
+#   Un cache sémantique sur un corpus FACTUEL est une RESPONSABILITÉ s'il est
+#   naïf : servir la réponse de la question A pour une question B « proche »
+#   est une erreur silencieuse de justesse. On le rend sûr par TROIS couches :
+#     1. PARTITION PAR PÉRIMÈTRE : un voisin n'est cherché QUE dans la
+#        partition du périmètre RBAC exact de la requête → un match
+#        cross-périmètre est STRUCTURELLEMENT impossible (pas une condition
+#        applicative qu'on pourrait oublier : il n'y a aucun voisin à trouver
+#        ailleurs). Prouvé par test_cache_semantic.
+#     2. SEUIL COSINUS ÉLEVÉ (0.95 par défaut) : on préfère un miss (recalcul)
+#        à un faux positif. En-dessous → miss net.
+#     3. GARDE ANTI-DIVERGENCE : même AU-DESSUS du seuil, on REFUSE le match si
+#        la requête et le candidat diffèrent sur un NOMBRE / DATE / ANNÉE /
+#        MONTANT / POURCENTAGE, ou sur une ENTITÉ saillante (token MAJUSCULE
+#        de ≥2 lettres, ou segment entre guillemets). « CA 2024 » vs
+#        « CA 2025 », « client ALPHA » vs « client BETA » NE matchent JAMAIS.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Le séparateur \0 ne peut pas apparaître dans un nom de Document Set : on
+# l'utilise pour fabriquer une clé de partition lisible et sans collision à
+# partir du périmètre trié+dédoublonné (MÊME définition de périmètre que
+# make_cache_key → cohérence stricte entre tier exact et tier sémantique).
+def _perimeter_partition(authorized_doc_sets: Sequence[str]) -> str:
+    """Clé de partition = périmètre RBAC canonique (sets triés, dédoublonnés).
+
+    C'est la FRONTIÈRE de sûreté du tier sémantique : deux requêtes ne peuvent
+    partager une partition que si leur périmètre est *exactement* identique —
+    la même invariante que la composante `authorized_doc_sets` de la clé HMAC
+    exacte. Un périmètre vide a sa propre partition (cohérent avec la clé
+    exacte, qui hash aussi un blob de sets vide)."""
+    sets_sorted = sorted({s for s in authorized_doc_sets if s})
+    return "\0".join(sets_sorted)
+
+
+# Nombres/dates/montants/pourcentages : tout token contenant un chiffre. On
+# capture aussi les variantes collées à un symbole (%, €, $, k€) et les dates
+# (2024, 12/03/2025, 1.5, 1 200,50 → le séparateur d'espace est géré par split).
+_NUMERIC_RE = re.compile(r"\d")
+# Token « monétaire / pourcentage » : un symbole d'unité saillant.
+_MONEY_PERCENT_RE = re.compile(r"[%€$£]|\b(?:eur|usd|gbp|k€|m€|md€|pourcent|pct)\b", re.IGNORECASE)
+# Entités saillantes : segments entre guillemets droits/typographiques.
+_QUOTED_RE = re.compile(r"[\"«»“”']([^\"«»“”']{1,64})[\"«»“”']")
+# Token « entité MAJUSCULE » : ≥2 lettres, intégralement en capitales (gère les
+# lettres accentuées FR via le flag UNICODE par défaut de `re` sur les str).
+# Ex. ALPHA, BETA, SARL, EBITDA, CDI. On exige ≥2 pour éviter les initiales/A/I.
+_UPPER_ENTITY_RE = re.compile(r"\b[A-ZÀ-ÖØ-Þ][A-ZÀ-ÖØ-Þ0-9]{1,}\b")
+
+
+def _extract_factual_tokens(text: str) -> frozenset[str]:
+    """Extrait l'ENSEMBLE des marqueurs factuels saillants d'un texte.
+
+    Sont considérés comme factuels et donc DISCRIMINANTS :
+      * tout token contenant un chiffre (année, date, quantité, version, prix) ;
+      * tout token portant un symbole monétaire ou de pourcentage ;
+      * tout segment entre guillemets (noms propres cités, libellés exacts) ;
+      * tout token entièrement EN MAJUSCULES de ≥2 caractères (acronymes, noms
+        de clients/entités type ALPHA/BETA).
+
+    Renvoie un `frozenset` normalisé (casse repliée pour les nombres/quotes ;
+    les entités MAJUSCULES sont conservées en l'état car la casse EST le signal).
+
+    NOTE : on est volontairement SUR-INCLUSIF (mieux vaut un faux « divergent »
+    → un miss inoffensif, qu'un faux « identique » → une mauvaise réponse). La
+    précision du cache sémantique est sacrifiée au profit de la JUSTESSE."""
+    if not text:
+        return frozenset()
+    tokens: set[str] = set()
+
+    # 1) Segments entre guillemets (avant le split, pour garder les espaces internes).
+    for m in _QUOTED_RE.finditer(text):
+        seg = m.group(1).strip().lower()
+        if seg:
+            tokens.add("q:" + " ".join(seg.split()))
+
+    # 2) Découpage grossier en tokens pour le reste.
+    for raw in text.split():
+        # Nettoyage léger de la ponctuation de bord (garde % € $ internes).
+        stripped = raw.strip(".,;:!?()[]{}…\"'«»“”")
+        if not stripped:
+            continue
+        if _NUMERIC_RE.search(stripped):
+            # Tout token numérique est un fait : on le garde tel quel (lowercase).
+            tokens.add("n:" + stripped.lower())
+        if _MONEY_PERCENT_RE.search(raw):
+            tokens.add("m:" + raw.lower())
+
+    # 3) Entités MAJUSCULES (sur le texte brut : la casse est le signal).
+    for m in _UPPER_ENTITY_RE.finditer(text):
+        tokens.add("e:" + m.group(0))
+
+    return frozenset(tokens)
+
+
+def _has_factual_divergence(query: str, candidate: str) -> bool:
+    """True si `query` et `candidate` diffèrent sur AU MOINS un marqueur factuel.
+
+    C'est le garde de SÛRETÉ : il transforme un voisin sémantique en match
+    SEULEMENT si l'ensemble de ses faits saillants est identique. La moindre
+    divergence (un nombre, une date, une entité en plus, en moins, ou changée)
+    → True → on REFUSE le hit (fall-through vers un miss → recalcul correct).
+
+    Symétrique par construction (différence symétrique d'ensembles non vide)."""
+    q = _extract_factual_tokens(query)
+    c = _extract_factual_tokens(candidate)
+    return q != c
+
+
+def _cosine(a: Sequence[float], b: Sequence[float]) -> float:
+    """Similarité cosinus en PUR PYTHON (pas de numpy : contrainte deps).
+
+    Renvoie une valeur dans [-1, 1] ; 0.0 si l'une des normes est nulle ou si
+    les longueurs diffèrent (vecteurs incomparables → traités comme non
+    similaires, jamais comme une exception)."""
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    dot = 0.0
+    na = 0.0
+    nb = 0.0
+    for x, y in zip(a, b):
+        dot += x * y
+        na += x * x
+        nb += y * y
+    if na <= 0.0 or nb <= 0.0:
+        return 0.0
+    denom = math.sqrt(na) * math.sqrt(nb)
+    if denom <= 0.0:  # pragma: no cover — couvert par na/nb mais garde défensive
+        return 0.0
+    return dot / denom
+
+
+class SemanticIndex:
+    """Index d'embeddings PARTITIONNÉ PAR PÉRIMÈTRE, borné (LRU par partition).
+
+    Structure : { perimeter_partition: OrderedDict[ exact_key -> (embedding,
+    normalized_question) ] }. La recherche d'un voisin se fait UNIQUEMENT dans
+    la partition du périmètre fourni — d'où l'impossibilité STRUCTURELLE d'un
+    match cross-périmètre (RBAC-safe by construction, pas par condition).
+
+    Chaque partition est bornée par `max_entries` (réutilise la borne LRU du
+    cache exact) : on évince la plus ancienne entrée au-delà. Thread-safe via
+    un unique `threading.Lock` (workload gateway : opérations brèves).
+
+    On stocke la `normalized_question` à côté de l'embedding pour pouvoir
+    appliquer le garde anti-divergence factuelle AU MOMENT de la recherche
+    (sans relire le backend de valeurs)."""
+
+    def __init__(self, *, max_entries: int = 512) -> None:
+        if max_entries <= 0:
+            raise ValueError("max_entries doit être > 0")
+        self._max = max_entries
+        # perimeter -> OrderedDict[exact_key -> (embedding, normalized_question)]
+        self._parts: Dict[str, "collections.OrderedDict[str, Tuple[List[float], str]]"] = {}
+        self._lock = threading.Lock()
+
+    def add(
+        self,
+        *,
+        perimeter: str,
+        exact_key: str,
+        embedding: Sequence[float],
+        normalized_question: str,
+    ) -> None:
+        """Indexe (best-effort) l'embedding d'une question répondue.
+
+        Idempotent sur `exact_key` au sein d'une partition (ré-indexer remonte
+        l'entrée en tête LRU). Un embedding vide/non numérique est ignoré (on
+        n'indexe pas du bruit qui ne matcherait jamais proprement)."""
+        vec = _coerce_vector(embedding)
+        if not vec:
+            return
+        with self._lock:
+            part = self._parts.get(perimeter)
+            if part is None:
+                part = collections.OrderedDict()
+                self._parts[perimeter] = part
+            if exact_key in part:
+                part.move_to_end(exact_key)
+            part[exact_key] = (vec, normalized_question or "")
+            while len(part) > self._max:
+                part.popitem(last=False)
+
+    def search(
+        self,
+        *,
+        perimeter: str,
+        embedding: Sequence[float],
+        threshold: float,
+        query_text: str,
+        on_candidate: Optional[Callable[[], None]] = None,
+        on_rejected_divergence: Optional[Callable[[], None]] = None,
+    ) -> Optional[str]:
+        """Renvoie l'`exact_key` du meilleur voisin SÛR, ou ``None``.
+
+        Algorithme :
+          1. on ne regarde QUE la partition `perimeter` (RBAC-safe) ;
+          2. on calcule le cosinus vs chaque entrée, on garde le meilleur ;
+          3. si le meilleur < `threshold` → ``None`` (miss net) ;
+          4. sinon c'est un CANDIDAT (`on_candidate`) ; on applique le garde
+             anti-divergence factuelle : s'il diverge → on l'écarte
+             (`on_rejected_divergence`) et on continue avec les voisins
+             suivants triés par similarité décroissante ;
+          5. on renvoie le 1er candidat au-dessus du seuil ET sans divergence.
+
+        Important : un rejet pour divergence N'EST PAS un fallback vers un
+        voisin moins similaire mais divergent lui aussi — on ne renvoie un
+        match QUE si (similarité ≥ seuil) ET (aucune divergence factuelle)."""
+        query_vec = _coerce_vector(embedding)
+        if not query_vec:
+            return None
+        with self._lock:
+            part = self._parts.get(perimeter)
+            if not part:
+                return None
+            # Snapshot (clé, sim, question) trié par similarité décroissante.
+            scored: List[Tuple[float, str, str]] = []
+            for key, (vec, nq) in part.items():
+                scored.append((_cosine(query_vec, vec), key, nq))
+        if not scored:
+            return None
+        scored.sort(key=lambda t: t[0], reverse=True)
+
+        emitted_candidate = False
+        for sim, key, cand_q in scored:
+            if sim < threshold:
+                break  # trié décroissant : plus rien au-dessus du seuil.
+            # Au moins un voisin franchit le seuil : c'est un candidat sémantique.
+            if not emitted_candidate:
+                emitted_candidate = True
+                if on_candidate is not None:
+                    try:
+                        on_candidate()
+                    except Exception:  # pragma: no cover — observabilité inerte
+                        pass
+            # GARDE DE SÛRETÉ : divergence factuelle → on refuse CE voisin.
+            if _has_factual_divergence(query_text, cand_q):
+                if on_rejected_divergence is not None:
+                    try:
+                        on_rejected_divergence()
+                    except Exception:  # pragma: no cover
+                        pass
+                continue
+            return key  # voisin au-dessus du seuil ET factuel-compatible.
+        return None
+
+    # Diagnostic tests uniquement (NE PAS utiliser pour la logique métier).
+    def _partition_size(self, perimeter: str) -> int:
+        with self._lock:
+            part = self._parts.get(perimeter)
+            return len(part) if part else 0
+
+
+def _coerce_vector(embedding: Sequence[float]) -> List[float]:
+    """Convertit un embedding en list[float] propre, ou [] si non exploitable.
+
+    Tolère les ints/str numériques (robustesse au JSON) ; toute valeur non
+    convertible invalide TOUT le vecteur (on préfère ne pas indexer un vecteur
+    partiel qui fausserait le cosinus)."""
+    if not embedding or not isinstance(embedding, (list, tuple)):
+        return []
+    out: List[float] = []
+    for v in embedding:
+        try:
+            out.append(float(v))
+        except (TypeError, ValueError):
+            return []
+    return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Client d'embeddings Ollama (exception-safe) — endpoint legacy /api/embeddings.
+#
+# Schéma ASSUMÉ (confirmé via Context7 /ollama/ollama, docs/api.md) :
+#   requête  : POST {url}  body JSON  { "model": <str>, "prompt": <str> }
+#   réponse  : 200         body JSON  { "embedding": [<float>, ...] }
+# (L'endpoint moderne /api/embed renvoie {"embeddings": [[...]]} pour un batch ;
+#  on cible le legacy singulier, plus simple pour notre usage 1-question.)
+#
+# CONTRAT DUR : cette fonction NE LÈVE JAMAIS dans le chemin requête. Toute
+# erreur (réseau, timeout, statut != 2xx, JSON invalide, modèle absent) →
+# renvoie ``None`` → AUCUN hit sémantique (fall-through propre vers un miss).
+# ─────────────────────────────────────────────────────────────────────────────
+def build_embed_fn(settings: Any) -> Callable[[str], Optional[List[float]]]:
+    """Fabrique une fonction ``embed(text) -> list[float] | None`` synchrone et
+    exception-safe, branchée sur Ollama via httpx.
+
+    On crée un client httpx par appel (timeout court) : simple, sans état
+    partagé, suffisant pour un volume « tail » de requêtes cachables. Pour un
+    débit élevé, l'orchestrateur peut injecter sa propre `embed_fn` réutilisant
+    un client partagé — `semantic_lookup`/`store` acceptent n'importe quel
+    callable respectant la même signature."""
+    url = (getattr(settings, "semantic_embed_url", "") or "").strip()
+    model = (getattr(settings, "semantic_embed_model", "") or "nomic-embed-text").strip()
+    # Timeout court : l'embedding d'une question est rapide ; on ne veut PAS
+    # rallonger la latence si Ollama est lent/indisponible (on retombe en miss).
+    timeout = float(getattr(settings, "upstream_timeout", 30) or 30)
+    timeout = min(timeout, 10.0)
+
+    def _embed(text: str) -> Optional[List[float]]:
+        if not text or not url:
+            return None
+        try:
+            import httpx  # import paresseux : déjà une dép du projet.
+
+            resp = httpx.post(
+                url,
+                json={"model": model, "prompt": text},
+                timeout=httpx.Timeout(timeout),
+            )
+            if resp.status_code < 200 or resp.status_code >= 300:
+                _logger.debug("embed: statut amont %s (→ pas de hit sémantique)", resp.status_code)
+                return None
+            data = resp.json()
+        except Exception as exc:
+            # Réseau, timeout, JSON invalide, httpx absent… → miss propre.
+            _logger.debug("embed: échec (%s) → pas de hit sémantique", type(exc).__name__)
+            return None
+        vec = _coerce_vector(data.get("embedding") if isinstance(data, Mapping) else None)
+        return vec or None
+
+    return _embed
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Politique de contournement (bypass).
 # ─────────────────────────────────────────────────────────────────────────────
 def should_bypass(
@@ -405,11 +737,21 @@ class Cache:
         on_hit: Optional[Callable[[str], None]] = None,
         on_miss: Optional[Callable[[], None]] = None,
         on_error: Optional[Callable[[str, Exception], None]] = None,
+        semantic_index: Optional["SemanticIndex"] = None,
+        semantic_threshold: float = 0.95,
+        on_semantic_candidate: Optional[Callable[[], None]] = None,
+        on_semantic_rejected: Optional[Callable[[], None]] = None,
     ) -> None:
         self._backend = backend
         self._on_hit = on_hit
         self._on_miss = on_miss
         self._on_error = on_error
+        # Tier sémantique (optionnel) : None ⇒ `semantic_lookup` est un no-op
+        # (toujours un miss). Activé par `build_cache` quand opt-in.
+        self._semantic = semantic_index
+        self._semantic_threshold = semantic_threshold
+        self._on_semantic_candidate = on_semantic_candidate
+        self._on_semantic_rejected = on_semantic_rejected
 
     def lookup(self, key: str, *, tier: str = "exact") -> Optional[dict]:
         """Renvoie le body JSON (dict) ou ``None`` si miss.
@@ -436,12 +778,28 @@ class Cache:
         self._notify_hit(tier)
         return value if isinstance(value, dict) else None
 
-    def store(self, key: str, body: Mapping[str, Any], ttl: Optional[int] = None) -> None:
+    def store(
+        self,
+        key: str,
+        body: Mapping[str, Any],
+        ttl: Optional[int] = None,
+        *,
+        perimeter: Optional[str] = None,
+        normalized_question: Optional[str] = None,
+        embed_fn: Optional[Callable[[str], Optional[Sequence[float]]]] = None,
+    ) -> None:
         """Persiste `body` (dict JSON-sérialisable) dans le backend.
 
         Exception-safe : un échec d'encodage ou de set est logué + ignoré (no-op).
         `ttl` None → pas d'expiration explicite (le backend décide ; en pratique
-        on passe toujours ``settings.cache_ttl_seconds``)."""
+        on passe toujours ``settings.cache_ttl_seconds``).
+
+        Indexation sémantique (BEST-EFFORT, opt-in) : si un `semantic_index` est
+        câblé ET que `perimeter` + `normalized_question` + `embed_fn` sont
+        fournis, on calcule l'embedding de la question et on l'indexe DANS LA
+        PARTITION DU PÉRIMÈTRE, associé à `key` (la clé exacte). Tout échec
+        d'embedding est avalé (le store de la valeur reste prioritaire et
+        réussi) : un défaut d'index sémantique ne casse JAMAIS le cache exact."""
         try:
             raw = json.dumps(body, ensure_ascii=False, sort_keys=True).encode("utf-8")
         except Exception as exc:
@@ -451,6 +809,109 @@ class Cache:
             self._backend.set(key, raw, ttl if ttl is not None else 0)
         except Exception as exc:
             self._notify_error("set", exc)
+        # Indexation sémantique best-effort (n'altère jamais le store ci-dessus).
+        self.index_embedding(
+            key, perimeter=perimeter, normalized_question=normalized_question, embed_fn=embed_fn
+        )
+
+    def index_embedding(
+        self,
+        key: str,
+        *,
+        perimeter: Optional[str],
+        normalized_question: Optional[str],
+        embed_fn: Optional[Callable[[str], Optional[Sequence[float]]]],
+    ) -> None:
+        """Indexe (best-effort) l'embedding d'une question répondue.
+
+        No-op silencieux si le tier sémantique est désactivé ou si un argument
+        requis manque. EXCEPTION-SAFE de bout en bout : aucune erreur (embedding
+        ou indexation) ne remonte — un cache sémantique défaillant doit dégrader
+        en simple cache exact, jamais faire échouer une requête."""
+        if self._semantic is None or not embed_fn or not perimeter or not normalized_question:
+            return
+        try:
+            vec = embed_fn(normalized_question)
+        except Exception:  # pragma: no cover — embed_fn est censé être safe
+            vec = None
+        if not vec:
+            return
+        try:
+            self._semantic.add(
+                perimeter=perimeter,
+                exact_key=key,
+                embedding=vec,
+                normalized_question=normalized_question,
+            )
+        except Exception:  # pragma: no cover — indexation best-effort
+            pass
+
+    def semantic_lookup(
+        self,
+        perimeter: str,
+        question: str,
+        embed_fn: Callable[[str], Optional[Sequence[float]]],
+    ) -> Optional[dict]:
+        """Recherche un voisin sémantique SÛR dans la partition `perimeter`.
+
+        Retourne le body JSON (dict) du voisin si — et seulement si :
+          * un index sémantique est câblé (sinon ``None``) ;
+          * l'embedding de `question` est calculable (sinon miss GRACIEUX) ;
+          * un voisin de la MÊME partition a une similarité ≥ seuil ;
+          * ce voisin NE diverge PAS factuellement (nombres/dates/entités).
+
+        Sur succès : émet ``inc_cache_hit("semantic")`` (via `on_hit`). Sur tout
+        autre cas : ``None`` (l'appelant enchaîne sur l'appel amont). N'émet PAS
+        de miss ici : la comptabilité miss/hit du tier exact reste la référence
+        du hit-rate ; le tier sémantique est un *rattrapage* au-dessus.
+
+        NE LÈVE JAMAIS : tout échec → ``None``."""
+        if self._semantic is None:
+            return None
+        # `question` est déjà la question NORMALISÉE (cohérence avec le tier
+        # exact et avec ce qui a été indexé). On embed dans cette forme.
+        try:
+            vec = embed_fn(question)
+        except Exception:
+            # embed_fn est censé être exception-safe ; double filet ici.
+            vec = None
+        if not vec:
+            return None  # embed indisponible → miss gracieux (pas de hit).
+        try:
+            exact_key = self._semantic.search(
+                perimeter=perimeter,
+                embedding=vec,
+                threshold=self._semantic_threshold,
+                query_text=question,
+                on_candidate=self._on_semantic_candidate,
+                on_rejected_divergence=self._on_semantic_rejected,
+            )
+        except Exception:  # pragma: no cover — recherche best-effort
+            return None
+        if exact_key is None:
+            return None
+        # Voisin SÛR trouvé : on lit le body via le backend (tier="semantic").
+        # On lit en direct pour ne PAS ré-incrémenter le compteur de miss du
+        # backend si l'entrée a expiré entre-temps (course TTL) — dans ce cas
+        # on renvoie proprement None.
+        try:
+            raw = self._backend.get(exact_key)
+        except Exception as exc:
+            self._notify_error("get", exc)
+            return None
+        if raw is None:
+            # L'entrée de valeur a expiré mais l'index la pointait encore :
+            # miss propre (l'index sera nettoyé naturellement par la LRU).
+            return None
+        try:
+            value = json.loads(raw.decode("utf-8"))
+        except Exception as exc:
+            self._notify_error("get", exc)
+            return None
+        if not isinstance(value, dict):
+            return None
+        self._notify_hit("semantic")
+        return value
 
     def close(self) -> None:
         try:
@@ -517,6 +978,23 @@ def build_cache(settings: Any) -> Optional[Cache]:
     else:
         backend = InMemoryBackend(max_entries=int(getattr(settings, "cache_max_entries", 512)))
 
+    # Tier sémantique (opt-in). Désactivé par défaut : un cache approché sur du
+    # factuel est un risque de précision (cf. docs/CACHE.md §13). Activé, il est
+    # rendu sûr par la partition-par-périmètre + le garde anti-divergence.
+    semantic_index: Optional[SemanticIndex] = None
+    semantic_threshold = 0.95
+    if getattr(settings, "semantic_cache_enabled", False):
+        semantic_threshold = float(getattr(settings, "semantic_threshold", 0.95))
+        semantic_index = SemanticIndex(
+            max_entries=int(
+                getattr(
+                    settings,
+                    "semantic_max_entries",
+                    getattr(settings, "cache_max_entries", 512),
+                )
+            )
+        )
+
     # Branchement métrique (toujours via les helpers exception-safe de `metrics`).
     from . import metrics as _m  # idem
     return Cache(
@@ -524,4 +1002,8 @@ def build_cache(settings: Any) -> Optional[Cache]:
         on_hit=lambda tier: _m.inc_cache_hit(tier),
         on_miss=lambda: _m.inc_cache_miss(),
         on_error=lambda op, _exc: _m.inc_cache_error(op),
+        semantic_index=semantic_index,
+        semantic_threshold=semantic_threshold,
+        on_semantic_candidate=lambda: _m.inc_cache_semantic_candidate(),
+        on_semantic_rejected=lambda: _m.inc_cache_semantic_rejected_divergence(),
     )
