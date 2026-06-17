@@ -309,10 +309,29 @@ strict). Voir `Makefile` cible `cache-bench`.
 
 ---
 
-## 11. Tests (`access-gateway/tests/test_cache.py`)
+## 11. Interaction avec le filtre ACL par-document (RBAC fin)
 
-42 cas, tous offline (`pytest access-gateway/tests/test_cache.py -q`). Ils
-couvrent : normalisation, isolation RBAC, bypass, LRU/TTL, fail-soft Redis
-(via monkeypatch — pas de fakeredis), fail-loud sur secret manquant,
-roundtrip JSON, et l'incrémentation effective des 4 compteurs Prometheus
-introduits.
+**Point de correction critique** (câblé dans `main.py`) : le cache ne stocke QUE
+le corps **périmètre-déterministe** — la réponse d'Onyx après le post-filtre
+garde-fous, **AVANT** le filtre ACL par-document (`doc_acl.py`). Le filtre ACL est
+**par utilisateur** (groupes/UPN) et donc **ré-appliqué à CHAQUE requête**, hit ou
+miss.
+
+Conséquence : deux utilisateurs au **même périmètre Document Set** mutualisent le
+coût LLM (même clé), mais chacun se voit retirer **individuellement** les citations
+qu'il n'a pas le droit de voir — **jamais** une citation cachée pour l'un n'est
+servie à l'autre. Mettre en cache le corps *après* le filtre ACL serait un bug
+d'isolation : c'est explicitement évité. Preuves :
+`tests/test_integration_cache_acl.py::{test_cache_rbac_isolation_by_perimeter,test_doc_acl_isolation_between_users}`.
+
+Ordre du chemin réponse :
+`lookup → (miss) Onyx → garde-fous → STORE(cache) → (toujours) filtre ACL par-doc → réponse`.
+
+## 12. Tests
+
+- `access-gateway/tests/test_cache.py` — **42 cas** offline : normalisation,
+  isolation RBAC de la clé, bypass, LRU/TTL, fail-soft Redis (monkeypatch),
+  fail-loud sur secret manquant, roundtrip JSON, compteurs Prometheus.
+- `access-gateway/tests/test_integration_cache_acl.py` — **7 cas** prouvant le
+  **câblage E2E** dans `main.py` (hit évite l'amont, isolation par périmètre,
+  mutualisation même périmètre, bypass write/no-store, filtre ACL par-doc).
