@@ -173,7 +173,7 @@ jobs:
 
       # --- Filesystem : code + dépendances + IaC/Dockerfile + secrets ---------
       - name: Trivy — scan filesystem (CRITICAL/HIGH bloquant)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -187,7 +187,7 @@ jobs:
         run: docker build -t onix-actions:ci ./actions
 
       - name: Trivy — scan de l'image onix-actions (CRITICAL/HIGH bloquant)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: image
           image-ref: onix-actions:ci
@@ -200,7 +200,7 @@ jobs:
       # --- Export SARIF (non bloquant sur la sévérité) pour Code scanning -----
       - name: Trivy — rapport SARIF (image)
         if: always()
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: image
           image-ref: onix-actions:ci
