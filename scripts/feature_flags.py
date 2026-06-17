@@ -116,8 +116,14 @@ _USER_MESSAGES = {
     "feature_disabled": "Cette fonctionnalité est temporairement désactivée par un administrateur.",
     "user_blocked": "Votre accès à AC360 est actuellement suspendu. Contactez votre administrateur.",
     "team_blocked": "L'accès AC360 de votre équipe est actuellement suspendu. Contactez votre administrateur.",
-    "user_not_allowlisted": "AC360 est en déploiement contrôlé ; votre compte ne fait pas encore partie du périmètre autorisé.",
-    "team_not_allowlisted": "AC360 est en déploiement contrôlé ; votre équipe ne fait pas encore partie du périmètre autorisé.",
+    "user_not_allowlisted": (
+        "AC360 est en déploiement contrôlé ; votre compte ne fait pas encore "
+        "partie du périmètre autorisé."
+    ),
+    "team_not_allowlisted": (
+        "AC360 est en déploiement contrôlé ; votre équipe ne fait pas encore "
+        "partie du périmètre autorisé."
+    ),
 }
 
 

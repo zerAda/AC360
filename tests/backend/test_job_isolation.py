@@ -140,7 +140,6 @@ async def test_durable_gate_blocks_cross_oid_status_read():
 async def test_obo_exhaustion_returns_503_not_502():
     """AUD-05 : l'épuisement du wrapper OBO (réessais) -> HTTP 503 (retriable), pas 502."""
     from fastapi import HTTPException
-    import api_server
     req = AuditRequest(document_id="12345678-1234-5678-1234-567812345678")
 
     def _boom(*_a, **_k):

@@ -24,8 +24,6 @@ import sys
 from datetime import datetime
 from unittest.mock import patch
 
-import pytest
-
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))
 
 from feature_flags import hash_id  # noqa: E402
