@@ -387,3 +387,30 @@ Both gaps are configuration-level fixes, not architectural deficiencies. The cod
 | API deployment (migration cmd) | `deployment/helm/charts/onyx/templates/api-deployment.yaml:73` |
 | K8s probes (empty by default) | `deployment/helm/charts/onyx/values.yaml:440-446` |
 | Env template | `deployment/docker_compose/env.template` |
+
+---
+
+## Complément — 2ᵉ boot réel indépendant (tentative `uvicorn`)
+
+Un second boot (Postgres 16 + Redis 7 en **natif**) a **reproduit à l'identique** la
+migration (`alembic upgrade head` → **379 révisions, 137 tables**, head `01c63968ff8f`)
+— **double confirmation** que le schéma est réel. Il est allé **plus loin** en
+démarrant `uvicorn onyx.main:app` et a trouvé des défauts de *readiness* durs :
+
+1. **`uvicorn` BLOQUE indéfiniment sur OpenSearch** : le pool PG s'initialise, puis le
+   lifespan attend `localhost:9200` (refusé) et **n'émet JAMAIS « Application startup
+   complete »**. OpenSearch est une **dépendance de démarrage BLOQUANTE** (pas de
+   démarrage dégradé).
+2. **`/health` MENT sur la disponibilité** (`get_state.py:30`) : il renvoie 200 « ok »
+   **avant** la fin du lifespan → pas de vraie *readiness probe*. Couplé aux **probes
+   k8s vides par défaut** (`values.yaml:440`), un pod reçoit du trafic alors qu'il ne
+   peut pas servir de recherche. **Défaut opérationnel réel.**
+3. **Lockfile inutilisable hors Py 3.13** : `requirements/default.txt` épingle
+   `audioop-lts==0.2.2` (requiert Python ≥3.13) → install cassée sur 3.11 sans contournement.
+4. **Pas de tracing distribué INFRA** (aucun OpenTelemetry/Jaeger/Zipkin) ; le tracing
+   *LLM* (Langfuse/Braintrust, `tracing/setup.py`) existe mais ne couvre pas le traçage
+   requête bout-en-bout. Logs JSON structurés présents mais **OFF par défaut** (`LOG_FORMAT=json`).
+
+**Impact score** : observabilité *métriques* = premium (4/5) ; axe **readiness/
+exploitation** = pré-prod (3,5/5 — `/health` non fiable, dépendance OpenSearch bloquante,
+lockfile fragile, pas de tracing infra). **Score consolidé de la dimension : 3,75/5.**

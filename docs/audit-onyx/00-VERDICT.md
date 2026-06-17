@@ -24,10 +24,10 @@ multi-utilisateur SharePoint — **c'est exactement le manque que `onix` comble*
 | [Sécurité](30-security.md) | **4/5** | AuthN FOSS forte ; **🔴 chiffrement des secrets OFF par défaut (creds en clair)** ; conteneurs root ; Custom Tools contournent l'anti-SSRF |
 | [Connecteur SharePoint](40-sharepoint-connector-integration.md) | **4,5/5** | Connecteur premium (retry/délta/checkpoint, Graph 100% correct) ; **permission-sync EE-payante + cert-auth only** |
 | [RGPD / gouvernance](50-rgpd-governance.md) | **2,5/5** | **Pas d'audit-trail (aucune édition)**, chiffrement contenu absent, **effacement art.17 cassé**, télémétrie ON par défaut |
-| [Observabilité · runtime](60-observability-runtime.md) | **4/5** | **Boot réel : 379 migrations OK, 137 tables** ; 18 modules Prometheus, dashboards Grafana ; probes k8s vides par défaut |
+| [Observabilité · runtime](60-observability-runtime.md) | **3,75/5** | **2 boots réels : 379 migrations OK → 137 tables** ; métriques Prometheus premium **mais** `/health` ment sur la readiness, OpenSearch bloquant au boot, probes k8s vides |
 | [Santé OSS · licence](70-oss-health-licensing.md) | **4,5/5** | 214 releases, semver, 30k★, backing DanswerAI ; **mur de licence EE** (self-host EE = abonnement payant) |
 
-**Moyenne plateforme : 3,9/5** (ingénierie = premium). **Fit “FOSS auto-hébergé
+**Moyenne plateforme : 3,8/5** (ingénierie = premium). **Fit “FOSS auto-hébergé
 pour client-360 régulé” : ~2,5-3/5** (tiré vers le bas par RGPD + RBAC EE-payant).
 
 ## La ligne de faille décisive : FOSS (MIT) vs EE (payant) vs Cloud
@@ -47,8 +47,10 @@ gating runtime `fetch_versioned_implementation` / `PATH_PREFIX_MIN_TIER`) :
 | Multi-tenant (schéma/tenant) | ❌ | ✅ Cloud |
 
 ## Preuves « no-mock » réelles obtenues
-- **Runtime** : `alembic upgrade head` exécuté en live (postgres+redis dockerisés) →
-  **379 révisions appliquées, 137 tables créées** (`60-…md`). Le schéma est *réel*, pas un POC.
+- **Runtime** : `alembic upgrade head` exécuté en live par **2 boots indépendants** →
+  **379 révisions, 137 tables** (`60-…md`) — schéma *réel*, pas un POC. Le 2ᵉ boot a
+  démarré `uvicorn` : il **bloque sur OpenSearch** (dépendance de boot dure) et
+  **`/health` renvoie 200 avant d'être prêt** (readiness non fiable).
 - **SharePoint** : probe **non-authentifiée réelle** sur la cible exacte —
   `GET /v1.0/sites/gerep75008.sharepoint.com:/sites/dev-assistant-client-360` →
   **HTTP 401 `InvalidAuthenticationToken`** (joignable, token requis) ; token endpoint
