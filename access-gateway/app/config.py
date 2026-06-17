@@ -96,6 +96,16 @@ class Settings:
     # (`REFUSAL_NO_ACCESSIBLE_SOURCE`). Désactiver uniquement pour le diag.
     doc_acl_strip_uncited: bool
 
+    # ── Streaming SSE (cf. app/streaming.py + docs/STREAMING.md) ──
+    # Active le relais token-par-token devant Onyx (latence perçue ÷10 sur CPU)
+    # tout en conservant les garde-fous (garde DUR incrémental + override final)
+    # et le filtre ACL par-document sur le paquet citations. True par défaut.
+    stream_enabled: bool
+    # Délai d'inactivité (secondes) toléré entre deux paquets amont avant de
+    # considérer le flux comme bloqué (à câbler côté `httpx.stream`/read timeout
+    # par l'orchestrateur). Un LLM CPU peut être lent : valeur généreuse.
+    stream_idle_timeout: float
+
     @property
     def graph_configured(self) -> bool:
         return bool(self.graph_tenant_id and self.graph_client_id and self.graph_client_secret)
@@ -137,6 +147,9 @@ def get_settings() -> Settings:
             os.environ.get("GATEWAY_DOC_ACL_DEFAULT_POLICY", "deny").strip().lower() or "deny"
         ),
         doc_acl_strip_uncited=_bool("GATEWAY_DOC_ACL_STRIP_UNCITED", True),
+        # Streaming SSE (cf. app/streaming.py + docs/STREAMING.md).
+        stream_enabled=_bool("GATEWAY_STREAM_ENABLED", True),
+        stream_idle_timeout=float(os.environ.get("GATEWAY_STREAM_IDLE_TIMEOUT", "60")),
     )
 
 

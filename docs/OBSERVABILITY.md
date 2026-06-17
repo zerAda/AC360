@@ -160,6 +160,14 @@ La passerelle RBAC (`access-gateway/`) expose `GET /metrics` sur son port
 | `onix_gateway_cache_tokens_saved_total` | counter | — | Tokens approximatifs économisés par les hits (heuristique `chars/4`) |
 | `onix_gateway_cache_seconds_saved_total` | counter | — | Secondes de génération économisées par les hits (heuristique constante `GATEWAY_CACHE_SECONDS_PER_HIT`) |
 | `onix_gateway_cache_errors_total` | counter | `op` (`get`\|`set`) | Erreurs du backend de cache (exception-safe : déjà traduites en miss/no-op) |
+| `onix_gateway_stream_requests_total` | counter | — | Requêtes traitées en **streaming SSE** (relais token-par-token, cf. [docs/STREAMING.md](STREAMING.md)) |
+| `onix_gateway_stream_aborted_total` | counter | `reason` (`no_prompt_leak`\|`no_exfil_relay`\|`read_only`\|`guard_error`\|`doc_acl_error`\|`postfilter_error`\|`internal_error`) | Flux SSE **avortés** par un garde DUR incrémental ou une erreur fail-closed |
+| `onix_gateway_stream_overridden_total` | counter | — | Flux SSE dont la réponse finale a été **remplacée** par un override d'autorité (groundedness molle a posteriori, ou « pas de source accessible ») |
+
+> **Streaming** : `onix_gateway_stream_aborted_total{reason="no_prompt_leak"}`
+> (et `no_exfil_relay`/`read_only`) mesure les garde-fous DURS déclenchés **en
+> cours de flux** ; les `*_error` mesurent les coupures **fail-closed**. Voir
+> [docs/STREAMING.md](STREAMING.md) §8 pour le détail du contrat client.
 
 > **Hit-rate effectif** (hors bypass volontaires), à mettre dans le dashboard :
 > `rate(onix_gateway_cache_hits_total[5m]) / (rate(onix_gateway_cache_hits_total[5m]) + rate(onix_gateway_cache_misses_total[5m]))`.

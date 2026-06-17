@@ -119,6 +119,27 @@ try:
         ["op"],
     )
 
+    # ── Streaming SSE (RBAC-safe, cf. app/streaming.py + docs/STREAMING.md) ──
+    # Requêtes traitées en mode flux (relais token-par-token devant Onyx).
+    STREAM_REQUESTS_TOTAL = Counter(
+        "onix_gateway_stream_requests_total",
+        "Requêtes traitées en streaming SSE (relais token-par-token)",
+    )
+    # `reason` = règle/garde ayant AVORTÉ un flux (garde DUR incrémental ou
+    # erreur fail-closed) : no_prompt_leak|no_exfil_relay|read_only|
+    # guard_error|doc_acl_error|postfilter_error|internal_error.
+    STREAM_ABORTED_TOTAL = Counter(
+        "onix_gateway_stream_aborted_total",
+        "Flux SSE avortés par un garde DUR ou une erreur fail-closed (par raison)",
+        ["reason"],
+    )
+    # Flux où la réponse finale a été REMPLACÉE par un override d'autorité
+    # (groundedness molle a posteriori, ou substitution « pas de source accessible »).
+    STREAM_OVERRIDDEN_TOTAL = Counter(
+        "onix_gateway_stream_overridden_total",
+        "Flux SSE dont la réponse finale a été remplacée par un override d'autorité",
+    )
+
     _METRICS_AVAILABLE = True
 
 except Exception as _exc:  # pragma: no cover — jamais déclenché en tests normaux
@@ -280,3 +301,40 @@ def inc_cache_error(op: str) -> None:
         CACHE_ERRORS_TOTAL.labels(op=op).inc()
     except Exception as exc:
         _logger.debug("metrics inc_cache_error: %s", exc)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helpers streaming SSE. Tous exception-safe — un défaut Prometheus NE DOIT
+# JAMAIS interrompre un flux en cours côté utilisateur.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def inc_stream_requests() -> None:
+    """Incrémente `onix_gateway_stream_requests_total`."""
+    if not _METRICS_AVAILABLE:
+        return
+    try:
+        STREAM_REQUESTS_TOTAL.inc()
+    except Exception as exc:
+        _logger.debug("metrics inc_stream_requests: %s", exc)
+
+
+def inc_stream_aborted(reason: str) -> None:
+    """Incrémente `onix_gateway_stream_aborted_total{reason}` (garde DUR /
+    erreur fail-closed ayant coupé le flux)."""
+    if not _METRICS_AVAILABLE:
+        return
+    try:
+        STREAM_ABORTED_TOTAL.labels(reason=reason).inc()
+    except Exception as exc:
+        _logger.debug("metrics inc_stream_aborted: %s", exc)
+
+
+def inc_stream_overridden() -> None:
+    """Incrémente `onix_gateway_stream_overridden_total` (réponse finale
+    remplacée par un override d'autorité)."""
+    if not _METRICS_AVAILABLE:
+        return
+    try:
+        STREAM_OVERRIDDEN_TOTAL.inc()
+    except Exception as exc:
+        _logger.debug("metrics inc_stream_overridden: %s", exc)
