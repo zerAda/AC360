@@ -76,5 +76,7 @@ paths = [
   '''\.git''',
   '''node_modules''',
   '''\.md$''',
-  '''tests/red_team'''
+  '''tests/red_team''',
+  # pytest scaffolding — placeholder env GUIDs only (no real secrets)
+  '''conftest\.py'''
 ]
