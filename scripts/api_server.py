@@ -456,10 +456,17 @@ async def trigger_audit(
     # Fast-path mémoire (cache) : le contrôle Durable autoritaire reste _assert_durable_owner.
     _record_audit_owner(az_data.get("id"), oid)
 
+    # SÉCURITÉ : on n'expose JAMAIS le `statusQueryGetUri` Durable — il porte une
+    # clé SAS `?code=` qui permettrait à quiconque lit le transcript/trace de
+    # poller (ou rejouer) le job d'un autre utilisateur, hors de tout contrôle
+    # IDOR. Le client poll l'endpoint passerelle gété `/api/audit/{job_id}/status`
+    # (server-side, _assert_durable_owner) avec SON propre jeton. Chemin relatif,
+    # aucun secret ne quitte la passerelle.
+    _job_id = az_data.get("id")
     return {
         "status": "accepted",
-        "job_id": az_data.get("id"),
-        "statusQueryGetUri": az_data.get("statusQueryGetUri"),
+        "job_id": _job_id,
+        "status_url": f"/api/audit/{_job_id}/status",
         "requested_by": oid
     }
 

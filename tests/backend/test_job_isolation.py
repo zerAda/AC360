@@ -48,6 +48,11 @@ async def test_audit_response_contains_job_id():
     assert res["status"] == "accepted"
     assert res["job_id"] == "az-instance-001"
     assert res["requested_by"] == "user1@gerep.fr"
+    # Anti-fuite : le statusQueryGetUri Durable (porteur d'une clé SAS ?code=) ne
+    # doit JAMAIS être exposé au client. Le poll passe par l'endpoint passerelle
+    # gété par IDOR, en chemin relatif sans secret.
+    assert "statusQueryGetUri" not in res
+    assert res["status_url"] == "/api/audit/az-instance-001/status"
 
 
 @pytest.mark.asyncio

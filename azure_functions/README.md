@@ -52,5 +52,10 @@ func azure functionapp publish <nom-function-app>
 ## Contrat avec api_server.py
 
 - `http_start` renvoie `create_check_status_response` → `{ id, statusQueryGetUri, ... }`.
-- `scripts/api_server.py::trigger_audit` lit `id` (job_id) et `statusQueryGetUri`.
-- Le statut est interrogé via l'API standard des instances Durable Functions.
+- `scripts/api_server.py::trigger_audit` ne lit que `id` (job_id). Le
+  `statusQueryGetUri` (porteur d'une clé SAS `?code=`) est volontairement ignoré
+  et **jamais** renvoyé au client : la passerelle expose `status_url` (chemin
+  relatif `/api/audit/{job_id}/status`), sans secret.
+- Le statut est interrogé via l'endpoint passerelle gété par IDOR
+  (`/api/audit/{job_id}/status`), qui appelle l'API standard des instances
+  Durable Functions côté serveur avec sa propre clé.
