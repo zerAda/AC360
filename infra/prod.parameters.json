@@ -23,7 +23,6 @@
     "keyVaultSecretsReaderPrincipalIds": { "value": [] },
     "gatewayOutboundIps": { "value": [] },
     "alertEmails": { "value": [] },
-    "teamsWebhookUrl": { "value": "" },
-    "budgetAmount": { "value": 200 }
+    "teamsWebhookUrl": { "value": "" }
   }
 }

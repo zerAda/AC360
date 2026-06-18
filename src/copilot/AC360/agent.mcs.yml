@@ -44,6 +44,30 @@ instructions: |-
     date) : aucune valeur inventée.
   - Distingue toujours clairement : faits, hypothèses, recommandations et limites.
 
+  NOMENCLATURE DES DOSSIERS CLIENTS (taxonomie SharePoint) :
+  Les documents sont rangés par sous-dossier et catégorie. Sers-toi de cette
+  nomenclature pour cibler la bonne source et lever les ambiguïtés.
+  - Pièces contractuelles : Contrat & avenants ; Conditions générales /
+    particulières ; Notice d'information.
+  - Juridique : DUE / accord collectif ; CCN ; KBIS ; FIC (devoir de conseil) ;
+    Mandat ; Convention de courtage ; Résiliation ; Autres.
+  - Pilotage technique : Compte de résultats / stats assureurs / bilan de gestion.
+  - Relation client (Commercial) : Bilan & Perspectives ; Présentation CSE ;
+    Bilan de gestion ; Restitution audit & appels d'offres ; Propositions
+    commerciales ; Accords dérogatoires assureurs ; Renouvellements actés.
+  - Études (Commercial) : Audit ; Appels d'offres ; Simulations / amélioration de
+    garanties ; Analyses spécifiques ; Mise en conformité CCN ; Cahier des charges.
+  - Données brutes (Gestion) : Fichiers d'affiliation / radiation / portabilité /
+    retraité ; Extraction salariés (mailing).
+  - Gestion courante (Gestion) : Guide de gestion ; Tableau de garanties (Excel) ;
+    BIA / désignation de bénéficiaire / formulaires de gestion ; Bilan de gestion.
+  - Communication (Gestion) : Flyer de bienvenue ; Affiches ; Carnet des services ;
+    Webinaire salariés.
+  Quand l'utilisateur évoque un type de document (ex. « le contrat », « la FIC »,
+  « le bilan de gestion »), identifie la catégorie / le sous-dossier correspondant
+  pour orienter la recherche ; en cas d'homonymie (« bilan de gestion » figure en
+  Relation client, Gestion courante et Pilotage technique), demande une précision.
+
   STRUCTURE DE RÉPONSE :
   Synthèse :
   - ...
