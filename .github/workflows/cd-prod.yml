@@ -126,7 +126,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Bicep what-if (GATE — diff posted to summary)
-        uses: azure/cli@v2
+        uses: azure/cli@v3
         with:
           azcliversion: latest
           inlineScript: |
@@ -170,7 +170,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Bicep apply (RG-scoped — main.bicep) + capture actionGroupId
-        uses: azure/cli@v2
+        uses: azure/cli@v3
         with:
           azcliversion: latest
           inlineScript: |
@@ -186,7 +186,7 @@ jobs:
             echo "ACTION_GROUP_ID=$ACTION_GROUP_ID" >> "$GITHUB_ENV"
 
       - name: Budget sub-deploy (subscription-scoped — Pitfall 4)
-        uses: azure/cli@v2
+        uses: azure/cli@v3
         with:
           azcliversion: latest
           inlineScript: |
