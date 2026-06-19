@@ -1,7 +1,1 @@
-﻿connectionReferences:
-  - connectionReferenceLogicalName: cra7f_AC360.shared_a365copilotchatmcp.shared-a365copilotch-89e42842-2d73-4534-acdb-4e3a0f97aaac
-    connectorId: /providers/Microsoft.PowerApps/apis/shared_a365copilotchatmcp
-  - connectionReferenceLogicalName: cra7f_AC360.shared_a365memcp.shared-a365memcp-f3739f35-9bf7-4e1e-a9ba-a2a6ebe51d50
-    connectorId: /providers/Microsoft.PowerApps/apis/shared_a365memcp
-  - connectionReferenceLogicalName: cra7f_AC360.shared_workiqsharepoint.c515a017b96d42b39021ef708a447054
-    connectorId: /providers/Microsoft.PowerApps/apis/shared_workiqsharepoint
+connectionReferences: []
