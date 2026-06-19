@@ -128,4 +128,4 @@ conversationStarters:
 
 aISettings:
   model:
-    modelNameHint: GPT4
+    modelNameHint: GPT41
