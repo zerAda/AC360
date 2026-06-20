@@ -1,9 +1,11 @@
 # AC360 — Architecture Globale & Sécurité
 
-> **Statut** : CONDITIONALLY READY — pilote staging supervisé. NON production-ready
-> tant que le backend Durable Functions n'est pas déployé et que l'OCR / Fabric /
-> Entra ID / SharePoint ne sont pas validés en environnement réel.
-> Voir `AC360_FINAL_ENTERPRISE_READINESS_REPORT.md` (score honnête ~77/100).
+> **Statut** : pilote pré-go-live. La décision GO / NO-GO est gouvernée par la
+> checklist `docs/production/runbooks/07-go-no-go-checklist.md` (preuves :
+> `docs/security/SECURITY_POSTURE.md`, registre de risques acceptés
+> `docs/security/SEC-05-accepted-risk-register.md`, et la DPIA RGPD) — pas par un
+> état figé. Le backend **staging est déployé** et l'OBO / OCR / Fabric ont été
+> exercés de bout en bout (cf. `docs/security/SECURITY_REDTEAM_STAGING_2026-06.md`).
 > **Version** : 2.0 (Post-Audit Hostile)
 
 ## Vue d'ensemble

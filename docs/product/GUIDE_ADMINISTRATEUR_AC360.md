@@ -89,4 +89,8 @@ Solution : Utilisez le lanceur PowerShell ou définissez manuellement `TENANT_ID
 Solution : Le bot ne recherche que les documents auxquels l'utilisateur a accès. Demandez à l'utilisateur de vérifier s'il peut ouvrir le document dans son navigateur. Les indexations SharePoint peuvent parfois prendre quelques minutes.
 
 **Problème : L'API renvoie une erreur 429 Rate Limit.**
-Solution : Le rate limiter in-memory bloque les appels excessifs (ex: > 10 audits / heure / utilisateur) pour protéger le pipeline OCR. Ajustez `_RATE_LIMIT_MAX` dans `api_server.py` si nécessaire.
+Solution : Le rate limiter in-memory (par utilisateur, par process — pin mono-worker) borne **deux quotas distincts** pour protéger les postes coûteux. Distinguez-les par le message et l'endpoint :
+- **Audit** : 10 / heure / utilisateur (`_RATE_LIMIT_MAX`, `POST /api/audit`) — message « maximum 10 audits par heure ».
+- **Recherche / résolution documentaire** : 60 / heure / utilisateur (`_RESOLVE_RATE_MAX`, `POST /api/documents/resolve`) — message « maximum 60 recherches par heure ».
+
+Ajustez `_RATE_LIMIT_MAX` / `_RESOLVE_RATE_MAX` dans `api_server.py` si nécessaire.

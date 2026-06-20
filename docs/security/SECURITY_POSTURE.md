@@ -49,12 +49,15 @@ toujours sous les hypothèses mono-worker documentées dans le Plan 01-05.
 Trois structures en mémoire du gateway ne sont correctes qu'avec **exactement un
 process** :
 
-- `_rate_limit_store` (`scripts/api_server.py:105`) — contournement du rate-limit
+- `_rate_limit_store` (`scripts/api_server.py`) — contournement du rate-limit
   si les requêtes se répartissent entre workers.
-- `_JWKS_CACHE` (`scripts/auth.py:28`) — divergence du cache pendant la rotation
+- `_JWKS_CACHE` (`scripts/auth.py`) — divergence du cache pendant la rotation
   de clés.
-- `_audit_job_owners` (`scripts/api_server.py:205`) — divergence du fast-path IDOR
+- `_audit_job_owners` (`scripts/api_server.py`) — divergence du fast-path IDOR
   (la garde durable `owner_hash` reste autoritaire — §3).
+
+> Réfs par **nom de symbole** (pas de numéro de ligne) pour éviter toute dérive
+> documentaire ; `grep` le symbole pour localiser.
 
 **Mitigation (AUD-04, Plan 01-05)** : épinglage mono-worker porteur dans
 `infra/main.bicep` —

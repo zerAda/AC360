@@ -24,11 +24,28 @@ débloquer lui-même (cf. `docs/security/ADMIN_CONTROLS.md`).
 Quand une action est bloquée, l'utilisateur reçoit un message propre (HTTP 403
 côté passerelle) et l'événement `*_blocked` est tracé (sans donnée sensible).
 
+## Cible — définir l'environnement AVANT toute commande
+
+> ⚠️ **Par défaut ce runbook vise la PRODUCTION.** Définissez ces variables en
+> premier, puis copiez les commandes ci-dessous telles quelles. Ne jamais
+> copier-coller une commande avec un nom de ressource en dur — un arrêt appliqué
+> au mauvais environnement laisserait la prod consommer en plein incident.
+
+```powershell
+# PRODUCTION (par défaut)
+$RG   = "rg-ac360-prod"
+$GW   = "ac360-gateway-prod"
+$FUNC = "ac360-func-prod"
+
+# STAGING / pré-production — décommenter UNIQUEMENT si l'incident y est cantonné
+# $RG = "rg-ac360-staging"; $GW = "ac360-gateway-staging"; $FUNC = "ac360-func-staging"
+```
+
 ## Procédure — Arrêt total (incident majeur)
 
 ```powershell
 # 1. Couper la consommation globale (effet immédiat, pas de redéploiement)
-az webapp config appsettings set -g rg-ac360-staging -n ac360-gateway-staging `
+az webapp config appsettings set -g $RG -n $GW `
   --settings AC360_GLOBAL_ENABLED=false
 
 # 2. Vérifier : un appel /api/audit authentifié doit renvoyer 403
@@ -40,9 +57,9 @@ az webapp config appsettings set -g rg-ac360-staging -n ac360-gateway-staging `
 ## Procédure — Couper uniquement un poste coûteux (ex. OCR)
 
 ```powershell
-az webapp config appsettings set -g rg-ac360-staging -n ac360-func-staging `
+az webapp config appsettings set -g $RG -n $FUNC `
   --settings AC360_OCR_ENABLED=false
-az webapp config appsettings set -g rg-ac360-staging -n ac360-gateway-staging `
+az webapp config appsettings set -g $RG -n $GW `
   --settings AC360_OCR_ENABLED=false
 ```
 
@@ -54,14 +71,14 @@ az webapp config appsettings set -g rg-ac360-staging -n ac360-gateway-staging `
    ```
 2. Ajouter le hash (CSV) :
    ```powershell
-   az webapp config appsettings set -g rg-ac360-staging -n ac360-gateway-staging `
+   az webapp config appsettings set -g $RG -n $GW `
      --settings AC360_BLOCKED_USERS_HASHED="<hash1>,<hash2>"
    ```
 
 ## Réactivation (déblocage contrôlé)
 
 ```powershell
-az webapp config appsettings set -g rg-ac360-staging -n ac360-gateway-staging `
+az webapp config appsettings set -g $RG -n $GW `
   --settings AC360_GLOBAL_ENABLED=true
 # ou retirer le hash de AC360_BLOCKED_USERS_HASHED / remettre AC360_OCR_ENABLED=true
 ```
