@@ -25,6 +25,13 @@ modifiables uniquement par un administrateur ayant accès à la ressource. Un co
 | `AC360_AUDIT_ENABLED=false` | Coupe l'audit documentaire | `true` |
 | `AC360_BLOCKED_USERS_HASHED=<hash,…>` | Bloque des utilisateurs (hash SHA-256) | vide |
 | `AC360_BLOCKED_TEAMS=<id,…>` | Bloque des équipes | vide |
+| `AC360_ALLOWED_USERS_HASHED=<hash,…>` | **Allowlist — deny-by-default quand renseignée** : seuls ces utilisateurs passent. La rétrécir = endiguement instantané du périmètre. | vide (= pas de restriction) |
+| `AC360_ALLOWED_TEAMS=<id,…>` | Allowlist d'équipes (deny-by-default quand renseignée) | vide |
+
+> **Levier de périmètre le plus rapide** : l'allowlist (`AC360_ALLOWED_*`,
+> garde testée dans `tests/backend/test_feature_flags_allowlist.py`) contient le
+> rayon d'action sans couper de fonctionnalité — la réduire à zéro pilote bloque
+> tout accès (cf. runbook **08 — rollout/rollback**, « shrink to zero »).
 
 ## Procédure — Quel switch actionner ? (arbre de décision)
 

@@ -23,7 +23,13 @@ Le déploiement, lui, n'a **aucun secret à faire tourner** : il utilise OIDC f�
 
 ## Suivi des expirations
 
-> À tenir à jour à chaque rotation. Cible : rotation **avant** la date d'expiration.
+> À tenir à jour à chaque rotation. **Cadence : rotation du `OBO-CLIENT-SECRET`
+> tous les 12 mois, déclenchée à T-30 jours avant expiration** (le secret est créé
+> avec `--years 1`). Opérateur unique : poser **au go-live** un déclencheur
+> proactif — rappel calendrier/tâche planifiée à T-30 **ou** alerte Azure Monitor
+> sur l'expiration du credential de l'app-registration OBO. Sans déclencheur, une
+> panne OBO (401 AADSTS) survient ~1 an après le go-live, sans préavis (le triage
+> incident 04 ne réagit qu'APRÈS l'alerte de dépendance).
 
 | Secret | Dernière rotation | Expire le | Prochaine rotation | Responsable |
 |---|---|---|---|---|
