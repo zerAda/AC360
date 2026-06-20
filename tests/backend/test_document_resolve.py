@@ -151,3 +151,37 @@ async def test_resolve_escapes_odata_quote(monkeypatch):
     await api_server.resolve_document(_req("l'avenant"), None, "u@gerep.fr")
     # Quote simple doublée (littéral OData) puis URL-encodée : %27%27.
     assert "%27%27" in fake.calls[0]["url"]
+
+
+@pytest.mark.parametrize("ctrl", ["\x00", "\x07", "\x09", "\x0a", "\x1f", "\x7f"])
+async def test_resolve_rejects_control_chars_before_graph(monkeypatch, ctrl):
+    """A10/CB-08 : tout caractère de contrôle dans la requête est refusé 400 avec
+    le détail « caractères interdits », AVANT tout appel Graph — le garde
+    _validate_resolve_query devient load-bearing (un refactor qui le retire
+    casse ce test)."""
+    fake = _FakeClient(_FakeResp(200, {"value": []}))
+    monkeypatch.setattr(api_server, "http_client", fake)
+    with pytest.raises(HTTPException) as exc:
+        await api_server.resolve_document(_req(f"Gecina{ctrl}contrat"), None, "u@gerep.fr")
+    assert exc.value.status_code == 400
+    assert "interdit" in exc.value.detail.lower()
+    assert fake.calls == []  # aucune recherche Graph déclenchée
+
+
+@pytest.mark.parametrize("q,should_pass", [
+    ("ab", True), ("z" * 200, True),    # bornes inclusives 2..200 : passent
+    ("a", False), ("z" * 201, False),   # hors bornes : 400 avant tout Graph
+])
+async def test_resolve_query_length_bounds_inclusive(monkeypatch, q, should_pass):
+    """CB-08 : les bornes 2..200 sont inclusives ; hors bornes => 400 sans Graph."""
+    fake = _FakeClient(_FakeResp(200, {"value": []}))
+    monkeypatch.setattr(api_server, "http_client", fake)
+    if should_pass:
+        out = await api_server.resolve_document(_req(q), None, "u@gerep.fr")
+        assert out == {"count": 0}
+        assert len(fake.calls) == 1
+    else:
+        with pytest.raises(HTTPException) as exc:
+            await api_server.resolve_document(_req(q), None, "u@gerep.fr")
+        assert exc.value.status_code == 400
+        assert fake.calls == []

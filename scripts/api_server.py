@@ -40,6 +40,12 @@ def _truthy(val) -> bool:
 
 _DOCID_FORBIDDEN = re.compile(r"[/\\\s;'\"<>`]|\.\.|\x00")
 _DOCID_MAX_LEN = 512
+# Plancher de longueur (R1) : un drive-item-id SharePoint est un jeton opaque
+# long (~34 caractères). Un id trop court ne peut jamais résoudre ; on le rejette
+# AVANT de consommer un quota ou de démarrer une orchestration Durable vouée à
+# l'échec. Plancher fixé au minimum déjà couvert par le contrat de validation
+# (test_hostile_review : id valides >= 10), donc compatible et conservateur.
+_DOCID_MIN_LEN = 10
 
 
 def _validate_sharepoint_doc_id(document_id: str) -> str:
@@ -47,6 +53,8 @@ def _validate_sharepoint_doc_id(document_id: str) -> str:
         raise HTTPException(status_code=400, detail="document_id manquant.")
     if len(document_id) > _DOCID_MAX_LEN:
         raise HTTPException(status_code=400, detail="document_id invalide (trop long).")
+    if len(document_id) < _DOCID_MIN_LEN:
+        raise HTTPException(status_code=400, detail="document_id invalide (trop court).")
     if _DOCID_FORBIDDEN.search(document_id):
         raise HTTPException(status_code=400, detail="document_id invalide (caractères interdits).")
     return document_id
@@ -363,8 +371,10 @@ async def trigger_audit(
     # (Plan 01-02) : `oid` est la SEULE clé d'appartenance/de quota. L'upn mutable
     # n'est jamais utilisé comme clé (cause racine de l'IDOR par réutilisation
     # d'upn — AUD-02/03). Le nom de paramètre porte explicitement `oid`.
-    await _check_rate_limit(oid)
+    # CB-02 : valider AVANT de consommer le quota — une entrée invalide (format,
+    # longueur, caractères interdits) ne doit jamais décompter un des 10 audits/h.
     _validate_sharepoint_doc_id(request.document_id)
+    await _check_rate_limit(oid)
 
     _user_hash = hash_id(oid)
     _allowed, _reason = is_allowed("audit", user_id_hash=_user_hash)

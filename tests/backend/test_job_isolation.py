@@ -89,6 +89,25 @@ async def test_audit_rejects_empty_document_id():
     post_mock.assert_not_called()
 
 
+@pytest.mark.asyncio
+async def test_audit_validates_before_charging_quota():
+    """CB-02 : la validation du document_id précède le décompte du quota — une
+    entrée invalide est refusée 400 sans consommer un des 10 audits/heure ni
+    toucher le réseau (le quota ne borne que les vrais audits)."""
+    from fastapi import HTTPException
+    req = AuditRequest(document_id="../../etc/passwd")  # caractères interdits -> 400
+
+    rate_limit = AsyncMock(return_value=None)
+    with patch("api_server.http_client.post", new=AsyncMock()) as post_mock, \
+         patch("api_server._check_rate_limit", new=rate_limit):
+        with pytest.raises(HTTPException) as exc:
+            await trigger_audit(req, _fake_request(), oid="test@gerep.fr")
+
+    assert exc.value.status_code == 400
+    post_mock.assert_not_called()
+    rate_limit.assert_not_called()  # CB-02 : pas de décompte de quota sur entrée invalide
+
+
 # --- AUD-03 : isolation inter-oid (IDOR fermé) --------------------------------
 
 _OID_A = "aaaaaaaa-0000-0000-0000-000000000001"

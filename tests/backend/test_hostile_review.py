@@ -39,6 +39,9 @@ async def test_fiche_idor_end_to_end(tmp_path, monkeypatch):
 @pytest.mark.parametrize("bad", [
     "", "../etc", "a/b", "a\\b", "a b", "a;b", 'a"b', "a'b", "a<b", "a>b",
     "a`b", "a..b", "x" * 513,
+    # R1 : plancher de longueur — un id trop court (< _DOCID_MIN_LEN) est refusé
+    # avant tout quota/orchestration. (Les id valides restent >= 10, cf. accepts.)
+    "a", "abc", "x" * 9,
 ])
 def test_validate_doc_id_rejects(bad):
     with pytest.raises(HTTPException) as exc:
