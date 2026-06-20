@@ -47,6 +47,26 @@ def test_make_fic_calls_generator_with_adapted_args(tmp_path, monkeypatch):
     assert path.endswith("FIC_Brouillon_GEREP_SA.docx")
 
 
+def test_download_as_user_uses_item_drive(monkeypatch, tmp_path):
+    """Drive-aware : _download_as_user télécharge depuis le drive PROPRE de l'item
+    (fourni par la passerelle) ; repli sur SHAREPOINT_DRIVE_ID si absent."""
+    monkeypatch.setenv("JOBS_BASE_DIR", str(tmp_path))
+    monkeypatch.setenv("SHAREPOINT_DRIVE_ID", "b!GLOBAL")
+    import sharepoint
+    captured = {}
+
+    def fake_dl(*, item_id, drive_id, dest_dir, access_token, **kw):
+        captured.update(item_id=item_id, drive_id=drive_id)
+        return os.path.join(dest_dir, "doc.pdf")
+
+    monkeypatch.setattr(sharepoint, "download_document", fake_dl)
+    fa._download_as_user("01ITEM", "tok", "b!ITEMDRIVE")
+    assert captured == {"item_id": "01ITEM", "drive_id": "b!ITEMDRIVE"}  # drive de l'item
+    captured.clear()
+    fa._download_as_user("01ITEM", "tok")                                # pas de drive
+    assert captured["drive_id"] == "b!GLOBAL"                            # -> repli global
+
+
 # --- Adaptateur référence Fabric (OneLake) ---------------------------------
 def test_fetch_reference_uses_onelake(monkeypatch):
     import fabric_onelake

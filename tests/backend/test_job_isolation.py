@@ -75,6 +75,20 @@ async def test_audit_forwarded_to_azure_function():
 
 
 @pytest.mark.asyncio
+async def test_audit_splits_composite_doc_id_to_function():
+    """Drive-aware : un document_id composite (drive|item) est dépaqueté ; la Function
+    reçoit l'item id NU + le drive propre de l'item. Un id nu reste rétro-compatible."""
+    req = AuditRequest(document_id="b!OTHERDRIVE|01ITEMABCDEFGHIJ", client_context="ALPHA")
+    post_mock = AsyncMock(return_value=_azure_response("az-instance-003"))
+    with patch("api_server.http_client.post", new=post_mock), \
+         patch("api_server._check_rate_limit", new=AsyncMock(return_value=None)):
+        await trigger_audit(req, _fake_request(), oid="test@gerep.fr")
+    sent = post_mock.call_args[1]["json"]
+    assert sent["document_id"] == "01ITEMABCDEFGHIJ"   # item id nu
+    assert sent["drive_id"] == "b!OTHERDRIVE"          # drive propre de l'item
+
+
+@pytest.mark.asyncio
 async def test_audit_rejects_empty_document_id():
     """Un document_id vide doit être refusé (400) avant tout appel réseau."""
     from fastapi import HTTPException

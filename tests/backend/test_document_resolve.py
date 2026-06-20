@@ -59,7 +59,9 @@ async def test_resolve_single_match(monkeypatch):
     monkeypatch.setattr(api_server, "http_client", fake)
     out = await api_server.resolve_document(_req("contrat GEREP"), None, "u@gerep.fr")
     assert out["count"] == 1 and out["single"] is True
-    assert out["document_id"] == "id-Contrat_GEREP.pdf"
+    # document_id encode désormais (drive de l'item | item id) — drive global ici.
+    assert out["document_id"] == "drive-d1|id-Contrat_GEREP.pdf"
+    assert api_server._unpack_doc_id(out["document_id"]) == ("drive-d1", "id-Contrat_GEREP.pdf")
     assert out["document_name"] == "Contrat_GEREP.pdf"
     # La recherche porte bien le token délégué de l'utilisateur.
     assert fake.calls[0]["headers"]["Authorization"] == "Bearer " + "graph-tok"
@@ -70,7 +72,7 @@ async def test_resolve_filters_non_auditable_extensions(monkeypatch):
     monkeypatch.setattr(api_server, "http_client", _FakeClient(_FakeResp(200, payload)))
     out = await api_server.resolve_document(_req("contrat"), None, "u@gerep.fr")
     assert out["count"] == 1
-    assert out["document_id"] == "id-Contrat.pdf"
+    assert api_server._unpack_doc_id(out["document_id"])[1] == "id-Contrat.pdf"
 
 
 async def test_resolve_multiple_sorted_by_recency(monkeypatch):
@@ -97,7 +99,8 @@ async def test_resolve_choice_picks_nth(monkeypatch):
     ]}
     monkeypatch.setattr(api_server, "http_client", _FakeClient(_FakeResp(200, payload)))
     out = await api_server.resolve_document(_req("dossier", choice=2), None, "u@gerep.fr")
-    assert out["single"] is True and out["document_id"] == "id-B.pdf"
+    assert out["single"] is True
+    assert api_server._unpack_doc_id(out["document_id"])[1] == "id-B.pdf"
 
 
 async def test_resolve_invalid_choice_rejected(monkeypatch):
@@ -202,3 +205,24 @@ async def test_resolve_choice_deterministic_across_graph_reorder_cb01(monkeypatc
     out2 = await api_server.resolve_document(_req("dossier", choice=1), None, "u@gerep.fr")
 
     assert out1["document_id"] == out2["document_id"]  # même choix -> même document
+
+
+def test_pack_unpack_doc_id_roundtrip():
+    """Drive-aware id : composite (drive|item) <-> (drive, item) ; id nu rétro-compat."""
+    assert api_server._pack_doc_id("b!DRIVE", "01ITEM") == "b!DRIVE|01ITEM"
+    assert api_server._unpack_doc_id("b!DRIVE|01ITEM") == ("b!DRIVE", "01ITEM")
+    assert api_server._unpack_doc_id("01ITEM") == (None, "01ITEM")  # id nu -> repli global
+    assert api_server._pack_doc_id(None, "01ITEM") == "01ITEM"      # pas de drive -> pas de pack
+    assert api_server._pack_doc_id("", "01ITEM") == "01ITEM"
+
+
+async def test_resolve_uses_item_parent_drive(monkeypatch):
+    """resolve encode le drive PROPRE de l'item (parentReference.driveId) — c'est ce
+    qui permet d'auditer un document hors du SHAREPOINT_DRIVE_ID global."""
+    item = {"id": "01ITEMX", "name": "Contrat.pdf",
+            "lastModifiedDateTime": "2026-06-01T00:00:00Z",
+            "parentReference": {"path": "/x", "driveId": "b!OTHER_DRIVE"}}
+    monkeypatch.setattr(api_server, "http_client", _FakeClient(_FakeResp(200, {"value": [item]})))
+    out = await api_server.resolve_document(_req("contrat"), None, "u@gerep.fr")
+    assert out["document_id"] == "b!OTHER_DRIVE|01ITEMX"
+    assert api_server._unpack_doc_id(out["document_id"]) == ("b!OTHER_DRIVE", "01ITEMX")

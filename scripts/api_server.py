@@ -60,6 +60,32 @@ def _validate_sharepoint_doc_id(document_id: str) -> str:
     return document_id
 
 
+# --- Document id conscient du drive (drive par item) ------------------------
+# Un document peut résider dans un drive/bibliothèque DIFFÉRENT du
+# SHAREPOINT_DRIVE_ID global (la recherche peut remonter des items cross-library).
+# On encode donc le drive de l'item DANS le document_id renvoyé par /resolve :
+#   "{driveId}|{itemId}"  (le séparateur '|' est absent des id SharePoint/base32).
+# Rétro-compatible : un id nu (sans '|') retombe sur le drive global. La sécurité
+# n'est pas affaiblie : le téléchargement reste AS-USER (OBO), donc un drive_id
+# fourni ne donne accès qu'à ce que l'utilisateur peut déjà voir ; et le composite
+# passe la même validation anti-injection (pas de '/', '..', etc.).
+_DOCID_DRIVE_SEP = "|"
+
+
+def _pack_doc_id(drive_id: Optional[str], item_id: str) -> str:
+    if drive_id and item_id and _DOCID_DRIVE_SEP not in drive_id:
+        return f"{drive_id}{_DOCID_DRIVE_SEP}{item_id}"
+    return item_id
+
+
+def _unpack_doc_id(doc_id: str):
+    """Retourne (drive_id|None, item_id). Un id nu -> (None, id) (rétro-compat)."""
+    if _DOCID_DRIVE_SEP in doc_id:
+        drive, _sep, item = doc_id.partition(_DOCID_DRIVE_SEP)
+        return (drive or None), item
+    return None, doc_id
+
+
 _PLANNER_PLACEHOLDER_PLAN = {"", "DEFAULT_PLAN"}
 _PLANNER_PLACEHOLDER_BUCKET = {"", "DEFAULT_BUCKET"}
 _DATE_ONLY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -320,12 +346,14 @@ def _assert_durable_owner(data, oid):
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 
 
-async def _assert_user_can_access_document(graph_token: str, document_id: str) -> None:
+async def _assert_user_can_access_document(graph_token: str, document_id: str,
+                                           drive_id: Optional[str] = None) -> None:
     """Échec rapide : vérifie AVEC le token délégué de l'utilisateur qu'il a accès
     au document SharePoint, avant de déclencher l'orchestration. Best-effort — un
     drive non configuré ou une erreur transitoire ne bloque pas (le téléchargement
-    as-user côté Function reste le contrôle faisant autorité)."""
-    drive_id = os.environ.get("SHAREPOINT_DRIVE_ID")
+    as-user côté Function reste le contrôle faisant autorité). `drive_id` : drive
+    propre à l'item (cf. _unpack_doc_id) ; repli sur le drive global."""
+    drive_id = drive_id or os.environ.get("SHAREPOINT_DRIVE_ID")
     if not drive_id or not graph_token:
         return
     try:
@@ -434,9 +462,14 @@ async def trigger_audit(
     # Échec rapide au bord : si l'utilisateur n'a pas accès au document, on refuse
     # AVANT de démarrer l'orchestration (le contrôle as-user côté Function reste
     # le garant final).
+    # Drive-aware : on dépaquète le document_id renvoyé par /resolve en
+    # (drive_id de l'item, item_id). Un document peut résider dans un
+    # drive/bibliothèque distinct du SHAREPOINT_DRIVE_ID global ; on transmet
+    # alors ce drive à la pré-vérification ET au téléchargement de la Function.
+    _doc_drive_id, _item_id = _unpack_doc_id(request.document_id)
     if graph_token:
         try:
-            await _assert_user_can_access_document(graph_token, request.document_id)
+            await _assert_user_can_access_document(graph_token, _item_id, _doc_drive_id)
         except HTTPException:
             track("audit_documentaire_started", status="blocked", user_id=oid,
                   action_name="trigger_audit", error_code="sharepoint_denied")
@@ -449,7 +482,8 @@ async def trigger_audit(
 
         resp = await http_client.post(
             func_url,
-            json={"document_id": request.document_id,
+            json={"document_id": _item_id,
+                  "drive_id": _doc_drive_id,
                   "client_context": request.client_context,
                   # Appartenance persistée DANS l'entrée d'orchestration Durable
                   # (stockage partagé) -> contrôle IDOR robuste au redémarrage et
@@ -567,6 +601,7 @@ async def resolve_document(
         folder = folder.split("root:", 1)[-1].lstrip("/") or "racine"
         docs.append({
             "id": it.get("id"),
+            "drive_id": ((it.get("parentReference") or {}).get("driveId")) or drive_id,
             "name": name,
             "modified": str(it.get("lastModifiedDateTime") or "")[:10],
             "folder": folder,
@@ -588,10 +623,12 @@ async def resolve_document(
             raise HTTPException(status_code=400, detail=f"Choix invalide (1 à {count}).")
         chosen = docs[int(request.choice) - 1]
         return {"count": count, "single": True,
-                "document_id": chosen["id"], "document_name": chosen["name"]}
+                "document_id": _pack_doc_id(chosen.get("drive_id"), chosen["id"]),
+                "document_name": chosen["name"]}
     if count == 1:
         return {"count": 1, "single": True,
-                "document_id": docs[0]["id"], "document_name": docs[0]["name"]}
+                "document_id": _pack_doc_id(docs[0].get("drive_id"), docs[0]["id"]),
+                "document_name": docs[0]["name"]}
     display = "\n".join(
         f"{i + 1}. **{d['name']}** — {d['folder']} (modifié {d['modified']})"
         for i, d in enumerate(docs))

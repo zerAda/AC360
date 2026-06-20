@@ -17,6 +17,7 @@ import logging
 import os
 import sys
 from dataclasses import replace
+from typing import Optional
 
 _HERE = os.path.dirname(__file__)
 for _p in (os.path.join(_HERE, "shared"), os.path.abspath(os.path.join(_HERE, "..", "scripts"))):
@@ -89,7 +90,8 @@ def _download(document_id: str) -> str:
     )
 
 
-def _download_as_user(document_id: str, graph_token: str) -> str:
+def _download_as_user(document_id: str, graph_token: str,
+                      drive_id: Optional[str] = None) -> str:
     """Télécharge le document AVEC le token Graph délégué de l'utilisateur (OBO).
 
     Graph applique les permissions SharePoint de l'utilisateur : pas d'accès ->
@@ -97,7 +99,10 @@ def _download_as_user(document_id: str, graph_token: str) -> str:
     """
     from sharepoint import download_document
 
-    drive_id = os.environ.get("SHAREPOINT_DRIVE_ID")
+    # Drive propre à l'item (passé par la passerelle via /resolve) ; repli sur le
+    # drive global. Permet d'auditer un document hors du SHAREPOINT_DRIVE_ID par
+    # défaut (résultats de recherche cross-library).
+    drive_id = drive_id or os.environ.get("SHAREPOINT_DRIVE_ID")
     if not drive_id:
         raise RuntimeError("SHAREPOINT_DRIVE_ID manquant (configuration requise).")
     dest_dir = os.path.join(os.environ.get("JOBS_BASE_DIR", "jobs"), str(document_id))
@@ -260,10 +265,11 @@ if _DURABLE_AVAILABLE:
         # Pas d'accès -> 403/404 propagés, l'orchestration ne démarre pas. Seul un
         # chemin local (pas de token) entre ensuite dans l'état Durable.
         body = dict(body or {})
+        drive_id = body.get("drive_id")  # drive propre à l'item (cf. passerelle)
         graph_token = req.headers.get("X-MS-Graph-Token")
         if graph_token:
             try:
-                body["document_path"] = _download_as_user(document_id, graph_token)
+                body["document_path"] = _download_as_user(document_id, graph_token, drive_id)
             except Exception as exc:  # noqa: BLE001
                 status = _graph_error_status(exc)
                 logging.warning("Téléchargement SharePoint (OBO) refusé/échoué (%s)", status)
