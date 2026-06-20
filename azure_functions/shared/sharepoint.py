@@ -40,6 +40,7 @@ def download_document(
     dest_dir: str,
     access_token: str,
     http_get: Optional[Callable] = None,
+    http_stream: Optional[Callable] = None,
     allowed_ext: Iterable[str] = DEFAULT_ALLOWED_EXT,
     max_bytes: int = DEFAULT_MAX_BYTES,
 ) -> str:
@@ -73,28 +74,43 @@ def download_document(
 
     # 2. Contenu : l'URL @microsoft.graph.downloadUrl est pré-signée (sans header auth).
     download_url = info.get("@microsoft.graph.downloadUrl")
-    if download_url:
-        content_resp = get(download_url, timeout=60.0)
+    content_url = download_url or f"{GRAPH_BASE}/drives/{drive_id}/items/{item_id}/content"
+    content_headers = None if download_url else headers
+
+    if http_get is not None and http_stream is None:
+        # Chemin BUFFERISÉ — clients injectés (tests). Défense Content-Length (avant
+        # écriture) + contrôle post-buffer.
+        content_resp = get(content_url, timeout=60.0) if content_headers is None else get(
+            content_url, headers=content_headers, timeout=60.0)
+        content_resp.raise_for_status()
+        try:
+            declared_len = int((getattr(content_resp, "headers", None) or {}).get("Content-Length", 0) or 0)
+        except (ValueError, TypeError):
+            declared_len = 0
+        if declared_len and declared_len > max_bytes:
+            raise ValueError(f"Document trop volumineux (Content-Length {declared_len} > {max_bytes}).")
+        data = content_resp.content
+        if data is not None and len(data) > max_bytes:
+            raise ValueError(f"Contenu téléchargé trop volumineux ({len(data)} octets > {max_bytes}).")
     else:
-        content_resp = get(
-            f"{GRAPH_BASE}/drives/{drive_id}/items/{item_id}/content",
-            headers=headers, timeout=60.0,
-        )
-    content_resp.raise_for_status()
-    # La borne anti-mémoire AMONT est le contrôle de taille des métadonnées (avant
-    # ce GET). Ici, repli quand la taille déclarée par Graph était absente/0 : on
-    # rejette via Content-Length avant l'écriture disque et l'appel OCR. (Une borne
-    # mémoire STRICTE imposerait un téléchargement en streaming — le client HTTP est
-    # injecté/bufferisé ici ; cf. résiduel.)
-    try:
-        declared_len = int((getattr(content_resp, "headers", None) or {}).get("Content-Length", 0) or 0)
-    except (ValueError, TypeError):
-        declared_len = 0
-    if declared_len and declared_len > max_bytes:
-        raise ValueError(f"Document trop volumineux (Content-Length {declared_len} > {max_bytes}).")
-    data = content_resp.content
-    if data is not None and len(data) > max_bytes:
-        raise ValueError(f"Contenu téléchargé trop volumineux ({len(data)} octets > {max_bytes}).")
+        # CB-09 : chemin STREAMING avec plafond glissant — la borne mémoire est
+        # imposée PENDANT le transfert. Un corps dont la taille déclarée ET le
+        # Content-Length sont absents/0 ne peut donc plus OOM le worker : le
+        # transfert est interrompu dès le dépassement de max_bytes.
+        stream = http_stream or httpx.stream
+        stream_kwargs = ({"timeout": 60.0} if content_headers is None
+                         else {"headers": content_headers, "timeout": 60.0})
+        total = 0
+        chunks = []
+        with stream("GET", content_url, **stream_kwargs) as content_resp:
+            content_resp.raise_for_status()
+            for chunk in content_resp.iter_bytes():
+                total += len(chunk)
+                if total > max_bytes:
+                    raise ValueError(
+                        f"Contenu téléchargé trop volumineux (> {max_bytes} octets ; transfert interrompu).")
+                chunks.append(chunk)
+        data = b"".join(chunks)
 
     # 3. Écriture confinée sous dest_dir.
     base = os.path.abspath(dest_dir)

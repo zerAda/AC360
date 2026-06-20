@@ -90,3 +90,54 @@ def test_traversal_filename_from_graph_is_neutralised(tmp_path):
                              access_token="tok", http_get=_fake_get(meta))
     assert os.path.basename(dest) == "evil.pdf"
     assert os.path.dirname(os.path.abspath(dest)) == os.path.abspath(str(tmp_path))
+
+
+class _FakeStream:
+    """Réponse de streaming minimale (context manager + iter_bytes)."""
+
+    def __init__(self, chunks):
+        self._chunks = chunks
+
+    def raise_for_status(self):
+        pass
+
+    def iter_bytes(self):
+        for c in self._chunks:
+            yield c
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def _fake_stream(chunks):
+    def stream(method, url, **kwargs):
+        return _FakeStream(chunks)
+    return stream
+
+
+def test_download_streaming_caps_during_transfer(tmp_path):
+    """CB-09 : en streaming, le plafond est imposé PENDANT le transfert — un corps
+    dépassant max_bytes (taille déclarée 0, sans Content-Length) est interrompu
+    sans bufferisation complète."""
+    meta = {"name": "ok.pdf", "size": 0,
+            "@microsoft.graph.downloadUrl": "https://signed.example/blob"}
+    big_chunks = [b"x" * 30] * 5  # 150 octets > max_bytes 50 -> interruption
+    with pytest.raises(ValueError, match="volumineux"):
+        download_document(item_id="i", drive_id="d", dest_dir=str(tmp_path),
+                          access_token="tok", http_get=_fake_get(meta),
+                          http_stream=_fake_stream(big_chunks), max_bytes=50)
+
+
+def test_download_streaming_under_cap_succeeds(tmp_path):
+    """CB-09 : un corps sous le plafond passe en streaming et est écrit intégralement."""
+    meta = {"name": "ok.pdf", "size": 0,
+            "@microsoft.graph.downloadUrl": "https://signed.example/blob"}
+    dest = download_document(item_id="i", drive_id="d", dest_dir=str(tmp_path),
+                             access_token="tok", http_get=_fake_get(meta),
+                             http_stream=_fake_stream([b"%PDF-1.7 ", b"data"]), max_bytes=1000)
+    assert os.path.isfile(dest)
+    with open(dest, "rb") as f:
+        assert f.read() == b"%PDF-1.7 data"

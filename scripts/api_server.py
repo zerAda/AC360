@@ -139,6 +139,8 @@ app.add_middleware(AppInsightsMiddleware)
 _RATE_LIMIT_MAX = 10
 _RATE_LIMIT_WINDOW = 3600  # secondes
 _rate_limit_store: dict[str, list[float]] = defaultdict(list)
+# CB-04 : garde anti-réentrance pour la purge — au plus UNE tâche concurrente.
+_cleanup_task: Optional[asyncio.Task] = None
 
 
 async def cleanup_rate_limits():
@@ -155,10 +157,19 @@ async def cleanup_rate_limits():
         _rate_limit_store.pop(k, None)
 
 
+def _maybe_spawn_cleanup() -> None:
+    """CB-04 : lance la purge UNE seule fois tant qu'une instance tourne. Sans cette
+    garde, chaque requête au-dessus du seuil lançait une coroutine fire-and-forget
+    supplémentaire (réécritures concurrentes du store, lost-update sur les compteurs,
+    tâches non tracées). La référence est conservée pour éviter un GC prématuré."""
+    global _cleanup_task
+    if len(_rate_limit_store) > 1000 and (_cleanup_task is None or _cleanup_task.done()):
+        _cleanup_task = asyncio.create_task(cleanup_rate_limits())
+
+
 async def _check_rate_limit(upn: str) -> None:
     now = time.time()
-    if len(_rate_limit_store) > 1000:
-        asyncio.create_task(cleanup_rate_limits())
+    _maybe_spawn_cleanup()
 
     _rate_limit_store[upn] = [t for t in _rate_limit_store[upn] if now - t < _RATE_LIMIT_WINDOW]
 
@@ -182,8 +193,7 @@ async def _check_resolve_rate_limit(upn: str) -> None:
     # un déploiement dominé par la recherche accumule des clés jamais purgées
     # (croissance non bornée clé par identité). cleanup_rate_limits() purge les
     # listes vides quel que soit leur préfixe.
-    if len(_rate_limit_store) > 1000:
-        asyncio.create_task(cleanup_rate_limits())
+    _maybe_spawn_cleanup()
     key = f"resolve:{upn}"
     now = time.time()
     _rate_limit_store[key] = [t for t in _rate_limit_store[key] if now - t < _RATE_LIMIT_WINDOW]
@@ -561,7 +571,11 @@ async def resolve_document(
             "modified": str(it.get("lastModifiedDateTime") or "")[:10],
             "folder": folder,
         })
-    docs.sort(key=lambda d: d["modified"], reverse=True)
+    # CB-01 : clé secondaire stable (`id`) — la date `modified` est tronquée au jour,
+    # donc les documents du même jour s'égalisent ; sans départage déterministe,
+    # l'ordre dépend du retour Graph (non garanti identique d'un appel à l'autre) et
+    # un `choice` positionnel pouvait résoudre un AUTRE document que celui affiché.
+    docs.sort(key=lambda d: (d["modified"], str(d["id"])), reverse=True)
     docs = docs[:5]
     count = len(docs)
 

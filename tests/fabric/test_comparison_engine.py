@@ -57,6 +57,28 @@ def test_audit_verdict_ecart():
     assert plafond["statut"] == "MISMATCH"
 
 
+def test_audit_ecart_beats_uncertain_cb06():
+    """CB-06 : un MISMATCH confirmé prime sur un champ seulement UNCERTAIN —
+    l'écart réel n'est PAS masqué en INCERTAIN."""
+    result = audit({
+        "document": {"nom_client": "GEREP SA", "plafond_hospitalisation": "1005",
+                     "numero_contrat": "12AB3456"},
+        "reference": {"nom_client": "GEREP SA", "plafond_hospitalisation": "1000",
+                      "numero_contrat": "99ZZ0000"},
+    })
+    statuts = {f["champ"]: f["statut"] for f in result["fields"]}
+    assert statuts["plafond_hospitalisation"] == "UNCERTAIN"  # écart < 1 %
+    assert statuts["numero_contrat"] == "MISMATCH"            # écart confirmé
+    assert result["verdict"] == "ECART"  # l'ECART prime sur l'INCERTAIN
+
+
+def test_compare_amount_zero_reference_cb07():
+    """CB-07 : référence = 0 ne casse pas la comparaison (pas de division par zéro,
+    pas de confusion avec « absente »)."""
+    assert compare_amount("0", "0")[0] == "MATCH"       # 0 ~ 0
+    assert compare_amount("5", "0")[0] == "MISMATCH"    # 5 vs 0 : écart, pas UNCERTAIN
+
+
 def test_audit_verdict_client_non_trouve():
     result = audit({
         "document": {"nom_client": "ENTREPRISE INCONNUE"},

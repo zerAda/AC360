@@ -185,3 +185,20 @@ async def test_resolve_query_length_bounds_inclusive(monkeypatch, q, should_pass
             await api_server.resolve_document(_req(q), None, "u@gerep.fr")
         assert exc.value.status_code == 400
         assert fake.calls == []
+
+
+async def test_resolve_choice_deterministic_across_graph_reorder_cb01(monkeypatch):
+    """CB-01 : à dates de modif égales, le tri est déterministe (clé secondaire id),
+    donc `choice` résout le MÊME document même si Graph renvoie les résultats dans
+    un ordre différent d'un appel à l'autre."""
+    order1 = [_item("A.pdf", modified="2026-06-01T00:00:00Z"),
+              _item("B.pdf", modified="2026-06-01T00:00:00Z")]
+    fake1 = _FakeClient(_FakeResp(200, {"value": order1}))
+    monkeypatch.setattr(api_server, "http_client", fake1)
+    out1 = await api_server.resolve_document(_req("dossier", choice=1), None, "u@gerep.fr")
+
+    fake2 = _FakeClient(_FakeResp(200, {"value": list(reversed(order1))}))
+    monkeypatch.setattr(api_server, "http_client", fake2)
+    out2 = await api_server.resolve_document(_req("dossier", choice=1), None, "u@gerep.fr")
+
+    assert out1["document_id"] == out2["document_id"]  # même choix -> même document

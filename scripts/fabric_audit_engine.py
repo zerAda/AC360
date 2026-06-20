@@ -218,7 +218,10 @@ def compare_amount(doc: Any, ref: Any) -> Tuple[str, float]:
         return "MISSING", 0.0
     if abs(a - b) <= AMOUNT_ABS_TOL:
         return "MATCH", 1.0
-    if b and abs(a - b) / abs(b) <= AMOUNT_REL_TOL:
+    # CB-07 : diviseur explicite (épsilon) plutôt que la véracité de `b` — évite de
+    # confondre « référence = 0 » avec « référence absente » (None déjà géré) et
+    # garde la branche tolérance-relative atteignable pour toute référence non triviale.
+    if abs(b) > AMOUNT_ABS_TOL and abs(a - b) / abs(b) <= AMOUNT_REL_TOL:
         return "UNCERTAIN", 0.5
     return "MISMATCH", 0.95
 
@@ -292,10 +295,14 @@ def audit(audit_input: dict) -> dict:
     other = fields[1:]
     if name_status in ("MISSING", "MISMATCH"):
         verdict = "CLIENT_NON_TROUVE"
+    elif any(f["statut"] == "MISMATCH" for f in other):
+        # CB-06 — politique de conformité : un ÉCART confirmé (MISMATCH sur un champ
+        # audité) PRIME sur l'incertitude. Un écart réel (ex. plafond divergent) ne
+        # doit jamais être masqué en « à vérifier » parce qu'un autre champ est
+        # seulement UNCERTAIN. ECART est donc évalué AVANT INCERTAIN.
+        verdict = "ECART"
     elif any(f["statut"] == "UNCERTAIN" for f in fields):
         verdict = "INCERTAIN"
-    elif any(f["statut"] == "MISMATCH" for f in other):
-        verdict = "ECART"
     else:
         verdict = "CONFORME"
 
