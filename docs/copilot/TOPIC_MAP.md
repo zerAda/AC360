@@ -90,16 +90,19 @@ RAG de `agent.mcs.yml` (anti-injection, anti-promesse, lecture seule).
 
 ## MCP & connecteurs
 
-| Connexion (`connectionreferences.mcs.yml`) | Rôle | Statut |
-|---|---|---|
-| `shared_workiqsharepoint` (WorkIQ SharePoint MCP, **Preview**) | Opérations SharePoint via MCP | ⚠️ **connecté mais dormant** — `GenerativeActionsEnabled: false` ⇒ non auto-invoqué ; aucun topic ne l'appelle. **À VALIDER EN ENVIRONNEMENT RÉEL** si on veut l'activer (nécessite orchestration générative ou un topic dédié). |
-| `shared_a365copilotchatmcp` | A365 Copilot Chat MCP (Preview) | ⚠️ idem dormant |
-| `shared_a365memcp` | A365 ME MCP (Preview) | ⚠️ idem dormant |
+> **Mise à jour (2026-06-19, commit `5f18cfa` — durcissement F1)** : les trois
+> connecteurs MCP **Work IQ Preview** (`shared_workiqsharepoint`,
+> `shared_a365copilotchatmcp`, `shared_a365memcp`) ont été **SUPPRIMÉS**. Aucun
+> topic ne les appelait ; ils constituaient une surface latente d'accès
+> cross-tenant (`mcp_m365copilot` pouvait atteindre du contenu hors du site
+> scopé `Dossiers_Clients_POC`, `mcp_MeServer` les données M365 de l'utilisateur).
+> `connectionreferences.mcs.yml` est désormais **vide** (`connectionReferences: []`)
+> et le dossier `actions/` ne contient plus de connecteur. Suppression vérifiée en
+> source et redéployée sur le **brouillon** de l'agent.
 
 > **Décision d'architecture** : la recherche documentaire passe par le **RAG natif
-> SharePoint** (sourcé, citations, sécurisé par la policy), pas par les MCP. Les
-> MCP Preview restent connectés pour évolution future mais ne sont pas sur le
-> chemin critique. C'est cohérent (pas de double source non gouvernée).
+> SharePoint** (sourcé, citations, sécurisé par la policy), pas par des connecteurs
+> MCP. Aucune source non gouvernée n'est sur le chemin critique.
 
 ## Couverture des cas d'usage (réelle)
 
